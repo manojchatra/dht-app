@@ -23,6 +23,8 @@ app.use(session({
 const uploadsDir = path.join(__dirname, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
+app.use('/css', express.static(path.join(__dirname, 'public/css')));
+app.use('/img', express.static(path.join(__dirname, 'public/img')));
 
 // DB init
 require('./db/database');
