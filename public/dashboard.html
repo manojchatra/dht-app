@@ -17,9 +17,9 @@
 .dash-card.c-total{background:radial-gradient(120% 140% at 0% 0%,var(--secondary) 0%,var(--accent) 62%,var(--accent-dark) 100%);border-color:transparent;box-shadow:var(--shadow-md)}
 .dash-card.c-total i,.dash-card.c-total .dc-num{color:#fbf3e8 !important}
 .dash-card.c-total .dc-label{color:rgba(251,243,232,.8)}
-.dash-card.c-scheduled{background:radial-gradient(circle at 30% 20%,#f2e9ff 0%,var(--surface) 70%)}
-.dash-card.c-tbo{background:radial-gradient(circle at 30% 20%,#fff6df 0%,var(--surface) 70%)}
-.dash-card.c-pending{background:radial-gradient(circle at 30% 20%,#ffe9ec 0%,var(--surface) 70%)}
+.dash-card.c-scheduled i,.dash-card.c-scheduled .dc-num{color:#553c9a}
+.dash-card.c-tbo i,.dash-card.c-tbo .dc-num{color:var(--yellow)}
+.dash-card.c-pending i,.dash-card.c-pending .dc-num{color:var(--red)}
 
 /* New widgets: Recent Contracts / Deliveries by Showroom / Needs Attention */
 .board-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start;margin-bottom:16px}
@@ -45,7 +45,7 @@
 .loc-row .lr-bar span{display:block;height:100%;background:linear-gradient(90deg,var(--secondary),var(--accent));border-radius:4px}
 .loc-row .lr-num{font-size:12.5px;font-weight:700;color:var(--text);width:22px;text-align:right}
 .empty-hint{font-size:12.5px;color:var(--text-light);padding:10px 4px}
-.quick-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.quick-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
 .qa-btn{display:flex;align-items:center;gap:12px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:box-shadow .15s;font-size:14px;font-weight:500}
 .qa-btn:hover{box-shadow:var(--shadow-md)}
 .qa-btn i{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;background:var(--accent-bg);color:var(--accent)}
@@ -81,7 +81,7 @@
 <a class="mobile-home-btn" href="/dashboard" aria-label="Home"><i class="fa-solid fa-house"></i></a>
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-header">
-    <a href="/dashboard" style="display:block"><img src="/img/logo.webp" alt="Desert Hot Tubs" class="sidebar-logo"></a>
+    <a href="/dashboard" class="brand-mark"><span class="brand-glyph">DHT</span><span class="brand-text"><span class="brand-name">Desert Hot Tubs</span><span class="brand-sub">Sales &amp; Delivery</span></span></a>
   </div>
   <div>
     <button class="nav-item " id="nav-contracts"
