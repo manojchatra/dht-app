@@ -8,38 +8,44 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
 <style>
-.filter-bar{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
-.filter-bar input,.filter-bar select{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;color:var(--text);font-size:13px;font-family:var(--font);outline:none}
-.filter-bar input{flex:1;min-width:180px}
-.stats-row{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:14px 20px;flex:1;min-width:110px}
-.stat-num{font-size:22px;font-weight:700}.stat-label{font-size:11px;color:var(--text-muted);margin-top:2px}
-.contracts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
-.contract-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:visible;display:flex;flex-direction:column;transition:border-color .15s}
-.contract-card:hover{border-color:var(--accent-light)}
+.filter-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.filter-bar .search-wrap{flex:2;min-width:220px;position:relative}
+.filter-bar .search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:13px}
+.filter-bar .search-wrap input{padding-left:34px}
+.filter-bar input,.filter-bar select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:13px;font-family:var(--font);outline:none}
+.filter-bar select{flex:1;min-width:150px}
+.filter-bar input:focus,.filter-bar select:focus{border-color:var(--secondary);box-shadow:0 0 0 3px var(--secondary-bg)}
+
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px}
+.stat-num{font-family:var(--font-display);font-size:22px;font-weight:600}
+.stat-label{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);font-weight:600;margin-top:2px}
+
+.contracts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.contract-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:visible;display:flex;flex-direction:column;transition:box-shadow .15s,border-color .15s}
+.contract-card:hover{box-shadow:var(--shadow-md);border-color:var(--accent-light)}
 .contract-card.pending-pay{border-color:var(--red-light)}
-.card-top{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start}
-.contract-num{font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.04em}
-.store-sub{font-size:11px;color:var(--text-light);margin-top:2px}
-.card-body{padding:12px 14px;flex:1}
-.cust-name{font-size:15px;font-weight:600;margin-bottom:2px}
-.cust-sub{font-size:12px;color:var(--text-muted);margin-bottom:10px}
-.product-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
-.ptag{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--surface2);color:var(--text-muted)}
-.ptag.make{background:var(--accent-bg);color:var(--accent)}
-.meta-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
-.meta-row .lbl{color:var(--text-muted)}.meta-row .val{font-weight:500}
-.meta-row .val.total{color:var(--accent);font-size:13px;font-weight:600}
-.pay-banner{margin:0 14px 10px;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;display:flex;align-items:center;gap:5px}
-.banner-pending{background:var(--red-bg);color:var(--red);border:1px solid var(--red-light)}
-.banner-paid{background:var(--green-bg);color:var(--green);border:1px solid var(--green-light)}
-.card-actions{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center}
-.card-img-row{display:flex;gap:6px;padding:8px 14px;flex-wrap:wrap}
-.card-img-thumb{width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer}
+.card-top{padding:14px 16px 12px;border-bottom:1px solid var(--border)}
+.card-top-row1{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.contract-num{font-size:11.5px;color:var(--text-muted);font-weight:700;letter-spacing:.02em}
+.cust-name{font-size:15px;font-weight:700;color:var(--text)}
+.store-sub{font-size:11px;color:var(--secondary);font-weight:600;margin-top:1px}
+.cust-sub{font-size:11px;color:var(--text-light);margin-top:2px}
+.card-body{padding:12px 16px;flex:1;display:flex;flex-direction:column;gap:7px}
+.meta-row{display:flex;justify-content:space-between;font-size:12px}
+.meta-row .lbl{color:var(--text-muted)}.meta-row .val{font-weight:600;color:var(--text)}
+.meta-row .val.total{color:var(--accent);font-family:var(--font-display);font-size:15px;font-weight:600}
+.pay-banner{display:flex;align-items:center;gap:7px;padding:8px 16px;font-size:11.5px;font-weight:600}
+.banner-pending{background:var(--red-bg);color:var(--red)}
+.banner-paid{background:var(--green-bg);color:var(--green)}
+.card-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.card-actions .btn{flex:1;justify-content:center}
+.card-img-row{display:flex;gap:6px;padding:0 16px 12px}
+.card-img-thumb{width:44px;height:44px;object-fit:cover;border-radius:7px;border:1px solid var(--border);cursor:pointer}
 .card-img-thumb:hover{opacity:.85;transform:scale(1.05)}
-.card-pdf-thumb{width:52px;height:52px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--surface2);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0}
+.card-pdf-thumb{width:44px;height:44px;border-radius:7px;border:1px solid var(--border);cursor:pointer;background:var(--red-bg);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0}
 .card-pdf-thumb:hover{opacity:.85}
-.card-pdf-thumb i{font-size:20px;color:#dc2626}
+.card-pdf-thumb i{font-size:17px;color:var(--red)}
 .empty-state{text-align:center;padding:60px;color:var(--text-muted);grid-column:1/-1}
 .empty-state i{font-size:32px;margin-bottom:10px;display:block}
 .pay-form-row{margin-bottom:12px}
@@ -117,7 +123,7 @@
   </div>
   <div class="stats-row" id="statsRow"></div>
   <div class="filter-bar">
-    <input type="text" id="searchInput" placeholder="Search customer, serial, make…" oninput="filterCards()">
+    <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search customer, serial, make…" oninput="filterCards()"></div>
     <select id="storeFilter" onchange="filterCards()"><option value="">All stores</option><option>Phoenix</option><option>Goodyear</option><option>Chandler</option><option>Surprise</option><option>Tolleson</option></select>
     <select id="statusFilter" onchange="filterCards()"><option value="">All statuses</option><option value="assigned">Assigned</option><option value="tbo">To Be Ordered</option><option value="scheduled">Scheduled</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select>
     <select id="payFilter" onchange="filterCards()"><option value="">All payments</option><option value="pending">Pending</option><option value="paid">Fully Paid</option></select>
@@ -375,7 +381,7 @@ function renderStats(c){
   const scheduled=c.filter(x=>x.status==='scheduled').length;
   const tbo=c.filter(x=>x.status==='tbo').length;
   document.getElementById('statsRow').innerHTML=`
-    <div class="stat-card"><div class="stat-num">${c.length}</div><div class="stat-label">Total Contracts</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:var(--accent)">${c.length}</div><div class="stat-label">Total Contracts</div></div>
     <div class="stat-card"><div class="stat-num" style="color:#553c9a">${scheduled}</div><div class="stat-label">Scheduled</div></div>
     <div class="stat-card"><div class="stat-num" style="color:var(--yellow)">${tbo}</div><div class="stat-label">To Be Ordered</div></div>
     <div class="stat-card"><div class="stat-num" style="color:var(--red)">${pending}</div><div class="stat-label">Payment Pending</div></div>`;
@@ -416,30 +422,28 @@ function buildCard(c){
       : `<img src="${u}" class="card-img-thumb" onclick="openLightbox('${u}')" alt="Image">`
   ).join('')}</div>`:'';
   const adminMenu=isAdmin?`<hr><button class="danger" onclick="confirmDelete(${c.id},\`${(c.customer_name||'').replace(/\`/g,"'")}\`)"><i class="fa-solid fa-trash"></i> Delete Contract</button>`:' ';
+  const spaLine=[c.make,c.model].filter(Boolean).join(' ');
   return `<div class="contract-card${hasPending?' pending-pay':''}">
     <div class="card-top">
-      <div><div class="contract-num">${c.contract_number||'Draft'}</div><div class="store-sub">${c.store||'—'} · ${dateStr}</div></div>
-      <span class="badge ${BADGE[c.status]||'badge-assigned'}">${STATUS_LABEL[c.status]||c.status}</span>
+      <div class="card-top-row1"><span class="contract-num">${c.contract_number||'Draft'}</span><span class="badge ${BADGE[c.status]||'badge-assigned'}">${STATUS_LABEL[c.status]||c.status}</span></div>
+      <div class="cust-name">${c.customer_name||'Unknown Customer'}</div>
+      <div class="store-sub">${c.store||'—'}</div>
+      <div class="cust-sub">${c.customer_email||''}${c.customer_phone?' · '+c.customer_phone:''}</div>
     </div>
     <div class="card-body">
-      <div class="cust-name">${c.customer_name||'Unknown Customer'}</div>
-      <div class="cust-sub">${c.customer_email||''}${c.customer_phone?' · '+c.customer_phone:''}</div>
-      <div class="product-tags">
-        ${c.make?`<span class="ptag make">${c.make}</span>`:''}
-        ${c.model?`<span class="ptag">${c.model}</span>`:''}
-        ${c.serial_number?`<span class="ptag">S/N: ${c.serial_number}</span>`:''}
-      </div>
+      <div class="meta-row"><span class="lbl">Spa</span><span class="val">${spaLine||'—'}</span></div>
+      <div class="meta-row"><span class="lbl">Serial #</span><span class="val">${c.serial_number||'—'}</span></div>
       <div class="meta-row"><span class="lbl">Salesman</span><span class="val">${c.salesman||'—'}</span></div>
+      ${c.status==='delivered'&&c.delivery_date?`<div class="meta-row"><span class="lbl" style="color:var(--green)"><i class="fa-solid fa-truck-ramp-box"></i> Delivered</span><span class="val" style="color:var(--green)">${new Date(c.delivery_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`:`<div class="meta-row"><span class="lbl">Date</span><span class="val">${dateStr}</span></div>`}
       <div class="meta-row"><span class="lbl">Grand Total</span><span class="val total">${c.grand_total?'$'+c.grand_total:'—'}</span></div>
-      ${c.status==='delivered'&&c.delivery_date?`<div class="meta-row"><span class="lbl" style="color:var(--green)"><i class="fa-solid fa-truck-ramp-box"></i> Delivered</span><span class="val" style="color:var(--green)">${new Date(c.delivery_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`:''}
     </div>
     ${imgRow}
     ${hasPending?`<div class="pay-banner banner-pending"><i class="fa-solid fa-triangle-exclamation"></i> Due: $${c.due_prior}</div>`:`<div class="pay-banner banner-paid"><i class="fa-solid fa-circle-check"></i> Paid</div>`}
     <div class="card-actions">
       <a href="/contracts/${c.id}" class="btn btn-secondary btn-sm"><i class="fa-solid fa-eye"></i> View</a>
       <a href="/api/contracts/${c.id}/pdf" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i> PDF</a>
-      <div class="action-menu" style="margin-left:auto">
-        <button class="three-dot-btn" onclick="toggleActionMenu(event,${c.id})">⋮</button>
+      <div class="action-menu">
+        <button class="three-dot-btn" onclick="toggleActionMenu(event,${c.id})"><i class="fa-solid fa-ellipsis-vertical"></i></button>
         <div class="action-dropdown" id="dd-${c.id}">
           <button onclick="openPaymentModal(${c.id},${parseFloat(c.due_prior||0)})"><i class="fa-solid fa-money-bill-wave" style="color:var(--green)"></i> Record Payment</button>
           <button onclick="openAddImageModal(${c.id})"><i class="fa-solid fa-image" style="color:var(--accent)"></i> Add Image</button>
