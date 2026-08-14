@@ -1,0 +1,43 @@
+# nginx.ssl.conf_proxy
+#
+# INSTRUCTIONS:
+# 1. Upload this file to your VPS at this exact path:
+#    /home/DHT/conf/web/app.deserthottubsaz.com/nginx.ssl.conf_proxy
+#
+# 2. Then reload nginx:
+#    Hestia CP → Server → Nginx → Restart
+#    (or: sudo service nginx reload)
+
+location = /acknowledgement {
+    proxy_pass         http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade    $http_upgrade;
+    proxy_set_header   Connection 'upgrade';
+    proxy_set_header   Host       $host;
+    proxy_cache_bypass $http_upgrade;
+}
+
+location ~ ^/(delivery|acknowledgement)/[0-9]+$ {
+    proxy_pass         http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade    $http_upgrade;
+    proxy_set_header   Connection 'upgrade';
+    proxy_set_header   Host       $host;
+    proxy_cache_bypass $http_upgrade;
+}
+
+location / {
+    proxy_pass         http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade    $http_upgrade;
+    proxy_set_header   Connection 'upgrade';
+    proxy_set_header   Host       $host;
+    proxy_set_header   X-Real-IP  $remote_addr;
+    proxy_cache_bypass $http_upgrade;
+    client_max_body_size 20M;
+}
+
+location /uploads/ {
+    alias /home/DHT/dht-app/uploads/;
+    expires 30d;
+}
