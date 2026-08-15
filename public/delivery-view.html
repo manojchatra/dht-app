@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .dv-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
 .dv-label{font-size:11px;color:var(--text-muted);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
@@ -175,8 +176,8 @@ async function loadDelivery() {
 
   const hasAck = c.has_acknowledgement;
   const html = '<div class="dv-badge"><i class="fa-solid fa-truck-arrow-right"></i>Delivery Assignment</div>'
-    + '<h2 style="font-size:20px;font-weight:700;margin:0 0 4px">' + (c.customer_name||'—') + '</h2>'
-    + '<div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">' + c.contract_number + '</div>'
+    + '<h2 style="font-size:20px;font-weight:700;margin:0 0 4px">' + escHtml(c.customer_name||'—') + '</h2>'
+    + '<div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">' + escHtml(c.contract_number) + '</div>'
 
     + '<div class="dv-card">'
     + '<div class="dv-label">Delivery Slot</div>'
@@ -185,25 +186,25 @@ async function loadDelivery() {
 
     + '<div class="dv-card">'
     + '<div class="dv-label">Customer</div>'
-    + '<div class="dv-value">' + (c.address||'—') + (c.zip?' '+c.zip:'') + '</div>'
-    + (c.phone ? '<div class="dv-value"><a href="tel:' + c.phone + '" style="color:var(--accent)"><i class="fa-solid fa-phone"></i> ' + c.phone + '</a></div>' : '')
-    + (c.gated ? '<div style="background:#fef3c7;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:13px;margin-top:6px"><i class="fa-solid fa-lock" style="color:#b45309"></i> <strong>Gated Community</strong>' + (c.gate_code?' — Code: <strong>'+c.gate_code+'</strong>':'') + '</div>' : '')
+    + '<div class="dv-value">' + escHtml(c.address||'—') + (c.zip?' '+escHtml(c.zip):'') + '</div>'
+    + (c.phone ? '<div class="dv-value"><a href="tel:' + encodeURIComponent(c.phone) + '" style="color:var(--accent)"><i class="fa-solid fa-phone"></i> ' + escHtml(c.phone) + '</a></div>' : '')
+    + (c.gated ? '<div style="background:#fef3c7;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:13px;margin-top:6px"><i class="fa-solid fa-lock" style="color:#b45309"></i> <strong>Gated Community</strong>' + (c.gate_code?' — Code: <strong>'+escHtml(c.gate_code)+'</strong>':'') + '</div>' : '')
     + '</div>'
 
     + '<div class="dv-card">'
     + '<div class="dv-label">Hot Tub</div>'
-    + '<div class="dv-large">' + (c.make||'') + ' ' + (c.model||'') + '</div>'
-    + (c.year ? '<div class="dv-value" style="color:var(--text-muted)">' + c.year + '</div>' : '')
-    + '<div class="dv-value">S/N: <strong>' + (c.serial_number||'—') + '</strong></div>'
-    + '<div class="dv-value">Shell: ' + (c.shell_color||'—') + ' · Cabinet: ' + (c.cabinet_color||'—') + '</div>'
-    + (c.cover_color ? '<div class="dv-value">Cover: ' + c.cover_color + '</div>' : '')
+    + '<div class="dv-large">' + escHtml(c.make||'') + ' ' + escHtml(c.model||'') + '</div>'
+    + (c.year ? '<div class="dv-value" style="color:var(--text-muted)">' + escHtml(c.year) + '</div>' : '')
+    + '<div class="dv-value">S/N: <strong>' + escHtml(c.serial_number||'—') + '</strong></div>'
+    + '<div class="dv-value">Shell: ' + escHtml(c.shell_color||'—') + ' · Cabinet: ' + escHtml(c.cabinet_color||'—') + '</div>'
+    + (c.cover_color ? '<div class="dv-value">Cover: ' + escHtml(c.cover_color) + '</div>' : '')
     + '</div>'
 
     + '<div class="dv-card">'
     + '<div class="dv-label">Options Selected</div>'
-    + (c.water_care_system ? '<div class="dv-value">Water Care: <strong>' + c.water_care_system + '</strong>' + (c.upgraded_water_care?' + '+c.upgraded_water_care:'') + '</div>' : '')
-    + (c.steps_type ? '<div class="dv-value">Steps: <strong>' + c.steps_type + '</strong></div>' : '')
-    + (c.cover_type ? '<div class="dv-value">Cover: <strong>' + c.cover_type + '</strong></div>' : '')
+    + (c.water_care_system ? '<div class="dv-value">Water Care: <strong>' + escHtml(c.water_care_system) + '</strong>' + (c.upgraded_water_care?' + '+escHtml(c.upgraded_water_care):'') + '</div>' : '')
+    + (c.steps_type ? '<div class="dv-value">Steps: <strong>' + escHtml(c.steps_type) + '</strong></div>' : '')
+    + (c.cover_type ? '<div class="dv-value">Cover: <strong>' + escHtml(c.cover_type) + '</strong></div>' : '')
     + (c.in_town_delivery ? '<div class="dv-value"><i class="fa-solid fa-truck" style="color:var(--green)"></i> In-Town Delivery</div>' : '')
     + (c.crane ? '<div class="dv-value"><i class="fa-solid fa-crane" style="color:var(--accent)"></i> Crane Required</div>' : '')
     + '</div>'

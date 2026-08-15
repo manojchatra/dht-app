@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .filter-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
 .filter-bar .search-wrap{flex:2;min-width:220px;position:relative}
@@ -421,19 +422,19 @@ function buildCard(c){
       ? `<a href="${u}" target="_blank" class="card-pdf-thumb" title="View PDF"><i class="fa-solid fa-file-pdf"></i></a>`
       : `<img src="${u}" class="card-img-thumb" onclick="openLightbox('${u}')" alt="Image">`
   ).join('')}</div>`:'';
-  const adminMenu=isAdmin?`<hr><button class="danger" onclick="confirmDelete(${c.id},\`${(c.customer_name||'').replace(/\`/g,"'")}\`)"><i class="fa-solid fa-trash"></i> Delete Contract</button>`:' ';
+  const adminMenu=isAdmin?`<hr><button class="danger" onclick="confirmDelete(${c.id},\`${escHtml(c.customer_name||'').replace(/\`/g,"'")}\`)"><i class="fa-solid fa-trash"></i> Delete Contract</button>`:' ';
   const spaLine=[c.make,c.model].filter(Boolean).join(' ');
   return `<div class="contract-card${hasPending?' pending-pay':''}">
     <div class="card-top">
-      <div class="card-top-row1"><span class="contract-num">${c.contract_number||'Draft'}</span><span class="badge ${BADGE[c.status]||'badge-assigned'}">${STATUS_LABEL[c.status]||c.status}</span></div>
-      <div class="cust-name">${c.customer_name||'Unknown Customer'}</div>
-      <div class="store-sub">${c.store||'—'}</div>
-      <div class="cust-sub">${c.customer_email||''}${c.customer_phone?' · '+c.customer_phone:''}</div>
+      <div class="card-top-row1"><span class="contract-num">${escHtml(c.contract_number||'Draft')}</span><span class="badge ${BADGE[c.status]||'badge-assigned'}">${STATUS_LABEL[c.status]||c.status}</span></div>
+      <div class="cust-name">${escHtml(c.customer_name||'Unknown Customer')}</div>
+      <div class="store-sub">${escHtml(c.store||'—')}</div>
+      <div class="cust-sub">${escHtml(c.customer_email||'')}${c.customer_phone?' · '+escHtml(c.customer_phone):''}</div>
     </div>
     <div class="card-body">
-      <div class="meta-row"><span class="lbl">Spa</span><span class="val">${spaLine||'—'}</span></div>
-      <div class="meta-row"><span class="lbl">Serial #</span><span class="val">${c.serial_number||'—'}</span></div>
-      <div class="meta-row"><span class="lbl">Salesman</span><span class="val">${c.salesman||'—'}</span></div>
+      <div class="meta-row"><span class="lbl">Spa</span><span class="val">${escHtml(spaLine||'—')}</span></div>
+      <div class="meta-row"><span class="lbl">Serial #</span><span class="val">${escHtml(c.serial_number||'—')}</span></div>
+      <div class="meta-row"><span class="lbl">Salesman</span><span class="val">${escHtml(c.salesman||'—')}</span></div>
       ${c.status==='delivered'&&c.delivery_date?`<div class="meta-row"><span class="lbl" style="color:var(--green)"><i class="fa-solid fa-truck-ramp-box"></i> Delivered</span><span class="val" style="color:var(--green)">${new Date(c.delivery_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`:`<div class="meta-row"><span class="lbl">Date</span><span class="val">${dateStr}</span></div>`}
       <div class="meta-row"><span class="lbl">Grand Total</span><span class="val total">${c.grand_total?'$'+c.grand_total:'—'}</span></div>
     </div>

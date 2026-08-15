@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
 @media(max-width:600px){.settings-grid{grid-template-columns:1fr}}
@@ -316,7 +317,7 @@ function renderEmails() {
   if (!el) return;
   if (!emailRecipients.length) { el.innerHTML = '<p style="font-size:13px;color:var(--text-muted)">No recipients added yet.</p>'; return; }
   el.innerHTML = emailRecipients.map((email,i) =>
-    '<div class="email-row"><span style="font-size:13px">' + email + '</span>' +
+    '<div class="email-row"><span style="font-size:13px">' + escHtml(email) + '</span>' +
     '<button class="btn btn-danger btn-sm" onclick="removeEmail(' + i + ')"><i class="fa-solid fa-trash"></i></button></div>'
   ).join('');
 }
@@ -367,23 +368,23 @@ async function loadUsers() {
     const tbody = document.getElementById('usersTbody');
     const roleLabel = u => u.role==='admin'?'Admin':u.role==='delivery'?('Delivery — '+(u.team==='team_a'?'JV Spa Movers':'Clear Choice Movers')):'Sales';
     tbody.innerHTML = users.map(u =>
-      '<tr><td style="font-weight:500">' + u.username + '</td>' +
+      '<tr><td style="font-weight:500">' + escHtml(u.username) + '</td>' +
       '<td><span class="role-chip role-' + u.role + '">' + roleLabel(u) + '</span></td>' +
       '<td style="color:var(--text-muted)">' + new Date(u.created_at).toLocaleDateString() + '</td>' +
       '<td style="display:flex;gap:6px">' +
-        '<button class="btn btn-secondary btn-sm" data-action="resetpw" data-id="' + u.id + '" data-name="' + u.username + '"><i class="fa-solid fa-key"></i> Reset PW</button>' +
-        '<button class="btn btn-danger btn-sm" data-action="deleteuser" data-id="' + u.id + '" data-name="' + u.username + '"><i class="fa-solid fa-trash"></i></button>' +
+        '<button class="btn btn-secondary btn-sm" data-action="resetpw" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-key"></i> Reset PW</button>' +
+        '<button class="btn btn-danger btn-sm" data-action="deleteuser" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-trash"></i></button>' +
       '</td></tr>'
     ).join('');
     const cards = document.getElementById('userCards');
     cards.innerHTML = users.map(u =>
       '<div class="user-card">' +
-        '<div class="user-card-top"><span class="user-card-name">' + u.username + '</span>' +
+        '<div class="user-card-top"><span class="user-card-name">' + escHtml(u.username) + '</span>' +
           '<span class="role-chip role-' + u.role + '">' + roleLabel(u) + '</span></div>' +
         '<div class="user-card-created">Created ' + new Date(u.created_at).toLocaleDateString() + '</div>' +
         '<div class="user-card-actions">' +
-          '<button class="btn btn-secondary btn-sm" data-action="resetpw" data-id="' + u.id + '" data-name="' + u.username + '"><i class="fa-solid fa-key"></i> Reset PW</button>' +
-          '<button class="btn btn-danger btn-sm" data-action="deleteuser" data-id="' + u.id + '" data-name="' + u.username + '"><i class="fa-solid fa-trash"></i></button>' +
+          '<button class="btn btn-secondary btn-sm" data-action="resetpw" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-key"></i> Reset PW</button>' +
+          '<button class="btn btn-danger btn-sm" data-action="deleteuser" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-trash"></i></button>' +
         '</div></div>'
     ).join('');
     // Attach click handlers via delegation — no inline onclick needed.

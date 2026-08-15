@@ -8,16 +8,30 @@ const fs      = require('fs');
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust the nginx reverse proxy so req.ip / req.secure reflect the real
+// client (via X-Forwarded-For / X-Forwarded-Proto) instead of the proxy's
+// loopback address — required for correct login rate-limiting and secure cookies.
+app.set('trust proxy', 1);
+
 app.set('etag', false);
+
+if (!process.env.SESSION_SECRET) {
+  throw new Error('SESSION_SECRET is not set — refusing to start with a predictable session secret. Add it to .env.');
+}
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(session({
-  secret:            process.env.SESSION_SECRET || 'dht-app-secret-2026',
+  secret:            process.env.SESSION_SECRET,
   resave:            false,
   saveUninitialized: false,
-  cookie: { maxAge: 6 * 60 * 60 * 1000, httpOnly: true, sameSite: 'lax' },
+  cookie: {
+    maxAge:   6 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure:   process.env.NODE_ENV === 'production',
+  },
 }));
 
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -25,6 +39,7 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
 app.use('/css', express.static(path.join(__dirname, 'public/css')));
 app.use('/img', express.static(path.join(__dirname, 'public/img')));
+app.use('/js',  express.static(path.join(__dirname, 'public/js')));
 
 // DB init
 require('./db/database');

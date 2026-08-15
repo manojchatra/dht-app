@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .hamburger{display:none!important}
 @media(max-width:768px){.hamburger{display:flex!important}}
@@ -266,13 +267,13 @@ function renderList() {
     +'<thead><tr><th>Customer</th><th>Make</th><th>Model</th><th>Serial No.</th><th>Phone</th><th>Email</th><th>Address</th><th>Delivery Date</th><th style="text-align:center">Feedback</th></tr></thead>'
     +'<tbody>'
     + rows.map(function(c){ return '<tr>'
-      +'<td style="font-weight:600">'+(c.customer_name||'—')+'</td>'
-      +'<td>'+(c.make||'—')+'</td>'
-      +'<td>'+(c.model||'—')+'</td>'
-      +'<td style="font-size:12px;color:var(--text-muted)">'+(c.serial_number||'—')+'</td>'
-      +'<td style="font-size:12px">'+(c.phone||'—')+'</td>'
-      +'<td style="font-size:12px">'+(c.email||'—')+'</td>'
-      +'<td style="font-size:12px;max-width:160px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(c.address||'—')+'</div></td>'
+      +'<td style="font-weight:600">'+escHtml(c.customer_name||'—')+'</td>'
+      +'<td>'+escHtml(c.make||'—')+'</td>'
+      +'<td>'+escHtml(c.model||'—')+'</td>'
+      +'<td style="font-size:12px;color:var(--text-muted)">'+escHtml(c.serial_number||'—')+'</td>'
+      +'<td style="font-size:12px">'+escHtml(c.phone||'—')+'</td>'
+      +'<td style="font-size:12px">'+escHtml(c.email||'—')+'</td>'
+      +'<td style="font-size:12px;max-width:160px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.address||'—')+'</div></td>'
       +'<td>'+fmtDate(c.delivery_date)+'</td>'
       +'<td style="text-align:center">'+(c.feedback_status==='pending'
         ? '<button class="btn btn-primary btn-sm" onclick="goToFeedback('+c.id+')">Submit Feedback</button>'
@@ -283,14 +284,14 @@ function renderList() {
   const cardsHtml = '<div class="ack-cards">'
     + rows.map(function(c){ return '<div class="ack-card">'
       +'<div class="ack-card-top">'
-        +'<div><div class="ack-card-name">'+(c.customer_name||'—')+'</div><div class="ack-card-store">'+(c.make||'')+' '+(c.model||'')+'</div></div>'
+        +'<div><div class="ack-card-name">'+escHtml(c.customer_name||'—')+'</div><div class="ack-card-store">'+escHtml(c.make||'')+' '+escHtml(c.model||'')+'</div></div>'
         +(c.feedback_status==='pending'
           ? '<button class="btn btn-primary btn-sm" onclick="goToFeedback('+c.id+')">Submit</button>'
           : '<span class="badge badge-complete">Submitted</span>')
       +'</div>'
-      +'<div class="ack-card-meta">S/N: '+(c.serial_number||'—')+'</div>'
-      +'<div class="ack-card-meta">'+(c.phone||'—')+' · '+(c.email||'—')+'</div>'
-      +'<div class="ack-card-address">'+(c.address||'—')+'</div>'
+      +'<div class="ack-card-meta">S/N: '+escHtml(c.serial_number||'—')+'</div>'
+      +'<div class="ack-card-meta">'+escHtml(c.phone||'—')+' · '+escHtml(c.email||'—')+'</div>'
+      +'<div class="ack-card-address">'+escHtml(c.address||'—')+'</div>'
       +'<div class="ack-card-meta">Delivered: '+fmtDate(c.delivery_date)+'</div>'
       +'</div>';
     }).join('')

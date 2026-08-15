@@ -14,13 +14,18 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'contractId, amount and method are required' });
     }
 
+    const amt = parseFloat(amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return res.status(400).json({ error: 'Amount must be a positive number' });
+    }
+
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
     const totalPaidBefore = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t;
     const grandTotalCheck = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
     const balanceBefore   = Math.max(0, grandTotalCheck - totalPaidBefore);
-    if (parseFloat(amount) > balanceBefore + 0.01) {
+    if (amt > balanceBefore + 0.01) {
       return res.status(400).json({ error: `Amount exceeds remaining balance of $${balanceBefore.toFixed(2)}` });
     }
 
@@ -28,7 +33,7 @@ router.post('/', async (req, res) => {
     const ins = db.prepare(`
       INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by)
       VALUES (?,?,?,?,?,?,?)
-    `).run(contractId, parseFloat(amount), method, chequeNumber||null,
+    `).run(contractId, amt, method, chequeNumber||null,
         date||new Date().toISOString().slice(0,10), notes||null, req.session.username);
 
     // Recalculate balance = grand_total - all payments recorded

@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .page-header{flex-shrink:0}
 #calendarWrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; box-shadow:var(--shadow); flex:1; display:flex; flex-direction:column; min-height:0; }
@@ -280,18 +281,18 @@ async function loadCalendar() {
       const view = info.view.type;
       // No <a> tags — eventClick handles all navigation to avoid double-handler conflicts
       if (view === 'dayGridMonth') {
-        return { html: '<div class="event-month"><span style="font-weight:600;font-size:11px;cursor:pointer">'+(p.contractNumber||'')+'</span><span class="ev-name"> · '+(p.customerName||'')+'</span></div>' };
+        return { html: '<div class="event-month"><span style="font-weight:600;font-size:11px;cursor:pointer">'+escHtml(p.contractNumber||'')+'</span><span class="ev-name"> · '+escHtml(p.customerName||'')+'</span></div>' };
       } else if (view === 'timeGridWeek') {
-        return { html: '<div class="event-time"><span class="ev-num" style="cursor:pointer">'+(p.contractNumber||'')+'</span><span class="ev-model">'+(p.customerName||'')+'</span><span class="ev-model">'+(p.make||'')+' '+(p.model||'')+'</span></div>' };
+        return { html: '<div class="event-time"><span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span><span class="ev-model">'+escHtml(p.customerName||'')+'</span><span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span></div>' };
       } else {
         // Day view — full detail
         return { html: '<div class="event-day" style="padding:4px">'
-          +'<span class="ev-num" style="cursor:pointer">'+(p.contractNumber||'')+'</span>'
-          +'<span class="ev-name">'+(p.customerName||'')+'</span>'
-          +'<span class="ev-model">'+(p.make||'')+' '+(p.model||'')+'</span>'
-          +(p.serial?'<span class="ev-serial">S/N: '+p.serial+'</span>':'')
-          +(p.salesman?'<span class="ev-sal">&#128100; '+p.salesman+'</span>':'')
-          +(p.address?'<span class="ev-addr">&#128205; '+p.address+'</span>':'')
+          +'<span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span>'
+          +'<span class="ev-name">'+escHtml(p.customerName||'')+'</span>'
+          +'<span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span>'
+          +(p.serial?'<span class="ev-serial">S/N: '+escHtml(p.serial)+'</span>':'')
+          +(p.salesman?'<span class="ev-sal">&#128100; '+escHtml(p.salesman)+'</span>':'')
+          +(p.address?'<span class="ev-addr">&#128205; '+escHtml(p.address)+'</span>':'')
           +'</div>' };
       }
     }

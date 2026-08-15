@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
 .dash-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:20px;text-align:center;text-decoration:none;color:var(--text);transition:box-shadow .15s,border-color .15s;cursor:default}
@@ -253,8 +254,8 @@ async function loadNotifications(){
       const msg   = n.message || '';
       const idx   = msg.indexOf(' — ');
       const bodyHtml = (idx>0 && n.contract_id)
-        ? '<a href="/contracts/'+n.contract_id+'">'+msg.slice(0,idx)+'</a>'+msg.slice(idx)
-        : msg;
+        ? '<a href="/contracts/'+n.contract_id+'">'+escHtml(msg.slice(0,idx))+'</a>'+escHtml(msg.slice(idx))
+        : escHtml(msg);
       return '<div class="notif-card '+color+'" data-id="'+n.id+'">'
         +'<i class="fa-solid '+icon+' notif-icon"></i>'
         +'<div class="notif-msg">'+bodyHtml+'</div>'
@@ -317,10 +318,10 @@ function renderRecentContracts(contracts) {
       const badge = STATUS_BADGE[c.status] || 'badge-assigned';
       const label = STATUS_LABEL[c.status] || c.status;
       return '<tr onclick="location.href=\'/contracts/'+c.id+'\'" style="cursor:pointer">' +
-        '<td>' + (c.contract_number||'—') + '</td>' +
-        '<td><span class="cust-name">' + (c.customer_name||'Unknown') + '</span><span class="cust-sub">' + (c.store||'') + '</span></td>' +
-        '<td>' + spa + '</td>' +
-        '<td>' + (c.salesman||'—') + '</td>' +
+        '<td>' + escHtml(c.contract_number||'—') + '</td>' +
+        '<td><span class="cust-name">' + escHtml(c.customer_name||'Unknown') + '</span><span class="cust-sub">' + escHtml(c.store||'') + '</span></td>' +
+        '<td>' + escHtml(spa) + '</td>' +
+        '<td>' + escHtml(c.salesman||'—') + '</td>' +
         '<td><span class="badge ' + badge + '">' + label + '</span></td>' +
         '</tr>';
     }).join('') + '</tbody></table>';

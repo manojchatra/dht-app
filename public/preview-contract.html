@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .preview-wrap{max-width:760px;margin:0 auto}
 .preview-header{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
@@ -202,7 +203,7 @@ function continueEditing(){
 }
 
 function pKV(label,val){
-  return val ? '<div class="pkv"><label>'+label+'</label><span>'+val+'</span></div>' : '';
+  return val ? '<div class="pkv"><label>'+label+'</label><span>'+escHtml(val)+'</span></div>' : '';
 }
 function fmtUSDate(iso){
   if(!iso) return iso;
@@ -226,10 +227,10 @@ function renderPreview(d){
 
   var html='';
 
-  if(d.store) html+='<span class="store-hl"><i class="fa-solid fa-store"></i> '+d.store+'</span>';
+  if(d.store) html+='<span class="store-hl"><i class="fa-solid fa-store"></i> '+escHtml(d.store)+'</span>';
   html+='<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;display:flex;gap:16px;flex-wrap:wrap">';
   html+='<span>Date: <strong>'+(d.date?fmtUSDate(d.date):'\u2014')+'</strong></span>';
-  html+='<span>Salesman: <strong>'+(d.salesman||'\u2014')+'</strong></span>';
+  html+='<span>Salesman: <strong>'+escHtml(d.salesman||'\u2014')+'</strong></span>';
   if(d.deliveryDate) html+='<span>Delivery: <strong>'+fmtUSDate(d.deliveryDate)+'</strong></span>';
   html+='</div>';
 
@@ -266,12 +267,12 @@ function renderPreview(d){
 
   html+='<div class="preview-section"><h3>Electrical</h3><div style="font-size:13px;line-height:2">';
   html+=pcb('Pamphlet Provided',el.pamphletProvided)+pcb('Own Electrician',el.ownElectrician);
-  html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+(el.notes||'No Note Available')+'</div>';
+  html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+escHtml(el.notes||'No Note Available')+'</div>';
   html+='</div></div>';
 
   html+='<div class="preview-section"><h3>Miscellaneous</h3><div style="font-size:13px;line-height:2">';
   if(mi.monthlyCleanings) html+=pcb('Monthly Cleanings'+(mi.cleaningPrice?' ($'+mi.cleaningPrice+')':''),true);
-  html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+(mi.notes||'No Note Available')+'</div>';
+  html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+escHtml(mi.notes||'No Note Available')+'</div>';
   html+='</div></div>';
 
   html+='<div class="preview-section"><h3>Details &amp; Line Items</h3>';

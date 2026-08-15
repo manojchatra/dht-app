@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .hamburger{display:none!important}
 @media(max-width:768px){.hamburger{display:flex!important}}
@@ -314,10 +315,10 @@ function renderScheduled() {
     +'<thead><tr><th>Customer</th><th>Contract #</th><th>Serial No.</th><th>Address</th><th>Delivery Slot</th><th style="text-align:center">Ack</th></tr></thead>'
     +'<tbody>'
     + rows.map(c=>'<tr>'
-      +'<td><div style="font-weight:600">'+(c.customer_name||'—')+'</div><div style="font-size:11px;color:var(--text-muted)">'+(c.store||'')+'</div></td>'
-      +'<td><span style="font-family:monospace;font-size:12px">'+(c.contract_number||'—')+'</span></td>'
-      +'<td style="font-size:12px;color:var(--text-muted)">'+(c.serial_number||'—')+'</td>'
-      +'<td style="font-size:12px;max-width:160px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(c.address||'—')+'</div></td>'
+      +'<td><div style="font-weight:600">'+escHtml(c.customer_name||'—')+'</div><div style="font-size:11px;color:var(--text-muted)">'+escHtml(c.store||'')+'</div></td>'
+      +'<td><span style="font-family:monospace;font-size:12px">'+escHtml(c.contract_number||'—')+'</span></td>'
+      +'<td style="font-size:12px;color:var(--text-muted)">'+escHtml(c.serial_number||'—')+'</td>'
+      +'<td style="font-size:12px;max-width:160px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.address||'—')+'</div></td>'
       +'<td><span class="slot-pill"><i class="fa-solid fa-clock"></i>'+fmtSlot(c.scheduled_datetime,c.scheduled_duration)+'</span></td>'
       +'<td style="text-align:center">'
         +'<button class="btn-plus" title="Start Acknowledgement" onclick="goToDelivery('+c.id+')"><i class="fa-solid fa-plus"></i></button></td>'
@@ -327,11 +328,11 @@ function renderScheduled() {
   const cardsHtml = '<div class="ack-cards">'
     + rows.map(c=>'<div class="ack-card">'
       +'<div class="ack-card-top">'
-        +'<div><div class="ack-card-name">'+(c.customer_name||'—')+'</div><div class="ack-card-store">'+(c.store||'')+'</div></div>'
+        +'<div><div class="ack-card-name">'+escHtml(c.customer_name||'—')+'</div><div class="ack-card-store">'+escHtml(c.store||'')+'</div></div>'
         +'<button class="btn-plus" title="Start Acknowledgement" onclick="goToDelivery('+c.id+')"><i class="fa-solid fa-plus"></i></button>'
       +'</div>'
-      +'<div class="ack-card-meta">'+(c.contract_number||'—')+(c.serial_number?' · S/N: '+c.serial_number:'')+'</div>'
-      +'<div class="ack-card-address">'+(c.address||'—')+'</div>'
+      +'<div class="ack-card-meta">'+escHtml(c.contract_number||'—')+(c.serial_number?' · S/N: '+escHtml(c.serial_number):'')+'</div>'
+      +'<div class="ack-card-address">'+escHtml(c.address||'—')+'</div>'
       +'<span class="slot-pill"><i class="fa-solid fa-clock"></i>'+fmtSlot(c.scheduled_datetime,c.scheduled_duration)+'</span>'
       +'</div>'
     ).join('')
@@ -354,9 +355,9 @@ function renderCompleted() {
     +'<thead><tr><th>Customer</th><th>Contract #</th><th>Serial No.</th><th>Delivery Date</th><th style="text-align:center">PDF</th></tr></thead>'
     +'<tbody>'
     + rows.map(function(c){ return '<tr>'
-      +'<td><div style="font-weight:600">'+(c.customer_name||'—')+'</div><div style="font-size:11px;color:var(--text-muted)">'+(c.store||'')+'</div></td>'
-      +'<td><span style="font-family:monospace;font-size:12px">'+(c.contract_number||'—')+'</span></td>'
-      +'<td style="font-size:12px;color:var(--text-muted)">'+(c.serial_number||'—')+'</td>'
+      +'<td><div style="font-weight:600">'+escHtml(c.customer_name||'—')+'</div><div style="font-size:11px;color:var(--text-muted)">'+escHtml(c.store||'')+'</div></td>'
+      +'<td><span style="font-family:monospace;font-size:12px">'+escHtml(c.contract_number||'—')+'</span></td>'
+      +'<td style="font-size:12px;color:var(--text-muted)">'+escHtml(c.serial_number||'—')+'</td>'
       +'<td>'+fmtDate(c.delivery_date)+'</td>'
       +'<td style="text-align:center"><a class="btn-eye" href="'+c.acknowledgement_pdf_url+'" target="_blank" title="View PDF"><i class="fa-solid fa-eye"></i></a></td>'
       +'</tr>';
@@ -365,10 +366,10 @@ function renderCompleted() {
   const cardsHtml = '<div class="ack-cards">'
     + rows.map(function(c){ return '<div class="ack-card">'
       +'<div class="ack-card-top">'
-        +'<div><div class="ack-card-name">'+(c.customer_name||'—')+'</div><div class="ack-card-store">'+(c.store||'')+'</div></div>'
+        +'<div><div class="ack-card-name">'+escHtml(c.customer_name||'—')+'</div><div class="ack-card-store">'+escHtml(c.store||'')+'</div></div>'
         +'<a class="btn-eye" href="'+c.acknowledgement_pdf_url+'" target="_blank" title="View PDF"><i class="fa-solid fa-eye"></i></a>'
       +'</div>'
-      +'<div class="ack-card-meta">'+(c.contract_number||'—')+(c.serial_number?' · S/N: '+c.serial_number:'')+'</div>'
+      +'<div class="ack-card-meta">'+escHtml(c.contract_number||'—')+(c.serial_number?' · S/N: '+escHtml(c.serial_number):'')+'</div>'
       +'<div class="ack-card-meta">Delivered: '+fmtDate(c.delivery_date)+'</div>'
       +'</div>';
   }).join('')
@@ -393,8 +394,8 @@ function openGenModal() {
     rows.forEach(function(c){
       mhtml += '<div class="modal-list-row" onclick="goToDelivery('+c.id+')">'
         +'<div>'
-          +'<div style="font-weight:600;font-size:14px">'+(c.customer_name||'—')+'</div>'
-          +'<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+(c.contract_number||'')+(c.serial_number?' · S/N: '+c.serial_number:'')+'</div>'
+          +'<div style="font-weight:600;font-size:14px">'+escHtml(c.customer_name||'—')+'</div>'
+          +'<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+escHtml(c.contract_number||'')+(c.serial_number?' · S/N: '+escHtml(c.serial_number):'')+'</div>'
         +'</div>'
         +'<div style="font-size:11px;color:var(--accent);font-weight:500;text-align:right;margin-left:12px">'+fmtSlot(c.scheduled_datetime,c.scheduled_duration)+'</div>'
         +'</div>';

@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .action-bar-detail{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
 .detail-header{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px}
@@ -345,7 +346,7 @@ function cbHtml(label, checked) {
   return '<div class="cb-display"><span style="color:' + (checked ? 'var(--green)' : 'var(--text-light)') + ';font-weight:' + (checked ? '600' : '400') + '">' + (checked ? '\u2713' : '\u25cb') + ' ' + label + '</span></div>';
 }
 function pKV(label, val) {
-  return val ? '<div class="info-item"><label>' + label + '</label><span>' + val + '</span></div>' : '';
+  return val ? '<div class="info-item"><label>' + label + '</label><span>' + escHtml(val) + '</span></div>' : '';
 }
 function fmtUSDate(iso) {
   if (!iso) return iso;
@@ -441,8 +442,8 @@ function renderDetail(c) {
       '<tr><td>' + (p.date||'\u2014') + '</td>' +
       '<td><span class="pay-method-chip">' + (METHOD_LABELS[p.method]||p.method) + '</span></td>' +
       '<td style="font-weight:600;color:var(--green)">$' + parseFloat(p.amount).toFixed(2) + '</td>' +
-      '<td style="color:var(--text-muted)">' + (p.notes||'\u2014') + '</td>' +
-      '<td style="color:var(--text-muted)">' + (p.recorded_by||'\u2014') + '</td>' +
+      '<td style="color:var(--text-muted)">' + escHtml(p.notes||'\u2014') + '</td>' +
+      '<td style="color:var(--text-muted)">' + escHtml(p.recorded_by||'\u2014') + '</td>' +
       '<td><a href="/api/payments/' + p.id + '/receipt" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i></a></td>' +
       '</tr>'
     ).join('');
@@ -452,7 +453,7 @@ function renderDetail(c) {
       c.payments.map(function(p){return(
         '<div class="pay-card">'+
         '<div class="pay-card-top"><span class="pay-card-method">'+(METHOD_LABELS[p.method]||p.method)+'</span><span class="pay-card-amt">$'+parseFloat(p.amount).toFixed(2)+'</span></div>'+
-        '<div class="pay-card-meta">'+(p.date||'—')+(p.notes?' &middot; '+p.notes:'')+(p.recorded_by?' &middot; '+p.recorded_by:'')+'</div>'+
+        '<div class="pay-card-meta">'+(p.date||'—')+(p.notes?' &middot; '+escHtml(p.notes):'')+(p.recorded_by?' &middot; '+escHtml(p.recorded_by):'')+'</div>'+
         '<a href="/api/payments/'+p.id+'/receipt" download style="font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px;display:inline-block"><i class=\'fa-solid fa-download\'></i> Receipt</a>'+
         '</div>'
       );}).join('') +
@@ -502,7 +503,7 @@ function renderDetail(c) {
       var C={SCHEDULED:'green',ACK_SUBMITTED:'green',MARK_RECEIVED:'green',PAYMENT_RECORDED:'green',FAILED_DELIVERY:'red'};
       var IC={CONTRACT_CREATED:'fa-plus',CONTRACT_UPDATED:'fa-pen',STATUS_CHANGED:'fa-arrow-right',PAYMENT_RECORDED:'fa-dollar-sign',SCHEDULED:'fa-calendar-check',ACK_SUBMITTED:'fa-clipboard-check',EMAIL_SENT:'fa-envelope',MARK_RECEIVED:'fa-truck-arrow-right',CONTRACT_DELETED:'fa-trash',FAILED_DELIVERY:'fa-triangle-exclamation'};
       function mkRow(l){
-        return '<div class="act-item"><div class="act-dot '+(C[l.event_type]||'')+'" ></div><div class="act-body"><div class="act-type"><i class="fa-solid '+(IC[l.event_type]||'fa-circle')+'" style="margin-right:4px"></i>'+l.event_type.replace(/_/g,' ')+'</div>'+(l.detail?'<div class="act-detail">'+l.detail+'</div>':'')+'<div class="act-meta">'+(l.actor||'system')+'&middot;'+(l.created_at||'').replace('T',' ').slice(0,16)+' MST</div></div></div>';
+        return '<div class="act-item"><div class="act-dot '+(C[l.event_type]||'')+'" ></div><div class="act-body"><div class="act-type"><i class="fa-solid '+(IC[l.event_type]||'fa-circle')+'" style="margin-right:4px"></i>'+l.event_type.replace(/_/g,' ')+'</div>'+(l.detail?'<div class="act-detail">'+escHtml(l.detail)+'</div>':'')+'<div class="act-meta">'+escHtml(l.actor||'system')+'&middot;'+(l.created_at||'').replace('T',' ').slice(0,16)+' MST</div></div></div>';
       }
       var shown=actLogs.slice(0,5),hidden=actLogs.slice(5);
       var more=hidden.length?'<div id="actHidden" class="activity-hidden">'+hidden.map(mkRow).join('')+'</div><button onclick="toggleActHidden()" style="font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;margin-top:8px">Show '+hidden.length+' more</button>':'';
@@ -523,13 +524,13 @@ function renderDetail(c) {
 
     '<div class="detail-header">' +
       '<div><div class="contract-id">' + (c.contract_number||'\u2014') + '</div>' +
-        (d.store ? '<span class="store-hl" style="margin-top:6px;display:inline-block"><i class="fa-solid fa-store"></i> ' + d.store + '</span>' : '') +
+        (d.store ? '<span class="store-hl" style="margin-top:6px;display:inline-block"><i class="fa-solid fa-store"></i> ' + escHtml(d.store) + '</span>' : '') +
       '</div>' +
       '<div style="text-align:right">' +
         '<span class="badge ' + (BADGE[c.status]||'badge-assigned') + '">' + (STATUS_LABEL[c.status]||c.status) + '</span>' +
         '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Date: <strong>' + (d.date?fmtUSDate(d.date):'\u2014') + '</strong>' +
           (d.deliveryDate ? '<br>Delivery: <strong>' + fmtUSDate(d.deliveryDate) + '</strong>' : '') +
-          '<br>Salesman: <strong>' + (d.salesman||'\u2014') + '</strong></div>' +
+          '<br>Salesman: <strong>' + escHtml(d.salesman||'\u2014') + '</strong></div>' +
       '</div>' +
     '</div>' +
 
@@ -576,12 +577,12 @@ function renderDetail(c) {
       '<div>' +
         cbHtml('Pamphlet Provided', el.pamphletProvided) +
         cbHtml('Own Electrician & Waiver', el.ownElectrician) +
-        '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Note: ' + (el.notes || 'No Note Available') + '</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Note: ' + escHtml(el.notes || 'No Note Available') + '</div>' +
       '</div>' +
     '</div></div>' +
 
     '<div class="detail-section"><h3><i class="fa-solid fa-note-sticky"></i> Miscellaneous</h3>' +
-      '<p style="font-size:13px;margin-bottom:8px">' + (mi.notes || 'No Note Available') + '</p>' +
+      '<p style="font-size:13px;margin-bottom:8px">' + escHtml(mi.notes || 'No Note Available') + '</p>' +
       cbHtml('Monthly Cleanings', mi.monthlyCleanings) +
       (mi.monthlyCleanings ? '<div style="font-size:12px;color:var(--text-muted)">' + (mi.cleaningPrice ? '$' + mi.cleaningPrice + '/mo' : 'Price not set') + '</div>' : '') +
     '</div>' +
@@ -655,7 +656,7 @@ function loadPostDeliveryFeedback(contractId) {
         + RATING_LABELS.map(function(r){
             return '<div style="margin-bottom:10px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">' + r[1] + '</label><div style="font-size:13px">' + (f[r[0]]||'—') + ' / 5</div></div>';
           }).join('')
-        + '<div><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">Questions or Concerns</label><div style="font-size:13px">' + (f.concerns_text || '—') + '</div></div>';
+        + '<div><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">Questions or Concerns</label><div style="font-size:13px">' + escHtml(f.concerns_text || '—') + '</div></div>';
     }
     el.innerHTML = '<div class="detail-section">'
       + '<h3 style="cursor:pointer" onclick="togglePdf()"><i class="fa-solid fa-comment-dots"></i> Post Delivery Feedback'
@@ -813,7 +814,7 @@ async function openSendAckModal() {
       const i = _ackRecipients.length - 1;
       const d = document.createElement('div');
       d.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
-      d.innerHTML = '<input type="checkbox" id="ar'+i+'" checked style="accent-color:var(--accent)"><label for="ar'+i+'" style="font-size:13px">'+email+(label?' <span style="color:var(--text-muted)">('+label+')</span>':'')+'</label>';
+      d.innerHTML = '<input type="checkbox" id="ar'+i+'" checked style="accent-color:var(--accent)"><label for="ar'+i+'" style="font-size:13px">'+escHtml(email)+(label?' <span style="color:var(--text-muted)">('+escHtml(label)+')</span>':'')+'</label>';
       d.querySelector('input').addEventListener('change',function(){_ackRecipients[i].checked=this.checked;});
       listEl.appendChild(d);
     };
@@ -831,7 +832,7 @@ function addAckRecipient() {
   _ackRecipients.push({ email:v, checked:true });
   const d = document.createElement('div');
   d.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
-  d.innerHTML = '<input type="checkbox" id="ar'+i+'" checked style="accent-color:var(--accent)"><label for="ar'+i+'" style="font-size:13px">'+v+'</label>';
+  d.innerHTML = '<input type="checkbox" id="ar'+i+'" checked style="accent-color:var(--accent)"><label for="ar'+i+'" style="font-size:13px">'+escHtml(v)+'</label>';
   d.querySelector('input').addEventListener('change',function(){_ackRecipients[i].checked=this.checked;});
   listEl.appendChild(d);
   document.getElementById('ackExtraEmail').value='';
