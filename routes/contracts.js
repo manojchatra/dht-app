@@ -381,7 +381,7 @@ router.post('/', uploadFields, async (req, res) => {
       eventType: isNew ? 'CONTRACT_CREATED' : 'CONTRACT_UPDATED',
       actor,
       detail: isNew
-        ? `${customer.name||''}, $${Math.round(cleanData.pricing?.grandTotal||0)} (${cleanData.store||''})`
+        ? `${customer.name||''}, $${Math.round(cleanData.costing?.grandTotal||0)} (${cleanData.store||''})`
         : `Contract updated`
     });
     if (isNew) {

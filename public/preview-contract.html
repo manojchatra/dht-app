@@ -250,13 +250,28 @@ function renderPreview(d){
   }
   html+='</div>';
 
-  html+='<div class="preview-section"><h3>Service &amp; Electrical</h3><div style="font-size:13px;line-height:2">';
+  html+='<div class="preview-section"><h3>Warranty</h3><div class="preview-grid">';
+  html+=pKV('Manufacturer Brands',(mfg.brands||[]).join(', '));
+  html+=pKV('Mfg Component Yrs',mfg.componentYrs)+pKV('Mfg Shell Yrs',mfg.shellYrs)+pKV('Mfg Ext Warranty Yrs',mfg.extWarrantyYrs);
+  html+=pKV('Dealership Brands',(dlr.brands||[]).join(', '));
+  html+=pKV('Dlr Component Yrs',dlr.componentYrs)+pKV('Dlr Shell Yrs',dlr.shellYrs)+pKV('Dlr Ext Warranty Yrs',dlr.extWarrantyYrs);
+  html+='</div></div>';
+
+  html+='<div class="preview-section"><h3>Service</h3><div style="font-size:13px;line-height:2">';
   html+=pcb('In-Town Delivery',sv.inTownDelivery)+pcb('Crane',sv.crane);
   if(sv.crane&&sv.craneFee) html+='<span style="font-size:12px;color:var(--text-muted)">Fee: $'+sv.craneFee+'</span> ';
   if(sv.outOfTownDelivery) html+=pcb('Out-of-Town Delivery ($'+(sv.outOfTownDeliveryFee||'\u2014')+')',true);
   if(sv.outOfTownWarranty) html+=pcb('Out-of-Town Warranty ($'+(sv.outOfTownWarrantyFee||'\u2014')+')',true);
+  html+='</div></div>';
+
+  html+='<div class="preview-section"><h3>Electrical</h3><div style="font-size:13px;line-height:2">';
   html+=pcb('Pamphlet Provided',el.pamphletProvided)+pcb('Own Electrician',el.ownElectrician);
-  if(el.notes) html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+el.notes+'</div>';
+  html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+(el.notes||'No Note Available')+'</div>';
+  html+='</div></div>';
+
+  html+='<div class="preview-section"><h3>Miscellaneous</h3><div style="font-size:13px;line-height:2">';
+  if(mi.monthlyCleanings) html+=pcb('Monthly Cleanings'+(mi.cleaningPrice?' ($'+mi.cleaningPrice+')':''),true);
+  html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+(mi.notes||'No Note Available')+'</div>';
   html+='</div></div>';
 
   html+='<div class="preview-section"><h3>Details &amp; Line Items</h3>';

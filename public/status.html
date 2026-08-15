@@ -37,6 +37,7 @@
 .sc-no-serial{font-size:11px;color:var(--red);margin-top:3px}
 .status-card-actions{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .btn-apply{padding:5px 14px;font-size:12px;font-weight:500;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:var(--font)}
+.btn-apply:disabled{opacity:.5;cursor:not-allowed}
 .empty-state{text-align:center;padding:60px;color:var(--text-muted);grid-column:1/-1}
 .empty-state i{font-size:32px;margin-bottom:10px;display:block}
 .slot-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
@@ -457,7 +458,7 @@ function buildCard(c) {
   // Three-dot menu items
   var menuItems = [];
   if (isAdmin) {
-    if (isTBO || isReceived || isScheduled)
+    if (isScheduled)
       menuItems.push('<button onclick="openSerialModal('+c.id+')"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign SI. No</button>');
     if (isScheduled) {
       _schedData[c.id] = { dt: c.scheduled_datetime||'', dur: c.scheduled_duration||120, team: c.delivery_team||'team_a' };
@@ -465,7 +466,6 @@ function buildCard(c) {
       menuItems.push('<a href="/delivery/'+c.id+'" style="display:flex;align-items:center;gap:8px;padding:9px 14px;color:var(--text);text-decoration:none;font-size:13px;font-family:var(--font)"><i class="fa-solid fa-clipboard-check"></i> Acknowledgement Form</a>');
     }
     if (isReceived) {
-      menuItems.push('<button onclick="openDeliverModal('+c.id+')"><i class="fa-solid fa-truck-ramp-box" style="color:var(--green)"></i> Mark Delivered</button>');
       menuItems.push('<a href="/delivery/'+c.id+'" style="display:flex;align-items:center;gap:8px;padding:9px 14px;color:var(--text);text-decoration:none;font-size:13px;font-family:var(--font)"><i class="fa-solid fa-clipboard-check"></i> Acknowledgement Form</a>');
     }
     if (isCancelled)
@@ -489,8 +489,8 @@ function buildCard(c) {
         {v:'cancelled', l:'Cancelled'},
       ];
       var selHtml = opts.map(function(o){ return '<option value="'+o.v+'"'+(o.v===c.status?' selected':'')+'>'+o.l+'</option>'; }).join('');
-      actions = '<select class="status-select" id="sel-'+c.id+'" onchange="onDropdownChange('+c.id+',this.value)">'+selHtml+'</select>'
-              + '<button class="btn-apply" onclick="applyDropdown('+c.id+')">Apply</button>'
+      actions = '<select class="status-select" id="sel-'+c.id+'" data-current="'+c.status+'" onchange="onDropdownChange('+c.id+',this.value)">'+selHtml+'</select>'
+              + '<button class="btn-apply" id="apply-'+c.id+'" onclick="applyDropdown('+c.id+')" disabled>Apply</button>'
               + threeDotsMenu;
     } else if (isTBO) {
       actions = '<button class="btn btn-secondary btn-sm" onclick="openReceivedModal('+c.id+')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button>'
@@ -524,13 +524,18 @@ function buildCard(c) {
 
 // ── Dropdown helpers (v8-style for Assigned/Scheduled) ─────────────────────────
 function onDropdownChange(id, val) {
+  var sel = document.getElementById('sel-'+id);
+  var applyBtn = document.getElementById('apply-'+id);
+  var current = sel ? sel.dataset.current : '';
+  if (applyBtn) applyBtn.disabled = (val === current);
   if (val === 'scheduled') { openSlotModal(id); }
   else if (val === 'delivered') { openDeliverModal(id); }
 }
 
 async function applyDropdown(id) {
-  var val = document.getElementById('sel-'+id) ? document.getElementById('sel-'+id).value : '';
-  if (!val) return;
+  var sel = document.getElementById('sel-'+id);
+  var val = sel ? sel.value : '';
+  if (!val || val === sel.dataset.current) return;
   if (val === 'scheduled') { openSlotModal(id); return; }
   if (val === 'delivered') { openDeliverModal(id); return; }
   if (val === 'cancelled') {

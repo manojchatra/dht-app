@@ -1122,6 +1122,9 @@ async function goToPreview(){
   if(!data.customer.name){showToast('Customer name is required','error');return;}
   if(!data.salesman){showToast('Salesman name is required','error');return;}
   if(!data.service.inTownDelivery && !data.service.outOfTownDelivery){showToast('Please select In-Town or Out-of-Town Delivery','error');return;}
+  if(data.service.crane && !data.service.craneFee){showToast('Please enter a Crane fee','error');return;}
+  if(data.service.outOfTownDelivery && !data.service.outOfTownDeliveryFee){showToast('Please enter an Out-of-Town Delivery fee','error');return;}
+  if(data.service.outOfTownWarranty && !data.service.outOfTownWarrantyFee){showToast('Please enter an Out-of-Town Warranty fee','error');return;}
 
   // Past delivery date + unpaid balance warning
   if(data.deliveryDate){

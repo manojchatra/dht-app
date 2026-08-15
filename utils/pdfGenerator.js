@@ -254,11 +254,11 @@ async function generateContractPDF(contract) {
           { columns:[ cb('In-Town Delivery',sv.inTownDelivery), cb('Crane',sv.crane) ]},
           sv.craneFee?{ text:'Crane Fee: $'+sv.craneFee, fontSize:7, color:C.dark, margin:[0,1,0,3] }:{text:''},
           sv.outOfTownDelivery
-            ?{ text:[{text:'\u2713 ',color:C.green,bold:true},'Out-of-Town Delivery: $'+(sv.outOfTownDeliveryFee||'\u2014')], fontSize:7.5, margin:[0,1,0,1] }
-            :cb('Out-of-Town Delivery',false),
+            ? cb('Out-of-Town Delivery: $'+(sv.outOfTownDeliveryFee||'\u2014'), true)
+            : cb('Out-of-Town Delivery', false),
           sv.outOfTownWarranty
-            ?{ text:[{text:'\u2713 ',color:C.green,bold:true},'Out-of-Town Warranty: $'+(sv.outOfTownWarrantyFee||'\u2014')], fontSize:7.5, margin:[0,1,0,1] }
-            :cb('Out-of-Town Warranty',false),
+            ? cb('Out-of-Town Warranty: $'+(sv.outOfTownWarrantyFee||'\u2014'), true)
+            : cb('Out-of-Town Warranty', false),
         ]},
         { width:'*', stack:[
           { text:'Electrical', fontSize:7, bold:true, margin:[0,0,0,3] },

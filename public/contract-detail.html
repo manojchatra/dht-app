@@ -513,7 +513,7 @@ function renderDetail(c) {
   document.getElementById('detailContent').innerHTML =
     '<div class="action-bar-detail">' +
       '<a href="/api/contracts/' + c.id + '/pdf" class="btn btn-secondary" download><i class="fa-solid fa-download"></i> Download PDF</a>' +
-      '<button class="btn btn-success" onclick="openPaymentModal()"><i class="fa-solid fa-money-bill-wave"></i> Record Payment</button>' +
+      '<button class="btn btn-success" onclick="openPaymentModal()"' + (balDue<=0 ? ' disabled style="opacity:.4" title="Contract is fully paid"' : '') + '><i class="fa-solid fa-money-bill-wave"></i> Record Payment</button>' +
       '<button class="btn btn-secondary" onclick="openDetailAddImage()"><i class="fa-solid fa-image"></i> Add Image</button>' +
       ((c.status==='tbo'||c.status==='scheduled') ? '<button class="btn btn-secondary" onclick="openDetailSerial()"><i class="fa-solid fa-barcode"></i> Assign SI. No</button>' : '') +
       (isAdmin && c.status==='delivered' && c.acknowledgement_pdf ? '<button class="btn btn-secondary" onclick="openSendAckModal()"><i class="fa-solid fa-paper-plane"></i> Send Acknowledgement</button>' : '') +
@@ -576,15 +576,15 @@ function renderDetail(c) {
       '<div>' +
         cbHtml('Pamphlet Provided', el.pamphletProvided) +
         cbHtml('Own Electrician & Waiver', el.ownElectrician) +
-        (el.notes ? '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Note: ' + el.notes + '</div>' : '') +
+        '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Note: ' + (el.notes || 'No Note Available') + '</div>' +
       '</div>' +
     '</div></div>' +
 
-    (mi.notes || mi.monthlyCleanings ? '<div class="detail-section"><h3><i class="fa-solid fa-note-sticky"></i> Miscellaneous</h3>' +
-      (mi.notes ? '<p style="font-size:13px;margin-bottom:8px">' + mi.notes + '</p>' : '') +
+    '<div class="detail-section"><h3><i class="fa-solid fa-note-sticky"></i> Miscellaneous</h3>' +
+      '<p style="font-size:13px;margin-bottom:8px">' + (mi.notes || 'No Note Available') + '</p>' +
       cbHtml('Monthly Cleanings', mi.monthlyCleanings) +
       (mi.monthlyCleanings ? '<div style="font-size:12px;color:var(--text-muted)">' + (mi.cleaningPrice ? '$' + mi.cleaningPrice + '/mo' : 'Price not set') + '</div>' : '') +
-    '</div>' : '') +
+    '</div>' +
 
     '<div class="detail-section"><h3><i class="fa-solid fa-list"></i> Details &amp; Line Items</h3>' +
     '<table class="line-items-table"><thead><tr><th>Item</th><th>Options</th><th style="text-align:right">Price</th><th style="text-align:center">Incl.</th></tr></thead><tbody>' +
