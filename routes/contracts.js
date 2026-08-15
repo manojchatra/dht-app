@@ -303,7 +303,7 @@ router.post('/', uploadFields, async (req, res) => {
     // 4. Summary fields
     const cover       = summariseCover(details?.cover);
     const steps       = details?.steps?.type || '';
-    const waterCare   = details?.waterCare?.type || '';
+    const waterCare   = details?.waterCareSystem?.type || '';
     const accessories = summariseAccessories(details?.accessories);
     const paid        = extractPaid(payment);
     const pending     = payment?.duePriorToDelivery || '';
