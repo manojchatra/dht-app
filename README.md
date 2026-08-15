@@ -29,11 +29,14 @@ For full feature documentation, workflows, and cumulative technical learnings, s
 ├── utils/                  pdfGenerator, acknowledgementPDF, receiptGenerator,
 │                          emailSender, imageUtils, activityLogger
 ├── public/                 Source HTML pages (login, dashboard, contracts, etc.)
+│   └── js/util.js          Shared escHtml() — escape any user-entered string before innerHTML
 ├── ecosystem.config.js    PM2 process config
 └── nginx.ssl.conf_proxy   nginx reverse-proxy snippet for the Node app
 ```
 
 **Note on deployed pages:** in production, the HTML pages served by `server.js`'s page routes are read from `/home/DHT/web/app.deserthottubsaz.com/public_html/` on the VPS, not from this repo's local `public/` folder directly — keep both in sync when deploying.
+
+**Static asset gotcha:** `server.js` also serves `/css`, `/img`, and `/js` via `express.static(path.join(__dirname, 'public/...'))` — i.e. from `/home/DHT/dht-app/public/`, a *different* location than `public_html/` above. On the VPS this folder didn't exist at all (css/img have historically worked because Hestia's nginx template serves them directly from `public_html/`, bypassing Node — but that rule doesn't know about new folders). Fix applied: `ln -s /home/DHT/web/app.deserthottubsaz.com/public_html /home/DHT/dht-app/public`, mirroring how local dev already works. If a *new* top-level static folder is ever added under `public/`, re-verify this symlink still covers it, or add nginx rules to match.
 
 ## Local Development
 
@@ -62,6 +65,8 @@ SESSION_SECRET=
 
 `.env` values containing `$` should be single-quoted (e.g. `SMTP_PASS='value$$'`) to avoid shell/dotenv expansion issues.
 
+**`SESSION_SECRET` is mandatory** — `server.js` throws at startup and refuses to boot if it's missing (previously fell back to a hardcoded default silently; now fails fast instead). Always confirm it's set in `.env` before restarting on any environment.
+
 ## Deployment (Contabo VPS, Hestia Control Panel)
 
 The app runs under PM2 on port 3001, behind nginx (Hestia-managed) which terminates SSL and reverse-proxies to Node.
@@ -79,6 +84,10 @@ Static HTML page edits (files under `public/`, deployed to `.../public_html/`) t
 sudo /usr/local/hestia/bin/v-change-web-domain-tpl DHT app.deserthottubsaz.com dht-node
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+**`X-Forwarded-Proto` is required for secure cookies.** `server.js` sets `app.set('trust proxy', 1)` and the session cookie is `secure: true` in production. `express-session` silently withholds `Set-Cookie` entirely (not even a non-secure one) if it doesn't believe the request came in over HTTPS — which it determines from `X-Forwarded-Proto`. Every `location` block in `nginx.ssl.conf_proxy` that proxies to Node must set `proxy_set_header X-Forwarded-Proto $scheme;` (along with `X-Real-IP` / `X-Forwarded-For`, needed for correct login rate-limiting). Missing this manifests as: login returns `200` with a valid session, but every subsequent request bounces back to `/login` — the cookie was simply never issued. Verify with `curl -i` on `/auth/login` and check for a `set-cookie` line in the raw response.
+
+**Don't leave backup copies of `nginx.ssl.conf_proxy` in the same directory.** Hestia's include mechanism appears to pattern-match anything containing `conf_proxy` in `/home/DHT/conf/web/app.deserthottubsaz.com/`, not just the exact filename — a `nginx.ssl.conf_proxy.bak` sitting alongside the real file gets included too, causing `nginx: [emerg] duplicate location "/"`. Move backups outside that directory (e.g. `/root/`) instead.
 
 ## Known Limitations
 

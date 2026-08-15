@@ -25,15 +25,19 @@ Contabo VPS (Ubuntu 24) — IP: 164.68.120.23
 │   │                   receiptGenerator.js, emailSender.js,
 │   │                   imageUtils.js, activityLogger.js
 │   ├── db/database.js
+│   ├── public/ → symlinked to public_html/ (see gotcha below)
 │   └── uploads/contracts/
 ├── /home/DHT/data/dht-app.db
 ├── /home/DHT/data/activity.log      ← append-only text audit trail
-└── /home/DHT/web/.../public_html/   ← Static HTML pages
+└── /home/DHT/web/.../public_html/   ← Static HTML pages + css/img/js/
 ```
  
 **nginx.ssl.conf_proxy includes:**
 - `location = /acknowledgement` → proxied to Node (hub page)
 - `location ~ ^/(delivery|acknowledgement)/[0-9]+$` → proxied to Node
+- `location /` → catch-all proxy to Node (all other routes, incl. `/auth/login`, API)
+- `location /uploads/` → `alias` directly to `/home/DHT/dht-app/uploads/` (nginx serves these, not Node)
+- Every proxied block sets `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` — required for the login rate-limiter (real client IP) and secure session cookies (real protocol); see Key Technical Learnings.
 ---
  
 ## Environment Variables (.env)
@@ -242,6 +246,12 @@ All time displays use `America/Phoenix` (MST, no DST):
 | PM2 cluster + MemoryStore | Sessions per-process. Run `pm2 start -i 1` (single instance) as workaround. |
 | nginx try_files | `/acknowledgement` (no ID) needs `location = /acknowledgement` exact match — otherwise nginx 404 before Node |
 | formatSlot timezone | `toLocaleTimeString()` uses browser timezone without explicit `timeZone: 'America/Phoenix'` option |
+| trust proxy + secure cookies | `cookie.secure:true` behind nginx requires `app.set('trust proxy', 1)` **and** nginx forwarding `X-Forwarded-Proto` on every proxied location block — otherwise `express-session` silently withholds `Set-Cookie` entirely (login returns 200, but no cookie is ever issued; every next request bounces to `/login`). Diagnose with `curl -i` on `/auth/login`, check for `set-cookie` in the raw response. |
+| Hestia `conf_proxy` glob include | Hestia's include for a domain's conf dir appears to match any filename containing `conf_proxy`, not just the exact name — a `nginx.ssl.conf_proxy.bak` left alongside the real file gets included too, causing `duplicate location "/"`. Keep backups outside that directory. |
+| Node's own static routes vs Hestia | `server.js` serves `/css`, `/img`, `/js` from `/home/DHT/dht-app/public/` — a different path than `public_html/`. That folder didn't exist on the VPS at all; `css`/`img` worked anyway because Hestia's nginx template serves them straight from `public_html/`, bypassing Node — a rule that doesn't know about newly-added folders like `/js`. Fixed with `ln -s public_html /home/DHT/dht-app/public`. |
+| Stored XSS via innerHTML | Any user-entered string (notes, names, addresses, emails, `concerns_text`) concatenated into `innerHTML` without escaping is a stored-XSS path from a low-privilege role (sales) into a higher one (admin) viewing the same page. Fixed with a shared `escHtml()` in `public/js/util.js`, applied at every such sink. |
+| Payment method fields must be conditionally required | Selecting Cheque/Credit Card/Finance without their identifying detail (number / last 4 / lender) let a contract save with an unusable payment record, silently. Validate both client-side (`create-contract.html`) and server-side (`routes/contracts.js` `POST /`) — server-side is the real guarantee. |
+| Field name drift: `data` blob vs Sheets summary | `routes/contracts.js`'s Sheets summary read `details.waterCare.type`, but the form actually sends `details.waterCareSystem`. No error anywhere — just a silently blank Water Care column on every new contract. Worth periodically grepping the summary-building code against the actual form field names in `create-contract.html`. |
  
 ---
  
@@ -257,6 +267,7 @@ All time displays use `America/Phoenix` (MST, no DST):
 | V10 | Delivery role, acknowledgement form, Google Calendar, Brevo email |
 | V11 | Bug fixes: goToDelivery, _onAuthReady, PNG ticks, customer name, SMTP_FROM, nav fixes |
 | V12 | Delivery photos, compression everywhere, activity log, dashboard notifications, MST timezone, mobile responsive, logo branding all PDFs, water care checkboxes, body flash fix, Received nav all pages |
+| V13 | Security hardening: stored-XSS escaping (`escHtml()` across 13 pages), login rate-limiter fixed to key off real client IP (`trust proxy` + nginx `X-Forwarded-For`), secure session cookies + mandatory `SESSION_SECRET`, payment amount validation. Bug fixes: payment method fields (cheque #, CC last 4, finance lender) now required when selected; Water Care column no longer blank in Google Sheets on contract creation. |
  
 ---
  
