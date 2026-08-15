@@ -221,6 +221,27 @@ router.post('/', uploadFields, async (req, res) => {
     const formData = JSON.parse(req.body.data);
     const { customer, product, payment, costing, details } = formData; // full formData for extraction
 
+    // 0. Validate payment method requirements
+    const payErrors = [];
+    if (payment?.cheque?.selected) {
+      if (!payment.cheque.number) payErrors.push('Cheque number is required');
+      if (!(parseFloat(payment.cheque.amount) > 0)) payErrors.push('Cheque amount is required');
+    }
+    if (payment?.cash?.selected) {
+      if (!(parseFloat(payment.cash.amount) > 0)) payErrors.push('Cash amount is required');
+    }
+    if (payment?.creditCard?.selected) {
+      if (!payment.creditCard.lastFour) payErrors.push('Credit card last 4 digits are required');
+      if (!(parseFloat(payment.creditCard.amount) > 0)) payErrors.push('Credit card amount is required');
+    }
+    if (payment?.finance?.selected) {
+      if (!payment.finance.plan) payErrors.push('Finance lender/plan name is required');
+      if (!(parseFloat(payment.finance.amount) > 0)) payErrors.push('Finance amount is required');
+    }
+    if (payErrors.length) {
+      return res.status(400).json({ error: payErrors[0], errors: payErrors });
+    }
+
     // 1. Upsert customer
     let customerId;
     const existing = db.prepare(

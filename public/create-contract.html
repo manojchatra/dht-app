@@ -1126,6 +1126,23 @@ async function goToPreview(){
   if(data.service.outOfTownDelivery && !data.service.outOfTownDeliveryFee){showToast('Please enter an Out-of-Town Delivery fee','error');return;}
   if(data.service.outOfTownWarranty && !data.service.outOfTownWarrantyFee){showToast('Please enter an Out-of-Town Warranty fee','error');return;}
 
+  var pm=data.payment||{};
+  if(pm.cheque&&pm.cheque.selected){
+    if(!pm.cheque.number){showToast('Cheque number is required','error');return;}
+    if(!(parseFloat(pm.cheque.amount)>0)){showToast('Cheque amount is required','error');return;}
+  }
+  if(pm.cash&&pm.cash.selected){
+    if(!(parseFloat(pm.cash.amount)>0)){showToast('Cash amount is required','error');return;}
+  }
+  if(pm.creditCard&&pm.creditCard.selected){
+    if(!pm.creditCard.lastFour){showToast('Credit card last 4 digits are required','error');return;}
+    if(!(parseFloat(pm.creditCard.amount)>0)){showToast('Credit card amount is required','error');return;}
+  }
+  if(pm.finance&&pm.finance.selected){
+    if(!pm.finance.plan){showToast('Finance lender/plan name is required','error');return;}
+    if(!(parseFloat(pm.finance.amount)>0)){showToast('Finance amount is required','error');return;}
+  }
+
   // Past delivery date + unpaid balance warning
   if(data.deliveryDate){
     var delDate=new Date(data.deliveryDate+'T00:00:00');
