@@ -95,9 +95,9 @@
     <!-- Change password -->
     <div class="card">
       <div class="card-header"><i class="fa-solid fa-key"></i>Change Password</div>
-      <div class="form-row"><label>Current Password</label><input type="password" id="curPw" placeholder="Current password"></div>
-      <div class="form-row"><label>New Password</label><input type="password" id="newPw" placeholder="Min 6 characters"></div>
-      <div class="form-row"><label>Confirm New Password</label><input type="password" id="confPw" placeholder="Confirm"></div>
+      <div class="form-row"><label>Current Password</label><input type="password" id="curPw" placeholder="Current password" autocomplete="new-password"></div>
+      <div class="form-row"><label>New Password</label><input type="password" id="newPw" placeholder="Min 6 characters" autocomplete="new-password"></div>
+      <div class="form-row"><label>Confirm New Password</label><input type="password" id="confPw" placeholder="Confirm" autocomplete="new-password"></div>
       <button class="btn btn-primary" onclick="changePassword()"><i class="fa-solid fa-floppy-disk"></i> Save Password</button>
     </div>
 
@@ -126,8 +126,8 @@
     <div style="margin-bottom:16px;padding:14px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
       <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Add New User</div>
       <div class="inline-form">
-        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Username</label><input type="text" id="newUserName" placeholder="Username"></div>
-        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Password</label><input type="password" id="newUserPw" placeholder="Password"></div>
+        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Username</label><input type="text" id="newUserName" placeholder="Username" autocomplete="off"></div>
+        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Password</label><input type="password" id="newUserPw" placeholder="Password" autocomplete="new-password"></div>
         <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Role</label><select id="newUserRole" onchange="onRoleChange(this.value,'newUserTeam')">
     <option value="sales">Sales</option>
     <option value="admin">Admin</option>
@@ -155,7 +155,7 @@
     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Set a new password for <strong id="resetPwUserName"></strong>.</p>
     <div style="margin-bottom:14px">
       <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">New Password</label>
-      <input type="password" id="resetPwInput" placeholder="Min 6 characters" style="width:100%">
+      <input type="password" id="resetPwInput" placeholder="Min 6 characters" style="width:100%" autocomplete="new-password">
     </div>
     <div id="resetPwError" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
