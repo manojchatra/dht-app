@@ -228,8 +228,8 @@ async function loadCalendar() {
     ? scheduled.filter(c => !c.delivery_team || c.delivery_team === userTeam)
     : scheduled;
 
-  const TEAM_COLORS = { team_a:'#4f46e5', team_b:'#059669' };
-  const TEAM_BORDERS = { team_a:'#4338ca', team_b:'#047857' };
+  const TEAM_COLORS = { team_a:'#673116', team_b:'#059669' };
+  const TEAM_BORDERS = { team_a:'#4a230f', team_b:'#047857' };
 
   const events = filtered.map(c => {
     const dur   = parseInt(c.scheduled_duration||120);
@@ -239,8 +239,8 @@ async function loadCalendar() {
       title: (c.contract_number||'')+'|'+(c.customer_name||'')+'|'+(c.make||'')+' '+(c.model||'')+'|'+(c.serial_number||'')+'|'+(c.salesman||'')+'|'+(c.address||'')+(c.city?', '+c.city:''),
       start: c.scheduled_datetime,
       end:   addMinutesPhoenix(c.scheduled_datetime, dur),
-      backgroundColor: TEAM_COLORS[c.delivery_team] || '#4f46e5',
-      borderColor:     TEAM_BORDERS[c.delivery_team] || '#4338ca',
+      backgroundColor: TEAM_COLORS[c.delivery_team] || '#673116',
+      borderColor:     TEAM_BORDERS[c.delivery_team] || '#4a230f',
       extendedProps: {
         contractNumber: c.contract_number,
         customerName:   c.customer_name,
