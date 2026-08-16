@@ -17,7 +17,7 @@ const {
   updateReceivedSerial, deleteInventoryRow
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
-const { requireAdmin }        = require('../middleware/auth');
+const { requireAdmin, requireRole } = require('../middleware/auth');
 
 // ── Multer ────────────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
@@ -467,10 +467,13 @@ function buildDriveData(contract, customer, formData) {
 }
 
 // ── Update status ─────────────────────────────────────────────────────────────
-router.patch('/:id/status', requireAdmin, async (req, res) => {
+router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => {
   const VALID = ['assigned','tbo','scheduled','delivered','cancelled','received'];
   const { status, deliveryDate, scheduledDatetime, scheduledDuration } = req.body;
   if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  if (req.session.role === 'sales' && status !== 'scheduled') {
+    return res.status(403).json({ error: 'Forbidden — only scheduling is allowed for this role' });
+  }
 
   try {
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
@@ -502,6 +505,11 @@ router.patch('/:id/status', requireAdmin, async (req, res) => {
     // Serial number required for Delivered
     if (status === 'delivered' && !contract.serial_number) {
       return res.status(400).json({ error: 'Serial number required before marking as Delivered. Use Assign SI. No first.' });
+    }
+
+    // Serial number required before Scheduling (can't acknowledge delivery without one)
+    if (status === 'scheduled' && !contract.serial_number) {
+      return res.status(400).json({ error: 'Serial number required before scheduling. Use Assign SI. No first.' });
     }
 
     // Scheduled requires datetime
@@ -662,7 +670,7 @@ router.patch('/:id/serial', requireAdmin, async (req, res) => {
 });
 
 // ── Mark as Received (TBO only) — requires serial + photo ────────────────────
-router.post('/:id/received', requireAdmin, (req, res) => {
+router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
   uploadSerial(req, res, async (err) => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     const { serialNumber, receivedDate } = req.body;

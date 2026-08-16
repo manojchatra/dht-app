@@ -26,4 +26,15 @@ function requireAdmin(req, res, next) {
   res.status(403).send('Forbidden');
 }
 
-module.exports = { requireAuth, requireAuthAPI, requireAdmin };
+/** Require one of the given roles */
+function requireRole(roles) {
+  return (req, res, next) => {
+    if (req.session && roles.includes(req.session.role)) return next();
+    if (req.xhr || req.path.startsWith('/api/')) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    res.status(403).send('Forbidden');
+  };
+}
+
+module.exports = { requireAuth, requireAuthAPI, requireAdmin, requireRole };

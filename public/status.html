@@ -434,6 +434,7 @@ const _schedData = {};
 
 function buildCard(c) {
   const isAdmin    = window._userRole === 'admin';
+  const isSales    = window._userRole === 'sales';
   const dateStr    = c.date ? new Date(c.date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
   const isDelivered = c.status === 'delivered';
   const isTBO       = c.status === 'tbo';
@@ -441,7 +442,7 @@ function buildCard(c) {
   const isAssigned  = c.status === 'assigned';
   const isScheduled = c.status === 'scheduled';
   const isCancelled = c.status === 'cancelled';
-  const needsSerial = !c.serial_number && (isTBO || isReceived || isScheduled);
+  const needsSerial = !c.serial_number && (isAssigned || isTBO || isReceived || isScheduled);
 
   // Extra status info
   let extraInfo = '';
@@ -503,6 +504,17 @@ function buildCard(c) {
     } else if (isCancelled) {
       actions = '<button class="btn btn-secondary btn-sm" onclick="revertToAssigned('+c.id+')"><i class="fa-solid fa-rotate-left"></i> Revert to Assigned</button>'
               + threeDotsMenu;
+    }
+  } else if (isSales) {
+    if (isAssigned) {
+      actions = '<button class="btn btn-secondary btn-sm" onclick="openSlotModal('+c.id+')"><i class="fa-solid fa-calendar-check"></i> Schedule</button>';
+    } else if (isTBO) {
+      actions = '<button class="btn btn-secondary btn-sm" onclick="openReceivedModal('+c.id+')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button>';
+    } else if (isReceived) {
+      actions = '<button class="btn btn-secondary btn-sm" onclick="openSlotModal('+c.id+')"><i class="fa-solid fa-calendar-check"></i> Schedule</button>';
+    } else if (isScheduled) {
+      _schedData[c.id] = { dt: c.scheduled_datetime||'', dur: c.scheduled_duration||120, team: c.delivery_team||'team_a' };
+      actions = '<button class="btn btn-secondary btn-sm" onclick="openReschedule('+c.id+')"><i class="fa-solid fa-calendar"></i> Reschedule</button>';
     }
   }
   if (isDelivered) {
