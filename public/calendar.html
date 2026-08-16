@@ -43,7 +43,7 @@
 .fc-daygrid-event { white-space:nowrap; overflow:hidden; margin-top:2px; }
 .fc-timegrid-event { border-radius:8px; padding:2px; }
 .fc-timegrid-slot { height:60px !important; }
-.fc-timegrid-event-harness:has(.event-day) { height:158px !important; }
+.fc-timegrid-event:has(.event-day) { overflow-y:auto; }
 
 @media(max-width:768px){
   .fc-toolbar-title { font-size:15px !important; }
@@ -56,8 +56,9 @@
 .event-time .ev-num { font-weight:600; display:block; }
 .event-time .ev-model { opacity:.75; display:block; font-size:10px; }
 .event-time .ev-addr { opacity:.65; display:block; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.event-day { line-height:1.2; }
 .event-day .ev-num { font-weight:700; font-size:12px; display:block; }
-.event-day .ev-name { font-size:11px; display:block; margin-top:1px; }
+.event-day .ev-name { font-size:11px; display:block; }
 .event-day .ev-model { font-size:11px; opacity:.8; display:block; }
 .event-day .ev-serial { font-size:10px; opacity:.7; display:block; }
 .event-day .ev-sal { font-size:10px; opacity:.7; display:block; }
@@ -290,7 +291,7 @@ async function loadCalendar() {
         return { html: '<div class="event-time"><span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span><span class="ev-model">'+escHtml(p.customerName||'')+'</span><span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span></div>' };
       } else {
         // Day view — full detail
-        return { html: '<div class="event-day" style="padding:4px">'
+        return { html: '<div class="event-day" style="padding:3px">'
           +'<span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span>'
           +'<span class="ev-name">'+escHtml(p.customerName||'')+'</span>'
           +'<span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span>'

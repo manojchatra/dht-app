@@ -745,13 +745,17 @@ router.get('/:id/pdf', async (req, res) => {
       WHERE c.id=?`).get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
 
+    const custName  = (JSON.parse(row.data || '{}').customer?.name) || row.customer_name || 'Customer';
+    const safeName  = custName.replace(/[^a-zA-Z0-9 -]/g,'').trim().replace(/\s+/g,'-').slice(0,30) || 'Customer';
+    const pdfFilename = safeName + '-' + row.contract_number + '.pdf';
+
     // Serve cached PDF if it exists
     const pdfDir  = path.join(__dirname, '../uploads/contracts', row.contract_number);
     const pdfPath = path.join(pdfDir, 'contract.pdf');
     if (fs.existsSync(pdfPath)) {
       const buf = fs.readFileSync(pdfPath);
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename="contract-' + row.contract_number + '.pdf"');
+      res.setHeader('Content-Disposition', 'attachment; filename="' + pdfFilename + '"');
       res.setHeader('Content-Length', buf.length);
       return res.end(buf);
     }
@@ -762,7 +766,7 @@ router.get('/:id/pdf', async (req, res) => {
     fs.mkdirSync(pdfDir, { recursive: true });
     fs.writeFileSync(pdfPath, buf);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="contract-' + row.contract_number + '.pdf"');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + pdfFilename + '"');
     res.setHeader('Content-Length', buf.length);
     res.end(buf);
   } catch (err) {
