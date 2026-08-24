@@ -396,11 +396,11 @@ async function generateContractPDF(contract) {
           {text:de.fuelSurcharge.price?'$'+de.fuelSurcharge.price:'\u2014',fontSize:8,alignment:'right',margin:[3,5,3,5]},
           {text:'',margin:[3,5,3,5]},
         ]]:[]),
-        // Concierge Service (post-tax)
-        ...((de.concierge&&de.concierge.yes)?[[
-          {text:'Concierge Service',fontSize:8,margin:[3,5,3,5]},
-          {text:'Yes',fontSize:8,bold:true,color:C.dark,margin:[3,5,3,5]},
-          {text:de.concierge.price?'$'+de.concierge.price:'\u2014',fontSize:8,alignment:'right',margin:[3,5,3,5]},
+        // Discount (subtracted from grand total)
+        ...((de.discount&&de.discount.yes)?[[
+          {text:'Discount',fontSize:8,margin:[3,5,3,5]},
+          {text:de.discount.reason||'',fontSize:8,bold:true,color:C.dark,margin:[3,5,3,5]},
+          {text:de.discount.amount?'-$'+de.discount.amount:'\u2014',fontSize:8,alignment:'right',margin:[3,5,3,5]},
           {text:'',margin:[3,5,3,5]},
         ]]:[]),
       ]},
@@ -415,6 +415,7 @@ async function generateContractPDF(contract) {
         co.taxAmount   ?[{text:'Tax ('+(co.taxPercent||'')+'%)',fontSize:8},{text:'$'+co.taxAmount,fontSize:8,alignment:'right'}]:null,
         co.productTotal?[{text:'Product Total',fontSize:8},{text:'$'+co.productTotal,fontSize:8,alignment:'right'}]:null,
         co.serviceTotal?[{text:'Service Total',fontSize:8},{text:'$'+co.serviceTotal,fontSize:8,alignment:'right'}]:null,
+        co.discountAmount?[{text:'Discount',fontSize:8},{text:'-$'+co.discountAmount,fontSize:8,alignment:'right'}]:null,
         [{text:'GRAND TOTAL',fontSize:10,bold:true,color:C.blue},{text:co.grandTotal?'$'+co.grandTotal:'\u2014',fontSize:10,bold:true,alignment:'right',color:C.blue}],
       ].filter(Boolean)},
       layout:{ hLineColor:()=>C.border, vLineColor:()=>'white', hLineWidth:()=>0.4 },

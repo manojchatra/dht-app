@@ -540,13 +540,16 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     </div>
 
     <div class="detail-row">
-      <div><div class="detail-label">Concierge Service <span style="font-size:10px;color:var(--text-muted)">(post-tax service charge)</span></div>
+      <div><div class="detail-label">Discount <span style="font-size:10px;color:var(--text-muted)">(subtracted from grand total)</span></div>
         <div class="detail-sub cb-row">
-          <label class="cb-item"><input type="radio" name="concierge" value="yes" onchange="recalcAll()"> Yes</label>
-          <label class="cb-item"><input type="radio" name="concierge" value="no" onchange="recalcAll()"> No</label>
+          <label class="cb-item"><input type="radio" name="discount" value="yes" onchange="onDiscountChange()"> Yes</label>
+          <label class="cb-item"><input type="radio" name="discount" value="no" onchange="onDiscountChange()"> No</label>
+        </div>
+        <div id="discountReasonRow" style="display:none;margin-top:8px">
+          <textarea id="dtDiscountReason" rows="2" style="width:100%;resize:vertical" placeholder="What sort of discount is this?"></textarea>
         </div>
       </div>
-      <input type="text" id="dtConciergePrice" placeholder="$" oninput="recalcAll()">
+      <input type="text" id="dtDiscountPrice" placeholder="$" oninput="recalcAll()">
       <label class="incl-toggle" style="opacity:.4">-</label>
     </div>
   </div>
@@ -564,6 +567,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
       </div>
       <div class="costing-row"><span>Product Total</span><input type="text" id="costProductTotal" placeholder="$0"></div>
       <div class="costing-row"><span>Service Total</span><input type="text" id="costServiceTotal" placeholder="$0"></div>
+      <div class="costing-row"><span>Discount</span><input type="text" id="costDiscountAmt" placeholder="$0"></div>
       <div class="costing-row"><span style="font-weight:600">Grand Total</span><input type="text" id="costGrandTotal" placeholder="$0" oninput="recalcDuePrior()"></div>
     </div>
   </div>
@@ -1107,9 +1111,9 @@ function collectData(){
       accessories:{items:mc('.acc-item'),other:v('accOther'),price:v('dtAccPrice'),included:cb('#dtAccIncl')},
       spaRemoval:{yes:rd('spaRemoval')==='yes',price:v('dtSpaRemovalPrice')},
       fuelSurcharge:{yes:rd('fuelSurcharge')==='yes',price:v('dtFuelPrice')},
-      concierge:{yes:rd('concierge')==='yes',price:v('dtConciergePrice')},
+      discount:{yes:rd('discount')==='yes',amount:v('dtDiscountPrice'),reason:v('dtDiscountReason')},
     },
-    costing:{subtotal:v('costSubtotal'),taxPercent:v('costTaxPct'),taxAmount:v('costTaxAmt'),productTotal:v('costProductTotal'),serviceTotal:v('costServiceTotal'),grandTotal:v('costGrandTotal')},
+    costing:{subtotal:v('costSubtotal'),taxPercent:v('costTaxPct'),taxAmount:v('costTaxAmt'),productTotal:v('costProductTotal'),serviceTotal:v('costServiceTotal'),discountAmount:v('dtDiscountPrice'),grandTotal:v('costGrandTotal')},
     payment:{
       cheque:{selected:cb('#payChequeSel'),number:v('payChequeNum'),amount:v('payChequeAmt')},
       creditCard:{selected:cb('#payCCSel'),lastFour:v('payCCLastFour'),amount:v('payCCAmt')},
@@ -1229,6 +1233,16 @@ function onSubpanelChange(){
   }
 }
 
+function onDiscountChange(){
+  var yes=rdVal('discount')==='yes';
+  document.getElementById('discountReasonRow').style.display=yes?'block':'none';
+  if(!yes){
+    document.getElementById('dtDiscountReason').value='';
+    document.getElementById('dtDiscountPrice').value='';
+  }
+  recalcAll();
+}
+
 function recalcAll(){
   // Product items (Included items contribute $0 to Subtotal)
   var spa      = cbVal('dtSpaIncl')          ? 0 : numVal('dtSpaPrice');
@@ -1254,15 +1268,16 @@ function recalcAll(){
   // as a customer-notification note only (see contract-detail.html / pdfGenerator.js).
   var spaRem   = rdVal('spaRemoval')==='yes'    ? numVal('dtSpaRemovalPrice') : 0;
   var fuel     = rdVal('fuelSurcharge')==='yes' ? numVal('dtFuelPrice')       : 0;
-  var conci    = rdVal('concierge')==='yes'     ? numVal('dtConciergePrice')  : 0;
-  var serviceTotal = Math.round(crane+outTown+spaRem+fuel+conci);
-  var grandTotal   = productTotal + serviceTotal;
+  var serviceTotal = Math.round(crane+outTown+spaRem+fuel);
+  var discount     = rdVal('discount')==='yes'  ? numVal('dtDiscountPrice')   : 0;
+  var grandTotal   = Math.max(0, productTotal + serviceTotal - discount);
 
   function setF(id,val){var el=document.getElementById(id);if(el)el.value=val>0?String(val):'';}
   setF('costSubtotal',    subtotal);
   setF('costTaxAmt',      tax);
   setF('costProductTotal',productTotal);
   setF('costServiceTotal',serviceTotal);
+  document.getElementById('costDiscountAmt').value=discount>0?('-'+discount):'';
   setF('costGrandTotal',  grandTotal);
   recalcDuePrior();
 }

@@ -603,7 +603,7 @@ function renderDetail(c) {
       (de.accessories&&(de.accessories.items&&de.accessories.items.length||de.accessories.other) ? pRow('Accessories', [...(de.accessories.items||[]), de.accessories.other||''].filter(Boolean).join(', '), de.accessories.price, de.accessories.included) : '') +
       (de.spaRemoval&&de.spaRemoval.yes ? pRow('Spa Removal', '', de.spaRemoval.price, false) : '') +
       (de.fuelSurcharge&&de.fuelSurcharge.yes ? pRow('Fuel Surcharge', '', de.fuelSurcharge.price, false) : '') +
-      (de.concierge&&de.concierge.yes ? pRow('Concierge Service', '', de.concierge.price, false) : '') +
+      (de.discount&&de.discount.yes ? '<tr><td>Discount</td><td style="font-size:12px;color:var(--text-muted)">' + (de.discount.reason||'') + '</td><td class="price">-$' + (de.discount.amount||0) + '</td><td class="incl"></td></tr>' : '') +
     '</tbody></table></div>' +
 
     '<div class="detail-section"><h3><i class="fa-solid fa-file-invoice-dollar"></i> Costing &amp; Payment</h3>' +
@@ -612,6 +612,7 @@ function renderDetail(c) {
       (co.taxAmount ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Tax (' + (co.taxPercent||'') + '%)</span><span>$' + co.taxAmount + '</span></div>' : '') +
       (co.productTotal ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Product Total</span><span>$' + co.productTotal + '</span></div>' : '') +
       (co.serviceTotal ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Service Total</span><span>$' + co.serviceTotal + '</span></div>' : '') +
+      (co.discountAmount ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Discount</span><span>-$' + co.discountAmount + '</span></div>' : '') +
       '<div class="totals-box"><div class="grand">Grand Total: $' + (co.grandTotal||'\u2014') + '</div><div style="font-size:13px;margin-top:6px;color:var(--green)">Total Paid: $' + totalPaid.toFixed(2) + '</div></div>' +
       (balDue > 0
         ? '<div class="pending-box"><i class="fa-solid fa-triangle-exclamation"></i> Balance Due: $' + balDue.toFixed(2) + '</div>'

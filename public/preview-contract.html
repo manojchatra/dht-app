@@ -291,7 +291,7 @@ function renderPreview(d){
   if(de.accessories&&(de.accessories.items&&de.accessories.items.length||de.accessories.other)) html+=pRow('Accessories',[...(de.accessories.items||[]),de.accessories.other||''].filter(Boolean).join(', '),de.accessories.price,de.accessories.included);
   if(de.spaRemoval&&de.spaRemoval.yes) html+=pRow('Spa Removal','',de.spaRemoval.price,false);
   if(de.fuelSurcharge&&de.fuelSurcharge.yes) html+=pRow('Fuel Surcharge','',de.fuelSurcharge.price,false);
-  if(de.concierge&&de.concierge.yes) html+=pRow('Concierge Service','',de.concierge.price,false);
+  if(de.discount&&de.discount.yes) html+='<tr><td>Discount</td><td style="font-size:11px;color:var(--text-muted)">'+escHtml(de.discount.reason||'')+'</td><td class="price">-$'+(de.discount.amount||0)+'</td><td class="incl"></td></tr>';
   html+='</tbody></table></div>';
 
   html+='<div class="preview-section"><h3>Costing &amp; Payment</h3><div style="max-width:300px;margin-left:auto;font-size:13px">';
@@ -299,6 +299,7 @@ function renderPreview(d){
   if(co.taxAmount) html+='<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Tax ('+co.taxPercent+'%)</span><span>$'+co.taxAmount+'</span></div>';
   if(co.productTotal) html+='<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Product Total</span><span>$'+co.productTotal+'</span></div>';
   if(co.serviceTotal) html+='<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Service Total</span><span>$'+co.serviceTotal+'</span></div>';
+  if(co.discountAmount) html+='<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Discount</span><span>-$'+co.discountAmount+'</span></div>';
   html+='</div><div class="totals-box"><div class="grand">Grand Total: $'+(co.grandTotal||'\u2014')+'</div></div>';
   if(hasPending) html+='<div class="pending-box"><i class="fa-solid fa-triangle-exclamation"></i> Due Prior to Delivery: $'+pa.duePriorToDelivery+'</div>';
   html+='<div style="margin-top:12px;font-size:13px;line-height:1.9">';
