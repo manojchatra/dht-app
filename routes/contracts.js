@@ -426,7 +426,6 @@ router.post('/', uploadFields, async (req, res) => {
 function buildDriveData(contract, customer, formData) {
   const d  = formData || JSON.parse(contract.data || '{}');
   const de = d.details || {};
-  const pa = d.payment || {};
   function sumCover(cover) {
     if (!cover) return '';
     const parts = [];
@@ -435,15 +434,10 @@ function buildDriveData(contract, customer, formData) {
     if (cover.lift && cover.lift !== 'none') parts.push(cover.lift);
     return parts.join(', ');
   }
-  function extractPaidLocal(payment) {
-    if (!payment) return '';
-    if (payment.cheque && payment.cheque.selected) return payment.cheque.amount || '';
-    if (payment.cash && payment.cash.selected) return payment.cash.amount || '';
-    if (payment.creditCard && payment.creditCard.selected) return 'CC';
-    if (payment.finance && payment.finance.selected) return payment.finance.amount || '';
-    return '';
-  }
   const cu = d.customer || {};
+  const totalPaid  = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contract.id).t;
+  const grandTotal = parseFloat(d.costing?.grandTotal || contract.grand_total || 0);
+  const pendingAmt = Math.max(0, grandTotal - totalPaid);
   return {
     contractNumber: contract.contract_number,
     contractDate:   contract.date || d.date || '',
@@ -461,8 +455,8 @@ function buildDriveData(contract, customer, formData) {
     steps:          de.steps ? de.steps.type || '' : '',
     waterCare:      de.waterCareSystem ? de.waterCareSystem.type || '' : '',
     accessories:    de.accessories ? [...(de.accessories.items||[]), de.accessories.other||''].filter(Boolean).join(', ') : '',
-    paid:           extractPaidLocal(pa),
-    pending:        pa.duePriorToDelivery || '',
+    paid:           totalPaid || '',
+    pending:        pendingAmt || '',
   };
 }
 

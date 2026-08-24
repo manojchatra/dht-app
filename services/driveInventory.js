@@ -447,6 +447,50 @@ async function updateReceivedSerial(contractNumber, serialNumber, serialPhotoUrl
   console.log('[Drive] Updated serial in Received:', contractNumber);
 }
 
+// Update Paid/Pending columns wherever the contract's row currently lives —
+// Paid/Pending column position differs per tab (extra date/photo columns shift it).
+const PAYMENT_COLS = [
+  { name:'TBO',       paidCol:17, pendingCol:18 },
+  { name:'Assigned',  paidCol:17, pendingCol:18 },
+  { name:'Delivered', paidCol:18, pendingCol:19 },
+  { name:'Cancelled', paidCol:18, pendingCol:19 },
+  { name:'Received',  paidCol:19, pendingCol:20 },
+];
+async function updatePaymentInSheet(contractNumber, paid, pending) {
+  const sheets = getSheets();
+  for (const t of PAYMENT_COLS) {
+    const rowIndex = await findRowByContractId(sheets, t.name, contractNumber);
+    if (rowIndex > 0) {
+      await updateCell(sheets, t.name, rowIndex, t.paidCol, paid);
+      await updateCell(sheets, t.name, rowIndex, t.pendingCol, pending);
+      console.log('[Drive] Updated payment in', t.name, ':', contractNumber, 'paid=', paid, 'pending=', pending);
+      return true;
+    }
+  }
+  console.warn('[Drive] Contract not found in any tab for payment update:', contractNumber);
+  return false;
+}
+
+// Diagnostic helper: read back whatever is currently in the Paid/Pending cells
+// for a contract, wherever its row lives. Used by scripts/verify-payment-sync.js.
+async function readPaymentFromSheet(contractNumber) {
+  const sheets = getSheets();
+  for (const t of PAYMENT_COLS) {
+    const rowIndex = await findRowByContractId(sheets, t.name, contractNumber);
+    if (rowIndex > 0) {
+      const paidCol    = String.fromCharCode(64 + t.paidCol);
+      const pendingCol = String.fromCharCode(64 + t.pendingCol);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${t.name}!${paidCol}${rowIndex}:${pendingCol}${rowIndex}`,
+      });
+      const [paidVal, pendingVal] = (res.data.values && res.data.values[0]) || [];
+      return { tab: t.name, row: rowIndex, paid: paidVal, pending: pendingVal };
+    }
+  }
+  return null;
+}
+
 module.exports = {
   searchInventory, getInventory, getLastSynced, invalidateCache,
   deleteInventoryRow,
@@ -455,5 +499,5 @@ module.exports = {
   revertToAssigned, updateTBOSerial, updateRowStatus,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
-  updateReceivedSerial,
+  updateReceivedSerial, updatePaymentInSheet, readPaymentFromSheet,
 };

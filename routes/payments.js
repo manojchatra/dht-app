@@ -44,6 +44,12 @@ router.post('/', async (req, res) => {
     db.prepare('UPDATE contracts SET due_prior=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
       .run(String(newBalance), contractId);
 
+    // Sync updated Paid/Pending to Google Sheets (non-fatal)
+    try {
+      const { updatePaymentInSheet } = require('../services/driveInventory');
+      await updatePaymentInSheet(contract.contract_number, totalPaid, newBalance);
+    } catch(e) { console.error('[Drive payment update failed — non-fatal]', e.message); }
+
     const paymentId = ins.lastInsertRowid;
 
     // Save receipt PDF to contract folder (non-fatal)
