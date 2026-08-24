@@ -339,12 +339,12 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     </div>
     <div class="grid-2">
       <div>
-        <label class="cb-item" style="margin-bottom:6px"><input type="radio" name="deliveryType" id="svcOutTown" onchange="recalcAll()"> Out-of-Town Delivery</label>
+        <label class="cb-item" style="margin-bottom:6px"><input type="radio" name="deliveryType" id="svcOutTown" onchange="onOutTownChange()"> Out-of-Town Delivery</label>
         <input type="text" id="svcOutTownFee" placeholder="Fee $" oninput="recalcAll()">
       </div>
       <div>
         <label class="cb-item" style="margin-bottom:6px"><input type="checkbox" id="svcOutWarranty" onchange="recalcAll()"> Out-of-Town Warranty</label>
-        <input type="text" id="svcOutWarrantyFee" placeholder="Fee $" oninput="recalcAll()">
+        <input type="text" id="svcOutWarrantyFee" placeholder="Fee $ (not added to total)" oninput="recalcAll()">
       </div>
     </div>
   </div>
@@ -1126,7 +1126,6 @@ async function goToPreview(){
   if(!data.service.inTownDelivery && !data.service.outOfTownDelivery){showToast('Please select In-Town or Out-of-Town Delivery','error');return;}
   if(data.service.crane && !data.service.craneFee){showToast('Please enter a Crane fee','error');return;}
   if(data.service.outOfTownDelivery && !data.service.outOfTownDeliveryFee){showToast('Please enter an Out-of-Town Delivery fee','error');return;}
-  if(data.service.outOfTownWarranty && !data.service.outOfTownWarrantyFee){showToast('Please enter an Out-of-Town Warranty fee','error');return;}
 
   var pm=data.payment||{};
   if(pm.cheque&&pm.cheque.selected){
@@ -1211,6 +1210,14 @@ function numVal(id){var el=document.getElementById(id);return el?parseFloat((el.
 function cbVal(id){var el=document.getElementById(id);return el?el.checked:false;}
 function rdVal(name){var el=document.querySelector('[name="'+name+'"]:checked');return el?el.value:'';}
 
+function onOutTownChange(){
+  if(cbVal('svcOutTown')){
+    var w=document.getElementById('svcOutWarranty');
+    if(w) w.checked=true;
+  }
+  recalcAll();
+}
+
 function recalcAll(){
   // Product items (Included items contribute $0 to Subtotal)
   var spa      = cbVal('dtSpaIncl')          ? 0 : numVal('dtSpaPrice');
@@ -1232,11 +1239,12 @@ function recalcAll(){
   // Service items (always post-tax, never Included)
   var crane    = cbVal('svcCrane')              ? numVal('craneFee')          : 0;
   var outTown  = cbVal('svcOutTown')            ? numVal('svcOutTownFee')     : 0;
-  var outWarr  = cbVal('svcOutWarranty')        ? numVal('svcOutWarrantyFee') : 0;
+  // Out-of-Town Warranty fee is intentionally excluded from totals — it's shown
+  // as a customer-notification note only (see contract-detail.html / pdfGenerator.js).
   var spaRem   = rdVal('spaRemoval')==='yes'    ? numVal('dtSpaRemovalPrice') : 0;
   var fuel     = rdVal('fuelSurcharge')==='yes' ? numVal('dtFuelPrice')       : 0;
   var conci    = rdVal('concierge')==='yes'     ? numVal('dtConciergePrice')  : 0;
-  var serviceTotal = Math.round(crane+outTown+outWarr+spaRem+fuel+conci);
+  var serviceTotal = Math.round(crane+outTown+spaRem+fuel+conci);
   var grandTotal   = productTotal + serviceTotal;
 
   function setF(id,val){var el=document.getElementById(id);if(el)el.value=val>0?String(val):'';}

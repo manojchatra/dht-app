@@ -436,7 +436,7 @@ function renderDetail(c) {
     ? cbHtml('Out-of-Town Delivery ($' + (sv.outOfTownDeliveryFee||'\u2014') + ')', true)
     : cbHtml('Out-of-Town Delivery', false);
   let outOfTownWarrantyHtml = sv.outOfTownWarranty
-    ? cbHtml('Out-of-Town Warranty ($' + (sv.outOfTownWarrantyFee||'\u2014') + ')', true)
+    ? cbHtml('Out-of-Town Warranty \u2014 Customer has been notified of Out of Town warranty.', true)
     : cbHtml('Out-of-Town Warranty', false);
 
   let paymentsSection = '';

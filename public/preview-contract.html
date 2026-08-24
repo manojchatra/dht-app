@@ -265,7 +265,7 @@ function renderPreview(d){
   html+=pcb('In-Town Delivery',sv.inTownDelivery)+pcb('Crane',sv.crane);
   if(sv.crane&&sv.craneFee) html+='<span style="font-size:12px;color:var(--text-muted)">Fee: $'+sv.craneFee+'</span> ';
   if(sv.outOfTownDelivery) html+=pcb('Out-of-Town Delivery ($'+(sv.outOfTownDeliveryFee||'\u2014')+')',true);
-  if(sv.outOfTownWarranty) html+=pcb('Out-of-Town Warranty ($'+(sv.outOfTownWarrantyFee||'\u2014')+')',true);
+  if(sv.outOfTownWarranty) html+=pcb('Out-of-Town Warranty \u2014 Customer has been notified of Out of Town warranty.',true);
   html+='</div></div>';
 
   html+='<div class="preview-section"><h3>Electrical</h3><div style="font-size:13px;line-height:2">';

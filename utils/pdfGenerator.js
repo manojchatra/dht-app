@@ -256,7 +256,7 @@ async function generateContractPDF(contract) {
             ? cb('Out-of-Town Delivery: $'+(sv.outOfTownDeliveryFee||'\u2014'), true)
             : cb('Out-of-Town Delivery', false),
           sv.outOfTownWarranty
-            ? cb('Out-of-Town Warranty: $'+(sv.outOfTownWarrantyFee||'\u2014'), true)
+            ? cb('Out-of-Town Warranty \u2014 Customer has been notified of Out of Town warranty.', true)
             : cb('Out-of-Town Warranty', false),
         ]},
         { width:'*', stack:[
