@@ -437,10 +437,13 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="detail-row">
       <div><div class="detail-label">Subpanel Provided</div>
         <div class="detail-sub cb-row">
-          <label class="cb-item"><input type="radio" name="subpanel" value="yes"> Yes</label>
-          <label class="cb-item"><input type="radio" name="subpanel" value="no"> No</label>
+          <label class="cb-item"><input type="radio" name="subpanel" value="yes" onchange="onSubpanelChange()"> Yes</label>
+          <label class="cb-item"><input type="radio" name="subpanel" value="no" onchange="onSubpanelChange()"> No</label>
+        </div>
+        <div class="detail-sub cb-row" id="subpanelAmpRow" style="display:none">
           <label class="cb-item"><input type="radio" name="subpanelAmp" value="20/30"> 20/30 Amp</label>
           <label class="cb-item"><input type="radio" name="subpanelAmp" value="50"> 50 Amp</label>
+          <label class="cb-item"><input type="radio" name="subpanelAmp" value="EP"> EP Amp</label>
         </div>
       </div>
       <input type="text" id="dtSubpanelPrice" placeholder="$" oninput="recalcAll()">
@@ -1216,6 +1219,14 @@ function onOutTownChange(){
     if(w) w.checked=true;
   }
   recalcAll();
+}
+
+function onSubpanelChange(){
+  var yes=rdVal('subpanel')==='yes';
+  document.getElementById('subpanelAmpRow').style.display=yes?'flex':'none';
+  if(!yes){
+    document.querySelectorAll('[name="subpanelAmp"]').forEach(function(r){r.checked=false;});
+  }
 }
 
 function recalcAll(){
