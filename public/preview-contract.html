@@ -244,7 +244,7 @@ function renderPreview(d){
   html+='</div></div>';
 
   html+='<div class="preview-section"><h3>Product</h3><div class="preview-grid">';
-  html+=pKV('Status',pr.status==='instock'?'In Stock':pr.status==='tbo'?'To Be Ordered':'Special Order');
+  html+=pKV('Status',pr.status==='instock'?'In Stock':'To Be Ordered');
   html+=pKV('Make / Series / Model',[pr.make,pr.series,pr.model].filter(Boolean).join(' - '));
   html+=pKV('Year',pr.year)+pKV('Serial Number',pr.serialNumber);
   html+=pKV('Shell Color',pr.shellColor)+pKV('Cabinet Color',pr.cabinetColor)+pKV('Cover Color',pr.coverColor);

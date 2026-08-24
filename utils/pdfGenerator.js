@@ -192,7 +192,6 @@ async function generateContractPDF(contract) {
           { columns:[
             cb('In Stock',      pr.status==='instock'),
             cb('To Be Ordered', pr.status==='tbo'),
-            cb('Special Order', pr.status==='special'),
           ], margin:[0,0,0,4] },
           kv('FLOOR MODEL LOCATION', pr.floorModel),
           { columns:[kv('MAKE',pr.make), kv('SERIES',pr.series), kv('MODEL',pr.model)], columnGap:6 },

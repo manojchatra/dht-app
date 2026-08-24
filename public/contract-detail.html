@@ -546,7 +546,7 @@ function renderDetail(c) {
     '</div></div>' +
 
     '<div class="detail-section"><h3><i class="fa-solid fa-hot-tub-person"></i> Product</h3><div class="info-grid">' +
-      pKV('Status', pr.status==='instock'?'In Stock':pr.status==='tbo'?'To Be Ordered':'Special Order') +
+      pKV('Status', pr.status==='instock'?'In Stock':'To Be Ordered') +
       pKV('Floor Model', pr.floorModel) + pKV('Make', pr.make) + pKV('Series', pr.series) +
       pKV('Model', pr.model) + pKV('Year', pr.year) + pKV('Serial Number', pr.serialNumber) +
       pKV('Shell Color', pr.shellColor) + pKV('Cabinet Color', pr.cabinetColor) + pKV('Cover Color', pr.coverColor) +
