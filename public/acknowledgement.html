@@ -333,6 +333,7 @@
   <div style="background:var(--surface);border-radius:14px;padding:24px;max-width:440px;width:calc(100% - 32px);box-shadow:0 20px 60px rgba(0,0,0,.25)">
     <h3 style="margin:0 0 6px;font-size:16px">Send Acknowledgement Email</h3>
     <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">Uncheck any recipients to exclude.</p>
+    <div id="recipientSmtpWarning" style="display:none;font-size:12px;color:var(--red);margin:-10px 0 14px">Email not configured (SMTP credentials missing) — recipients shown below for reference, but sending is disabled.</div>
     <div id="recipientList" style="margin-bottom:14px;max-height:220px;overflow-y:auto"></div>
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <input type="email" id="extraRecipient" placeholder="Add another email..." style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font);background:var(--surface);color:var(--text)">
@@ -499,7 +500,10 @@ function validateForm() {
 async function showRecipientModal() {
   const r = await fetch('/api/delivery/email-recipients/'+contractId);
   const j = await r.json();
-  if (!j.smtpConfigured) { showToast('Email not configured — contact admin','error'); return false; }
+  const warnEl = document.getElementById('recipientSmtpWarning');
+  const sendBtn = document.getElementById('confirmSendBtn');
+  warnEl.style.display = j.smtpConfigured ? 'none' : 'block';
+  sendBtn.disabled = !j.smtpConfigured;
   _recipientList = [];
   const listEl = document.getElementById('recipientList');
   listEl.innerHTML = '';

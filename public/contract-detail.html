@@ -686,14 +686,18 @@ async function openSendAckModal() {
   _ackRecipients = [];
   const listEl = document.getElementById('ackRecipientList');
   listEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>';
-  document.getElementById('ackSendError').style.display = 'none';
+  const errEl = document.getElementById('ackSendError');
+  errEl.style.display = 'none';
+  const sendBtn = document.getElementById('ackSendBtn');
+  sendBtn.disabled = false;
   document.getElementById('sendAckModal').classList.add('open');
   try {
     const r = await fetch('/api/delivery/email-recipients/'+contractId);
     const j = await r.json();
     if (!j.smtpConfigured) {
-      listEl.innerHTML = '<p style="color:var(--red);font-size:13px">Email not configured. Add SMTP credentials to .env</p>';
-      return;
+      errEl.textContent = 'Email not configured (SMTP credentials missing) — recipients shown below for reference, but sending is disabled.';
+      errEl.style.display = 'block';
+      sendBtn.disabled = true;
     }
     listEl.innerHTML = '';
     const addR = (email, label) => {
