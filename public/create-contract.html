@@ -1038,6 +1038,24 @@ function renderInvResults(rows){
   table.appendChild(tbody);res.appendChild(table);
 }
 
+// Matches a sheet value against a known color list case/whitespace-insensitively.
+// Falls back to "Others" + the free-text override field when nothing matches,
+// instead of silently leaving no chip selected (and the value lost).
+function selectChipFromValue(containerId, knownList, rawValue, otherId, setSelected){
+  var norm = (rawValue||'').trim();
+  if(!norm) return;
+  var match = knownList.find(function(v){ return v.toLowerCase()===norm.toLowerCase(); });
+  var container = document.getElementById(containerId);
+  var activeLabel = match || 'Others';
+  setSelected(activeLabel);
+  if(container) container.querySelectorAll('.chip').forEach(function(c){c.classList.toggle('active', c.textContent===activeLabel)});
+  var oi = otherId ? document.getElementById(otherId) : null;
+  if(oi){
+    oi.style.display = activeLabel==='Others' ? 'block' : 'none';
+    oi.value = activeLabel==='Others' ? norm : '';
+  }
+}
+
 function selectUnit(row){
   document.getElementById('prodMake').value=row.Make||'';
   document.getElementById('prodSeries').value=row.Series||'';
@@ -1046,16 +1064,8 @@ function selectUnit(row){
   document.getElementById('spaSerial').textContent=row['Serial Number']||'Serial auto-filled';
   document.getElementById('invTrigger').value=(row.Make||'')+' '+(row.Model||'')+' - '+(row['Serial Number']||'');
   updateSeriesDl(row.Make||'');
-  if(row.Shell){
-    selectedShell=row.Shell;
-    document.querySelectorAll('#shellChips .chip').forEach(function(c){c.classList.toggle('active',c.textContent===row.Shell)});
-    var oi=document.getElementById('shellColorOther');if(oi)oi.style.display=row.Shell==='Others'?'block':'none';
-  }
-  if(row.Cabinet){
-    selectedCabinet=row.Cabinet;
-    document.querySelectorAll('#cabinetChips .chip').forEach(function(c){c.classList.toggle('active',c.textContent===row.Cabinet)});
-    var oi=document.getElementById('cabinetColorOther');if(oi)oi.style.display=row.Cabinet==='Others'?'block':'none';
-  }
+  selectChipFromValue('shellChips',   SHELL_COLORS,   row.Shell,   'shellColorOther',   function(v){selectedShell=v});
+  selectChipFromValue('cabinetChips', CABINET_COLORS, row.Cabinet, 'cabinetColorOther', function(v){selectedCabinet=v});
   closeInvModal();
   showToast('Item selected - fields auto-filled','success');
 }
