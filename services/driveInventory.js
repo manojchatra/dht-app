@@ -25,21 +25,26 @@ const TBO_HEADERS = [
   'Serial Number','Sales Man','Customer','Address','Zip','Cover','Steps',
   'Water Care','Accessories','Paid','Pending','Status'
 ];
+// Order Placed carries everything TBO does, plus the two fields collected when
+// a TBO card is moved here. Web Order Number/Truck Number are appended (not
+// inserted) so Paid/Pending/Status keep the same column indices as TBO's —
+// PAYMENT_COLS below depends on that.
+const ORDER_PLACED_HEADERS = TBO_HEADERS.concat(['Web Order Number','Truck Number']);
 const DELIVERED_HEADERS = [
   'Contract ID','Contract Date','Delivery Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Sales Man','Customer','Address','Zip','Cover','Steps',
-  'Water Care','Accessories','Paid','Pending','Status'
+  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number'
 ];
 const CANCELLED_HEADERS = [
   'Contract ID','Contract Date','Cancelled Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Sales Man','Customer','Address','Zip','Cover','Steps',
-  'Water Care','Accessories','Paid','Pending','Status'
+  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number'
 ];
 
 const RECEIVED_HEADERS = [
   'Contract ID','Contract Date','Received Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Serial Photo URL','Sales Man','Customer','Address','Zip','Cover','Steps',
-  'Water Care','Accessories','Paid','Pending','Status'
+  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number'
 ];
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -159,13 +164,17 @@ function buildTBORow(d, status) {
   ];
 }
 
+function buildOrderPlacedRow(d, status) {
+  return buildTBORow(d, status||'Order Placed').concat([d.webOrderNumber||'', d.truckNumber||'']);
+}
+
 function buildDeliveredRow(d, deliveryDate) {
   return [
     d.contractNumber, d.contractDate, deliveryDate,
     d.make||'', d.model||'', d.year||'', d.shellColor||'', d.cabinetColor||'',
     d.serialNumber||'', d.salesman||'', d.customerName||'', d.address||'', d.zip||'',
     d.cover||'', d.steps||'', d.waterCare||'', d.accessories||'',
-    d.paid||'', d.pending||'', 'Delivered'
+    d.paid||'', d.pending||'', 'Delivered', d.webOrderNumber||'', d.truckNumber||''
   ];
 }
 
@@ -175,7 +184,7 @@ function buildCancelledRow(d, cancelledDate) {
     d.make||'', d.model||'', d.year||'', d.shellColor||'', d.cabinetColor||'',
     d.serialNumber||'', d.salesman||'', d.customerName||'', d.address||'', d.zip||'',
     d.cover||'', d.steps||'', d.waterCare||'', d.accessories||'',
-    d.paid||'', d.pending||'', 'Cancelled'
+    d.paid||'', d.pending||'', 'Cancelled', d.webOrderNumber||'', d.truckNumber||''
   ];
 }
 
@@ -186,7 +195,7 @@ function buildReceivedRow(d, receivedDate, serialPhotoUrl) {
     d.serialNumber||'', serialPhotoUrl||'',
     d.salesman||'', d.customerName||'', d.address||'', d.zip||'',
     d.cover||'', d.steps||'', d.waterCare||'', d.accessories||'',
-    d.paid||'', d.pending||'', 'Received'
+    d.paid||'', d.pending||'', 'Received', d.webOrderNumber||'', d.truckNumber||''
   ];
 }
 
@@ -330,11 +339,11 @@ async function updateToScheduled(contractNumber, scheduledDatetime, contractData
   }
 }
 
-// Move to Delivered from Assigned or TBO
+// Move to Delivered from Assigned, TBO, or Order Placed
 async function moveToDelivered(contractNumber, deliveryDate, contractData) {
   const sheets = getSheets();
 
-  for (const tab of ['Assigned','TBO']) {
+  for (const tab of ['Assigned','TBO','Order Placed']) {
     const rowIndex = await findRowByContractId(sheets, tab, contractNumber);
     if (rowIndex > 0) {
       await deleteRow(sheets, tab, rowIndex);
@@ -350,11 +359,11 @@ async function moveToDelivered(contractNumber, deliveryDate, contractData) {
   console.log('[Drive] Appended to Delivered (source not found):', contractNumber);
 }
 
-// Move to Cancelled from Assigned or TBO
+// Move to Cancelled from Assigned, TBO, or Order Placed
 async function moveToCancelled(contractNumber, cancelledDate, contractData) {
   const sheets = getSheets();
 
-  for (const tab of ['Assigned','TBO']) {
+  for (const tab of ['Assigned','TBO','Order Placed']) {
     const rowIndex = await findRowByContractId(sheets, tab, contractNumber);
     if (rowIndex > 0) {
       await deleteRow(sheets, tab, rowIndex);
@@ -405,13 +414,27 @@ async function updateRowStatus(contractData, newStatus) {
   console.log('[Drive] updateRowStatus called (legacy):', contractData.contractNumber, newStatus);
 }
 
-// ── Received tab operations ──────────────────────────────────────────────────
-async function moveToReceived(contractNumber, receivedDate, serialPhotoUrl, contractData) {
+// Move TBO → Order Placed (admin sets Web Order Number / Truck Number)
+async function moveToOrderPlaced(contractNumber, webOrderNumber, truckNumber, contractData) {
   const sheets = getSheets();
   const tboRow = await findRowByContractId(sheets, 'TBO', contractNumber);
   if (tboRow > 0) await deleteRow(sheets, 'TBO', tboRow);
+  const row = buildOrderPlacedRow(Object.assign({}, contractData, { webOrderNumber, truckNumber }), 'Order Placed');
+  await appendRow(sheets, 'Order Placed', ORDER_PLACED_HEADERS, row);
+  console.log('[Drive] Moved TBO → Order Placed:', contractNumber);
+}
+
+// ── Received tab operations ──────────────────────────────────────────────────
+async function moveToReceived(contractNumber, receivedDate, serialPhotoUrl, contractData) {
+  const sheets = getSheets();
+  // A contract reaches Received from either TBO (skipped Order Placed, legacy
+  // path) or Order Placed (the normal path now) — check both source tabs.
+  for (const tab of ['TBO','Order Placed']) {
+    const rowIndex = await findRowByContractId(sheets, tab, contractNumber);
+    if (rowIndex > 0) { await deleteRow(sheets, tab, rowIndex); break; }
+  }
   await appendRow(sheets, 'Received', RECEIVED_HEADERS, buildReceivedRow(contractData, receivedDate, serialPhotoUrl));
-  console.log('[Drive] Moved TBO → Received:', contractNumber);
+  console.log('[Drive] Moved → Received:', contractNumber);
 }
 
 async function moveFromReceivedToScheduled(contractNumber, scheduledDatetime, contractData) {
@@ -450,11 +473,12 @@ async function updateReceivedSerial(contractNumber, serialNumber, serialPhotoUrl
 // Update Paid/Pending columns wherever the contract's row currently lives —
 // Paid/Pending column position differs per tab (extra date/photo columns shift it).
 const PAYMENT_COLS = [
-  { name:'TBO',       paidCol:17, pendingCol:18 },
-  { name:'Assigned',  paidCol:17, pendingCol:18 },
-  { name:'Delivered', paidCol:18, pendingCol:19 },
-  { name:'Cancelled', paidCol:18, pendingCol:19 },
-  { name:'Received',  paidCol:19, pendingCol:20 },
+  { name:'TBO',          paidCol:17, pendingCol:18 },
+  { name:'Assigned',     paidCol:17, pendingCol:18 },
+  { name:'Order Placed', paidCol:17, pendingCol:18 },
+  { name:'Delivered',    paidCol:18, pendingCol:19 },
+  { name:'Cancelled',    paidCol:18, pendingCol:19 },
+  { name:'Received',     paidCol:19, pendingCol:20 },
 ];
 async function updatePaymentInSheet(contractNumber, paid, pending) {
   const sheets = getSheets();
@@ -497,6 +521,7 @@ module.exports = {
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus,
+  moveToOrderPlaced,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, updatePaymentInSheet, readPaymentFromSheet,

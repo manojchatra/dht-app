@@ -167,6 +167,14 @@ if (!existingCols.includes('acknowledgement_pdf')) {
   db.exec('ALTER TABLE contracts ADD COLUMN acknowledgement_pdf TEXT');
   console.log('[DB] acknowledgement_pdf column added');
 }
+if (!existingCols.includes('web_order_number')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN web_order_number TEXT');
+  console.log('[DB] contracts.web_order_number column added');
+}
+if (!existingCols.includes('truck_number')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN truck_number TEXT');
+  console.log('[DB] contracts.truck_number column added');
+}
 const userCols = db.prepare('PRAGMA table_info(users)').all().map(c=>c.name);
 if (!userCols.includes('team')) {
   db.exec('ALTER TABLE users ADD COLUMN team TEXT');

@@ -215,8 +215,8 @@ function toggleActionMenu(e,id){
 const contractId = window.location.pathname.split('/').pop();
 let currentBalance = 0;
 const METHOD_LABELS = {cash:'Cash',cheque:'Cheque',credit_card:'Credit Card',finance:'Finance'};
-const STATUS_LABEL = {assigned:'Assigned',tbo:'To Be Ordered',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
-const BADGE = {assigned:'badge-assigned',tbo:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
+const STATUS_LABEL = {assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
+const BADGE = {assigned:'badge-assigned',tbo:'badge-tbo',order_placed:'badge-tbo',received:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
 
 async function loadContract() {
   try {

@@ -11,7 +11,7 @@ const { logActivity, addNotification }   = require('../utils/activityLogger');
 const {
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
-  revertToAssigned, updateTBOSerial,
+  revertToAssigned, updateTBOSerial, moveToOrderPlaced,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, deleteInventoryRow
@@ -114,6 +114,9 @@ router.get('/', (req, res) => {
         c.serial_number, c.make, c.model,
         c.grand_total, c.paid_amount, c.due_prior,
         c.scheduled_datetime, c.scheduled_duration, c.delivery_team, c.acknowledgement_pdf, c.contract_image_path, c.cheque_image_path, c.extra_images, c.created_at,
+        c.web_order_number, c.truck_number,
+        json_extract(c.data,'$.product.shellColor')   AS shell_color,
+        json_extract(c.data,'$.product.cabinetColor') AS cabinet_color,
         COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name,
         cu.email      AS customer_email,
         cu.zip        AS customer_zip,
@@ -457,12 +460,14 @@ function buildDriveData(contract, customer, formData) {
     accessories:    de.accessories ? [...(de.accessories.items||[]), de.accessories.other||''].filter(Boolean).join(', ') : '',
     paid:           totalPaid || '',
     pending:        pendingAmt || '',
+    webOrderNumber: contract.web_order_number || '',
+    truckNumber:    contract.truck_number || '',
   };
 }
 
 // ── Update status ─────────────────────────────────────────────────────────────
 router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => {
-  const VALID = ['assigned','tbo','scheduled','delivered','cancelled','received'];
+  const VALID = ['assigned','tbo','order_placed','scheduled','delivered','cancelled','received'];
   const { status, deliveryDate, scheduledDatetime, scheduledDuration } = req.body;
   if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   if (req.session.role === 'sales' && status !== 'scheduled') {
@@ -476,6 +481,16 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     // Block In Stock → Received
     if (status === 'received' && contract.product_status === 'instock') {
       return res.status(400).json({ error: 'In Stock contracts do not go through Received. Change to Scheduled or Delivered directly.' });
+    }
+
+    // Order Placed: only reachable from TBO, and requires both fields
+    if (status === 'order_placed') {
+      if (contract.status !== 'tbo') {
+        return res.status(400).json({ error: 'Order Placed is only reachable from To Be Ordered.' });
+      }
+      if (!req.body.webOrderNumber || !req.body.truckNumber) {
+        return res.status(400).json({ error: 'Web Order Number and Truck Number are required.' });
+      }
     }
 
     // Block scheduling if balance > 0
@@ -549,6 +564,9 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     } else if (status === 'cancelled') {
       db.prepare('UPDATE contracts SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run(status, req.params.id);
+    } else if (status === 'order_placed') {
+      db.prepare('UPDATE contracts SET status=?,web_order_number=?,truck_number=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
+        .run(status, req.body.webOrderNumber.trim(), req.body.truckNumber.trim(), req.params.id);
     } else {
       // assigned — revert from cancelled
       db.prepare('UPDATE contracts SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
@@ -598,6 +616,8 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         }
       } else if (status === 'assigned') {
         await revertToAssigned(contract.contract_number, driveData);
+      } else if (status === 'order_placed') {
+        await moveToOrderPlaced(contract.contract_number, req.body.webOrderNumber.trim(), req.body.truckNumber.trim(), driveData);
       }
     } catch(e) { console.error('[Drive status update failed]', e.message, e.stack); }
 
@@ -622,6 +642,11 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         actor: _actor, detail: `${contract.status} → received` });
       addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'RECEIVED',
         color: 'green', message: `${_cnum} — ${_cuname} marked received` });
+    } else if (status === 'order_placed') {
+      logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'ORDER_PLACED',
+        actor: _actor, detail: `Web Order #: ${req.body.webOrderNumber.trim()} | Truck #: ${req.body.truckNumber.trim()}` });
+      addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'ORDER_PLACED',
+        color: 'green', message: `${_cnum} — ${_cuname} order placed (Web Order #${req.body.webOrderNumber.trim()})` });
     } else {
       logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'STATUS_CHANGED',
         actor: _actor, detail: `${contract.status} → ${status}` });

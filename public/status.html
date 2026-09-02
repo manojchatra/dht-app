@@ -39,6 +39,7 @@
 .sc-received{font-size:11px;color:#b45309;font-weight:500;margin-top:4px}
 .sc-delivered{font-size:11px;color:var(--green);font-weight:500;margin-top:4px}
 .sc-no-serial{font-size:11px;color:var(--red);margin-top:3px}
+.truck-pill{display:inline-flex;align-items:center;gap:5px;background:var(--accent-bg);color:var(--accent);padding:2px 10px;border-radius:12px;font-weight:600;font-size:11px}
 .status-card-actions{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .btn-apply{padding:5px 14px;font-size:12px;font-weight:500;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:var(--font)}
 .btn-apply:disabled{opacity:.5;cursor:not-allowed}
@@ -59,6 +60,7 @@
   <div class="tab-bar">
     <button class="tab" data-tab="assigned"  onclick="switchTab('assigned')"><i class="fa-solid fa-circle-check"></i>Assigned</button>
     <button class="tab" data-tab="tbo"       onclick="switchTab('tbo')"><i class="fa-solid fa-box"></i>To Be Ordered</button>
+    <button class="tab" data-tab="order_placed" onclick="switchTab('order_placed')"><i class="fa-solid fa-truck-fast"></i>Order Placed</button>
     <button class="tab" data-tab="received"  onclick="switchTab('received')"><i class="fa-solid fa-truck-arrow-right"></i>Received</button>
     <button class="tab" data-tab="scheduled" onclick="switchTab('scheduled')"><i class="fa-solid fa-calendar-check"></i>Scheduled</button>
     <button class="tab" data-tab="delivered" onclick="switchTab('delivered')"><i class="fa-solid fa-truck-ramp-box"></i>Delivered</button>
@@ -144,6 +146,24 @@
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeReschedule()">Cancel</button>
       <button class="btn btn-primary" onclick="submitReschedule()"><i class="fa-solid fa-check"></i> Reschedule</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order Placed Modal (TBO → Order Placed) -->
+<div class="modal-overlay" id="orderPlacedModal">
+  <div class="modal-box" style="max-width:420px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-truck-fast" style="color:var(--accent)"></i> Move to Order Placed</h2>
+      <button onclick="closeOrderPlacedModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
+    </div>
+    <div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Web Order Number *</label>
+      <input type="text" id="orderPlacedWebNum" style="width:100%" placeholder="e.g. WO-12345"></div>
+    <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Truck Number *</label>
+      <input type="text" id="orderPlacedTruckNum" style="width:100%" placeholder="e.g. T-204"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeOrderPlacedModal()">Cancel</button>
+      <button class="btn btn-primary" id="orderPlacedSaveBtn" onclick="submitOrderPlaced()"><i class="fa-solid fa-truck-fast"></i> Confirm</button>
     </div>
   </div>
 </div>
@@ -285,8 +305,8 @@ let allContracts=[], currentTab='assigned';
 let slotContractId=null, rescheduleContractId=null, serialContractId=null;
 let receivedContractId=null, deliverContractId=null;
 
-const TAB_LABELS={assigned:'Assigned',tbo:'To Be Ordered',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
-const BADGE={assigned:'badge-assigned',tbo:'badge-tbo',received:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
+const TAB_LABELS={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
+const BADGE={assigned:'badge-assigned',tbo:'badge-tbo',order_placed:'badge-tbo',received:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
 
 function slotToDatetime(date, time) { return date + 'T' + time + ':00'; }
 function calcEndTime(startDt, durationMins) {
@@ -336,11 +356,12 @@ function buildCard(c) {
   const dateStr    = c.date ? new Date(c.date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
   const isDelivered = c.status === 'delivered';
   const isTBO       = c.status === 'tbo';
+  const isOrderPlaced = c.status === 'order_placed';
   const isReceived  = c.status === 'received';
   const isAssigned  = c.status === 'assigned';
   const isScheduled = c.status === 'scheduled';
   const isCancelled = c.status === 'cancelled';
-  const needsSerial = !c.serial_number && (isAssigned || isTBO || isReceived || isScheduled);
+  const needsSerial = !c.serial_number && (isAssigned || isTBO || isOrderPlaced || isReceived || isScheduled);
 
   // Extra status info
   let extraInfo = '';
@@ -348,6 +369,12 @@ function buildCard(c) {
   if (isScheduled && c.scheduled_datetime)
     extraInfo = '<div class="sc-scheduled"><i class="fa-solid fa-calendar-check"></i> ' + formatSlot(c.scheduled_datetime, c.scheduled_duration||120) + '</div>'
               + (c.delivery_team ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px"><i class="fa-solid fa-people-carry-box"></i> '+(_TNAMES[c.delivery_team]||c.delivery_team)+'</div>' : '<div style="font-size:11px;color:var(--red);margin-top:2px"><i class="fa-solid fa-triangle-exclamation"></i> No team assigned</div>');
+  if (isOrderPlaced) {
+    var _color = [c.shell_color, c.cabinet_color].filter(Boolean).join(' / ');
+    extraInfo = (_color ? '<div class="sc-meta"><span style="color:var(--text-muted)">Color: '+escHtml(_color)+'</span></div>' : '')
+              + '<div class="sc-meta"><span style="color:var(--text-muted)">Web Order #: '+escHtml(c.web_order_number||'—')+'</span></div>'
+              + '<div class="sc-meta"><span class="truck-pill"><i class="fa-solid fa-truck"></i> '+escHtml(c.truck_number||'—')+'</span></div>';
+  }
   if (isReceived)
     extraInfo = '<div class="sc-received"><i class="fa-solid fa-truck-arrow-right"></i> Received</div>';
   if (isDelivered && c.delivery_date)
@@ -393,6 +420,9 @@ function buildCard(c) {
               + '<button class="btn-apply" id="apply-'+c.id+'" onclick="applyDropdown('+c.id+')" disabled>Apply</button>'
               + threeDotsMenu;
     } else if (isTBO) {
+      actions = '<button class="btn btn-secondary btn-sm" onclick="openOrderPlacedModal('+c.id+')"><i class="fa-solid fa-truck-fast"></i> Move to Order Placed</button>'
+              + threeDotsMenu;
+    } else if (isOrderPlaced) {
       actions = '<button class="btn btn-secondary btn-sm" onclick="openReceivedModal('+c.id+')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button>'
               + threeDotsMenu;
     } else if (isReceived) {
@@ -520,6 +550,27 @@ async function submitReschedule(){
   }catch(e){showToast(e.message||'Failed','error');}
 }
 
+// ── Order Placed modal ────────────────────────────────────────────────────────
+let orderPlacedContractId=null;
+function openOrderPlacedModal(id){
+  orderPlacedContractId=id;
+  document.getElementById('orderPlacedWebNum').value='';
+  document.getElementById('orderPlacedTruckNum').value='';
+  document.getElementById('orderPlacedModal').classList.add('open');
+}
+function closeOrderPlacedModal(){document.getElementById('orderPlacedModal').classList.remove('open');orderPlacedContractId=null;}
+async function submitOrderPlaced(){
+  const webOrderNumber=document.getElementById('orderPlacedWebNum').value.trim();
+  const truckNumber=document.getElementById('orderPlacedTruckNum').value.trim();
+  if(!webOrderNumber||!truckNumber){showToast('Web Order Number and Truck Number are required','error');return;}
+  const btn=document.getElementById('orderPlacedSaveBtn');
+  btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  try{
+    await applyStatus(orderPlacedContractId,'order_placed',{webOrderNumber,truckNumber});
+    closeOrderPlacedModal();
+  }finally{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-truck-fast"></i> Confirm';}
+}
+
 // ── Received modal ────────────────────────────────────────────────────────────
 function openReceivedModal(id){
   receivedContractId=id;
@@ -611,7 +662,7 @@ async function revertToAssigned(id){
 }
 
 // Modal overlay clicks
-['slotModal','rescheduleModal','receivedModal','deliverModal','serialModal'].forEach(id=>{
+['slotModal','rescheduleModal','orderPlacedModal','receivedModal','deliverModal','serialModal'].forEach(id=>{
   var el=document.getElementById(id);
   if(el)el.addEventListener('click',function(e){if(e.target===e.currentTarget)e.currentTarget.classList.remove('open');});
 });
