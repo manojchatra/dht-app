@@ -491,7 +491,9 @@ var _dm=document.getElementById('deleteModal'); if(_dm) _dm.addEventListener('cl
 var _pm=document.getElementById('paymentModal'); if(_pm) _pm.addEventListener('click',e=>{if(e.target===e.currentTarget)closePaymentModal()});
 var _aim=document.getElementById('addImageModal'); if(_aim) _aim.addEventListener('click',e=>{if(e.target===e.currentTarget)closeAddImageModal()});
 
-loadContracts();
+// Deferred until sidebar.js's auth check sets window._userRole, so isAdmin
+// inside renderCards() is never computed before it's known (was a race).
+window._onAuthReady = loadContracts;
 </script>
 </body>
 </html>

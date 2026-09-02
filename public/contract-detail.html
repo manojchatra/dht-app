@@ -705,8 +705,12 @@ async function openSendAckModal() {
       d.querySelector('input').addEventListener('change',function(){_ackRecipients[i].checked=this.checked;});
       listEl.appendChild(d);
     };
-    if (j.customerEmail) addR(j.customerEmail, 'Customer');
-    (j.settingsRecipients||[]).forEach(e => addR(e, 'Settings'));
+    const seen = new Set();
+    const addRUnique = (email, label) => { if (email && !seen.has(email)) { seen.add(email); addR(email, label); } };
+    if (j.customerEmail) addRUnique(j.customerEmail, 'Customer');
+    if (j.salesEmail) addRUnique(j.salesEmail, 'Salesperson');
+    (j.adminEmails||[]).forEach(e => addRUnique(e, 'Admin'));
+    (j.settingsRecipients||[]).forEach(e => addRUnique(e, 'Settings'));
     if (_ackRecipients.length === 0) listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px">No recipients found. Add emails in Settings or type below.</p>';
   } catch(e) { listEl.innerHTML = '<p style="color:var(--red)">'+e.message+'</p>'; }
 }
@@ -743,7 +747,9 @@ async function confirmSendAck() {
 var _sam=document.getElementById('sendAckModal');
 if(_sam)_sam.addEventListener('click',function(e){if(e.target===e.currentTarget)closeSendAckModal();});
 
-loadContract();
+// Deferred until sidebar.js's auth check sets window._userRole, so isAdmin
+// inside renderDetail() is never computed before it's known (was a race).
+window._onAuthReady = loadContract;
 </script>
 <div class="modal-overlay" id="detailAddImageModal">
   <div class="modal-box" style="max-width:440px">

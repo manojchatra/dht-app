@@ -57,49 +57,51 @@ function markSidebarActive() {
 
 async function initSidebar() {
   const mount = document.getElementById('sidebar-root');
-  if (mount) {
-    try {
-      const html = await fetch('/partials/sidebar.html').then(r => r.text());
-      mount.outerHTML = html;
-    } catch (e) {
-      console.error('[sidebar] failed to load partial', e);
-    }
-  }
+
+  // Both requests start immediately/concurrently — the auth check must not
+  // wait on the partial fetch (it didn't, pre-refactor, when each page had
+  // its own inline auth script), since pages defer their own data loading
+  // to window._userRole/_onAuthReady being ready as soon as possible.
+  const partialPromise = mount
+    ? fetch('/partials/sidebar.html').then(r => r.text()).catch(e => { console.error('[sidebar] failed to load partial', e); return null; })
+    : Promise.resolve(null);
+  const authPromise = fetch('/auth/me').then(r => r.json()).catch(() => null);
+
+  const [html, u] = await Promise.all([partialPromise, authPromise]);
+
+  if (mount && html) mount.outerHTML = html;
   markSidebarActive();
 
-  // Auth — same check every page needs; also reveals the sidebar/body (both
-  // start visibility:hidden in CSS to avoid a flash of the wrong nav/role).
-  fetch('/auth/me').then(r => r.json()).then(u => {
-    if (!u.username) { window.location.href = '/login'; return; }
-    const _un = document.getElementById('userName'); if (_un) _un.textContent = u.username;
-    const _tNames = { team_a: 'JV Spa Movers', team_b: 'Clear Choice Movers' };
-    const _ur = document.getElementById('userRole');
-    if (_ur) _ur.textContent = u.role === 'admin' ? 'Administrator' : u.role === 'delivery' ? (_tNames[u.team] || 'Delivery') : 'Sales';
+  if (!u || !u.username) { window.location.href = '/login'; return; }
 
-    // Delivery role: restrict to delivery pages only
-    if (u.role === 'delivery') {
-      const _p = window.location.pathname;
-      if (!_p.startsWith('/calendar') && !_p.startsWith('/delivery/') && !_p.startsWith('/acknowledgement/')) {
-        window.location.href = '/calendar'; return;
-      }
+  const _un = document.getElementById('userName'); if (_un) _un.textContent = u.username;
+  const _tNames = { team_a: 'JV Spa Movers', team_b: 'Clear Choice Movers' };
+  const _ur = document.getElementById('userRole');
+  if (_ur) _ur.textContent = u.role === 'admin' ? 'Administrator' : u.role === 'delivery' ? (_tNames[u.team] || 'Delivery') : 'Sales';
+
+  // Delivery role: restrict to delivery pages only
+  if (u.role === 'delivery') {
+    const _p = window.location.pathname;
+    if (!_p.startsWith('/calendar') && !_p.startsWith('/delivery/') && !_p.startsWith('/acknowledgement/')) {
+      window.location.href = '/calendar'; return;
     }
+  }
 
-    // Set before _onAuthReady() — pages (e.g. delivery-view.html) read this
-    // inside their own _onAuthReady to make role-specific UI decisions.
-    window._userRole = u.role;
+  // Set before _onAuthReady() — pages (e.g. delivery-view.html) read this
+  // inside their own _onAuthReady to make role-specific UI decisions.
+  window._userRole = u.role;
 
-    // Notify deferred loaders (e.g. calendar waits for auth)
-    if (typeof window._onAuthReady === 'function') window._onAuthReady();
-    if (u.role === 'admin' && typeof loadNotifications === 'function') { loadNotifications(); }
+  // Notify deferred loaders (e.g. calendar waits for auth)
+  if (typeof window._onAuthReady === 'function') window._onAuthReady();
+  if (u.role === 'admin' && typeof loadNotifications === 'function') { loadNotifications(); }
 
-    const _sb = document.getElementById('sidebar'); if (_sb) _sb.style.visibility = 'visible';
-    document.body.style.visibility = 'visible';
-    const _ua = document.getElementById('userAvatar'); if (_ua) _ua.textContent = u.username[0].toUpperCase();
-    if (u.role === 'admin') document.querySelectorAll('.admin-only').forEach(el => {
-      if (el.tagName === 'BUTTON' || el.tagName === 'A') el.style.display = 'flex';
-      else el.style.display = '';
-    });
-  }).catch(() => window.location.href = '/login');
+  const _sb = document.getElementById('sidebar'); if (_sb) _sb.style.visibility = 'visible';
+  document.body.style.visibility = 'visible';
+  const _ua = document.getElementById('userAvatar'); if (_ua) _ua.textContent = u.username[0].toUpperCase();
+  if (u.role === 'admin') document.querySelectorAll('.admin-only').forEach(el => {
+    if (el.tagName === 'BUTTON' || el.tagName === 'A') el.style.display = 'flex';
+    else el.style.display = '';
+  });
 }
 
 initSidebar();

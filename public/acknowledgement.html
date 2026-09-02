@@ -512,8 +512,12 @@ async function showRecipientModal() {
     d.querySelector('input').addEventListener('change',function(){_recipientList[i].checked=this.checked;});
     listEl.appendChild(d);
   };
-  if (j.customerEmail) addR(j.customerEmail,'Customer');
-  (j.settingsRecipients||[]).forEach(e=>addR(e,'Office'));
+  const seen = new Set();
+  const addRUnique = (email, label) => { if (email && !seen.has(email)) { seen.add(email); addR(email, label); } };
+  if (j.customerEmail) addRUnique(j.customerEmail,'Customer');
+  if (j.salesEmail) addRUnique(j.salesEmail,'Salesperson');
+  (j.adminEmails||[]).forEach(e=>addRUnique(e,'Admin'));
+  (j.settingsRecipients||[]).forEach(e=>addRUnique(e,'Office'));
   if (!_recipientList.length) listEl.innerHTML='<p style="color:var(--text-muted);font-size:13px">No recipients on file. Add one below.</p>';
   document.getElementById('recipientModal').style.display='flex';
   return true;

@@ -616,7 +616,10 @@ async function revertToAssigned(id){
   if(el)el.addEventListener('click',function(e){if(e.target===e.currentTarget)e.currentTarget.classList.remove('open');});
 });
 
-init();
+// Deferred until sidebar.js's auth check sets window._userRole, so
+// isAdmin/isSales inside renderGrid() are never computed before known
+// (was a race — could hide admin/sales-only actions intermittently).
+window._onAuthReady = init;
 </script>
 </body>
 </html>

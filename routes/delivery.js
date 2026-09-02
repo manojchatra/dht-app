@@ -284,12 +284,29 @@ router.get('/smtp-status', requireDeliveryOrAdmin, (req, res) => {
 
 // ── GET /api/delivery/email-recipients — get recipients for popup ─────────────
 router.get('/email-recipients/:contractId', requireDeliveryOrAdmin, (req, res) => {
-  const contract = db.prepare('SELECT data FROM contracts WHERE id=?').get(req.params.contractId);
+  const contract = db.prepare('SELECT data, salesman FROM contracts WHERE id=?').get(req.params.contractId);
   const custEmail = contract ? JSON.parse(contract.data||'{}').customer?.email : null;
   const settingsRecipients = getEmailRecipients();
+
+  const adminEmails = db.prepare(
+    "SELECT email FROM users WHERE role='admin' AND email IS NOT NULL AND email != ''"
+  ).all().map(r => r.email);
+
+  // Best-effort: salesman is still free text on contracts (until it's a real
+  // FK to users), so match it against a sales user's name to find their email.
+  let salesEmail = null;
+  if (contract?.salesman) {
+    const match = db.prepare(
+      "SELECT email FROM users WHERE role='sales' AND email IS NOT NULL AND email != '' AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
+    ).get(contract.salesman);
+    salesEmail = match?.email || null;
+  }
+
   res.json({
     customerEmail:     custEmail || null,
     settingsRecipients,
+    adminEmails,
+    salesEmail,
     smtpConfigured:    smtpConfigured(),
   });
 });
