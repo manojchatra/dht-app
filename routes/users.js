@@ -10,22 +10,23 @@ router.use(requireAdmin);
 // GET /api/users
 router.get('/', (req, res) => {
   const users = db.prepare(
-    'SELECT id, username, role, team, created_at FROM users ORDER BY role, username'
+    'SELECT id, username, name, email, role, team, created_at FROM users ORDER BY role, username'
   ).all();
   res.json(users);
 });
 
 // POST /api/users — create user
 router.post('/', (req, res) => {
-  const { username, password, role, team } = req.body;
+  const { username, password, role, team, name, email } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
   if (!['admin', 'sales', 'delivery'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
 
   try {
     const hash = bcrypt.hashSync(password, 10);
     const result = db.prepare(
-      'INSERT INTO users (username, password_hash, role, team) VALUES (?,?,?,?)'
-    ).run(username.trim().toLowerCase(), hash, role, role==='delivery'?(req.body.team||null):null);
+      'INSERT INTO users (username, password_hash, role, team, name, email) VALUES (?,?,?,?,?,?)'
+    ).run(username.trim().toLowerCase(), hash, role, role==='delivery'?(req.body.team||null):null, name.trim(), email.trim());
     res.json({ success: true, userId: result.lastInsertRowid });
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
@@ -33,9 +34,9 @@ router.post('/', (req, res) => {
   }
 });
 
-// PATCH /api/users/:id — update password or role
+// PATCH /api/users/:id — update password, role, name, or email
 router.patch('/:id', (req, res) => {
-  const { password, role } = req.body;
+  const { password, role, name, email } = req.body;
   const id = parseInt(req.params.id);
 
   // Prevent admin from demoting themselves
@@ -49,6 +50,12 @@ router.patch('/:id', (req, res) => {
   }
   if (role && ['admin', 'sales', 'delivery'].includes(role)) {
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+  }
+  if (name) {
+    db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), id);
+  }
+  if (email) {
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim(), id);
   }
   res.json({ success: true });
 });

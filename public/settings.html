@@ -85,7 +85,9 @@
     <div style="margin-bottom:16px;padding:14px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
       <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Add New User</div>
       <div class="inline-form">
+        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Name</label><input type="text" id="newUserFullName" placeholder="Full name" autocomplete="off"></div>
         <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Username</label><input type="text" id="newUserName" placeholder="Username" autocomplete="off"></div>
+        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Email</label><input type="email" id="newUserEmail" placeholder="Email" autocomplete="off"></div>
         <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Password</label><input type="password" id="newUserPw" placeholder="Password" autocomplete="new-password"></div>
         <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Role</label><select id="newUserRole" onchange="onRoleChange(this.value,'newUserTeam')">
     <option value="sales">Sales</option>
@@ -99,8 +101,8 @@
         <button class="btn btn-primary" onclick="addUser()" style="align-self:flex-end"><i class="fa-solid fa-plus"></i> Add</button>
       </div>
     </div>
-    <table class="users-table"><thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
-    <tbody id="usersTbody"><tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody></table>
+    <table class="users-table"><thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
+    <tbody id="usersTbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody></table>
     <div class="user-cards" id="userCards"></div>
   </div>
 </main>
@@ -260,7 +262,9 @@ async function loadUsers() {
     const tbody = document.getElementById('usersTbody');
     const roleLabel = u => u.role==='admin'?'Admin':u.role==='delivery'?('Delivery — '+(u.team==='team_a'?'JV Spa Movers':'Clear Choice Movers')):'Sales';
     tbody.innerHTML = users.map(u =>
-      '<tr><td style="font-weight:500">' + escHtml(u.username) + '</td>' +
+      '<tr><td style="font-weight:500">' + escHtml(u.name||'—') + '</td>' +
+      '<td>' + escHtml(u.username) + '</td>' +
+      '<td style="color:var(--text-muted)">' + escHtml(u.email||'—') + '</td>' +
       '<td><span class="role-chip role-' + u.role + '">' + roleLabel(u) + '</span></td>' +
       '<td style="color:var(--text-muted)">' + new Date(u.created_at).toLocaleDateString() + '</td>' +
       '<td style="display:flex;gap:6px">' +
@@ -271,8 +275,9 @@ async function loadUsers() {
     const cards = document.getElementById('userCards');
     cards.innerHTML = users.map(u =>
       '<div class="user-card">' +
-        '<div class="user-card-top"><span class="user-card-name">' + escHtml(u.username) + '</span>' +
+        '<div class="user-card-top"><span class="user-card-name">' + escHtml(u.name||u.username) + '</span>' +
           '<span class="role-chip role-' + u.role + '">' + roleLabel(u) + '</span></div>' +
+        '<div class="user-card-created">' + escHtml(u.username) + (u.email?' &middot; '+escHtml(u.email):'') + '</div>' +
         '<div class="user-card-created">Created ' + new Date(u.created_at).toLocaleDateString() + '</div>' +
         '<div class="user-card-actions">' +
           '<button class="btn btn-secondary btn-sm" data-action="resetpw" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-key"></i> Reset PW</button>' +
@@ -300,16 +305,18 @@ function onRoleChange(role, teamSelectId) {
   if (sel) sel.style.display = role === 'delivery' ? '' : 'none';
 }
 async function addUser() {
+  const name = document.getElementById('newUserFullName').value.trim();
   const username = document.getElementById('newUserName').value.trim();
+  const email = document.getElementById('newUserEmail').value.trim();
   const password = document.getElementById('newUserPw').value;
   const role = document.getElementById('newUserRole').value;
   const team = role === 'delivery' ? document.getElementById('newUserTeam').value : undefined;
-  if (!username||!password) { showToast('Username and password required','error'); return; }
+  if (!name||!username||!email||!password) { showToast('Name, username, email, and password required','error'); return; }
   try {
-    const r = await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password,role,team})});
+    const r = await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,username,email,password,role,team})});
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
     showToast('User added','success');
-    document.getElementById('newUserName').value = document.getElementById('newUserPw').value = '';
+    document.getElementById('newUserFullName').value = document.getElementById('newUserName').value = document.getElementById('newUserEmail').value = document.getElementById('newUserPw').value = '';
     loadUsers();
   } catch(e) { showToast(e.message||'Failed','error'); }
 }
