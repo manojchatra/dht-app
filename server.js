@@ -40,6 +40,7 @@ app.use('/uploads', express.static(uploadsDir));
 app.use('/css', express.static(path.join(__dirname, 'public/css')));
 app.use('/img', express.static(path.join(__dirname, 'public/img')));
 app.use('/js',  express.static(path.join(__dirname, 'public/js')));
+app.use('/partials', express.static(path.join(__dirname, 'public/partials')));
 
 // DB init
 require('./db/database');

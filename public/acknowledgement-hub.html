@@ -53,46 +53,8 @@
 </style>
 </head>
 <body>
-<button class="hamburger" onclick="openMobileSidebar()"><i class="fa-solid fa-bars"></i> Menu</button>
-<a class="mobile-home-btn" href="/dashboard" aria-label="Home"><i class="fa-solid fa-house"></i></a>
-<nav class="sidebar" id="sidebar">
-  <div class="sidebar-header"><a href="/dashboard" class="brand-mark"><span class="brand-glyph">DHT</span><span class="brand-text"><span class="brand-name">Desert Hot Tubs</span><span class="brand-sub">Sales &amp; Delivery</span></span></a></div>
-  <div>
-    <button class="nav-item " id="nav-contracts" onclick="toggleNav('contracts')">
-      <i class="fa-solid fa-file-contract"></i>Contracts<i class="fa-solid fa-chevron-right nav-arrow"></i>
-    </button>
-    <div class="nav-sub " id="sub-contracts">
-      <a class="nav-sub-item " href="/contracts/new"><i class="fa-solid fa-plus"></i> New Contract</a>
-      <a class="nav-sub-item " href="/contracts"><i class="fa-solid fa-list"></i> View Contracts</a>
-    </div>
-  </div>
-  <div>
-    <button class="nav-item " id="nav-status" onclick="toggleNav('status')">
-      <i class="fa-solid fa-chart-gantt"></i>Status<i class="fa-solid fa-chevron-right nav-arrow"></i>
-    </button>
-    <div class="nav-sub " id="sub-status">
-      <a class="nav-sub-item " href="/status?tab=assigned"><i class="fa-solid fa-circle-check"></i> Assigned</a>
-      <a class="nav-sub-item " href="/status?tab=tbo"><i class="fa-solid fa-box"></i> To Be Ordered</a>
-      <a class="nav-sub-item " href="/status?tab=received"><i class="fa-solid fa-truck-arrow-right"></i> Received</a>
-      <a class="nav-sub-item " href="/status?tab=scheduled"><i class="fa-solid fa-calendar-check"></i> Scheduled</a>
-      <a class="nav-sub-item " href="/status?tab=delivered"><i class="fa-solid fa-truck-ramp-box"></i> Delivered</a>
-      <a class="nav-sub-item " href="/status?tab=cancelled"><i class="fa-solid fa-ban"></i> Cancelled</a>
-    </div>
-  </div>
-  <a class="nav-item " href="/calendar"><i class="fa-solid fa-calendar"></i>Calendar</a>
-  <a class="nav-item active" href="/acknowledgement"><i class="fa-solid fa-clipboard-check"></i>Acknowledgement</a>
-  <a class="nav-item " href="/post-delivery"><i class="fa-solid fa-phone"></i>Post-Delivery Follow-up</a>
-  <hr class="nav-divider">
-  <div class="sidebar-bottom">
-    <a class="nav-item " href="/settings"><i class="fa-solid fa-gear"></i>Settings</a>
-    <button class="nav-item" onclick="signOut()"><i class="fa-solid fa-right-from-bracket"></i>Sign Out</button>
-    <div class="user-chip">
-      <div class="user-avatar" id="userAvatar">?</div>
-      <div><div class="user-name" id="userName">...</div><div class="user-role" id="userRole"></div></div>
-    </div>
-  </div>
-</nav>
-<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileSidebar()"></div>
+<div id="sidebar-root"></div>
+<script src="/js/sidebar.js"></script>
 <main class="main">
   <div class="top-bar">
     <h1 style="margin:0">Acknowledgement</h1>
@@ -140,79 +102,6 @@
 </div>
 
 <script>
-// Auth
-fetch('/auth/me').then(r=>r.json()).then(u=>{
-  if(!u.username){window.location.href='/login';return}
-  var _un=document.getElementById('userName');if(_un)_un.textContent=u.username;
-  const _tNames={team_a:'JV Spa Movers',team_b:'Clear Choice Movers'};
-  var _ur=document.getElementById('userRole');if(_ur)_ur.textContent=u.role==='admin'?'Administrator':u.role==='delivery'?(_tNames[u.team]||'Delivery'):'Sales';
-  // Delivery role: restrict to delivery pages only
-  if(u.role==='delivery'){
-    const _p=window.location.pathname;
-    if(!_p.startsWith('/calendar')&&!_p.startsWith('/delivery/')&&!_p.startsWith('/acknowledgement/')){
-      window.location.href='/calendar';return;
-    }
-  }
-  // Notify deferred loaders (e.g. calendar waits for auth)
-  if(typeof window._onAuthReady==='function')window._onAuthReady();
-  var _sb=document.getElementById('sidebar');if(_sb)_sb.style.visibility='visible';
-  document.body.style.visibility='visible';
-  var _ua=document.getElementById('userAvatar');if(_ua)_ua.textContent=u.username[0].toUpperCase();
-  window._userRole=u.role;
-  window._userTeam=u.team||null;
-  if(u.role==='delivery'){
-    document.querySelectorAll('.nav-item:not([href="/calendar"])').forEach(function(el){
-      if(el.querySelector('.fa-right-from-bracket')) return; // keep sign out
-      el.style.display='none';
-    });
-  }
-  if(u.role==='admin') document.querySelectorAll('.admin-only').forEach(el=>{
-    if(el.tagName==='BUTTON'||el.tagName==='A') el.style.display='flex';
-    else el.style.display='';
-  });
-}).catch(()=>window.location.href='/login');
-
-// Sidebar accordion — auto-open based on current URL
-function initSidebar(){
-  const p=window.location.pathname;
-  const searchMap={
-    '/contracts':'contracts',
-    '/status':'status',
-  };
-  for(const [prefix,id] of Object.entries(searchMap)){
-    if(p.startsWith(prefix)){
-      const sub=document.getElementById('sub-'+id);
-      const btn=document.getElementById('nav-'+id);
-      if(sub&&!sub.classList.contains('open')){
-        sub.classList.add('open');
-        if(btn) btn.classList.add('nav-open');
-      }
-    }
-  }
-}
-
-function toggleNav(id){
-  const sub=document.getElementById('sub-'+id);
-  const btn=document.getElementById('nav-'+id);
-  const isOpen=sub.classList.toggle('open');
-  btn.classList.toggle('nav-open',isOpen);
-}
-
-// Mobile sidebar
-function openMobileSidebar(){
-  document.getElementById('sidebar').classList.add('mobile-open');
-  document.getElementById('sidebarOverlay').classList.add('mobile-open');
-}
-function closeMobileSidebar(){
-  document.getElementById('sidebar').classList.remove('mobile-open');
-  document.getElementById('sidebarOverlay').classList.remove('mobile-open');
-}
-
-// Sign out
-async function signOut(){
-  await fetch('/auth/logout',{method:'POST'});
-  window.location.href='/login';
-}
 
 // Toast
 function showToast(msg,type='success'){
@@ -273,7 +162,6 @@ function toggleActionMenu(e,id){
   dd.classList.toggle('open');
 }
 
-initSidebar();
 </script>
 <script>function goToDelivery(id) { window.location.href = '/delivery/' + id; }
 
