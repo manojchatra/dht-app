@@ -27,8 +27,11 @@
 .role-admin{background:var(--accent-bg);color:var(--accent)}
 .role-sales{background:var(--surface2);color:var(--text-muted)}
 .role-delivery{background:#e9d8fd;color:#553c9a}
-.inline-form{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
-.inline-form input,.inline-form select{flex:1;min-width:100px}
+.inline-form{display:flex;flex-direction:column;gap:12px}
+.inline-form>div{width:100%}
+.inline-form input,.inline-form select{width:100%}
+.inline-form select+select{margin-top:8px}
+.inline-form>button{width:100%}
 .email-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
 .email-row:last-child{border-bottom:none}
 
@@ -98,7 +101,7 @@
     <option value="team_a">JV Spa Movers</option>
     <option value="team_b">Clear Choice Movers</option>
   </select></div>
-        <button class="btn btn-primary" onclick="addUser()" style="align-self:flex-end"><i class="fa-solid fa-plus"></i> Add</button>
+        <button class="btn btn-primary" onclick="addUser()"><i class="fa-solid fa-plus"></i> Add</button>
       </div>
     </div>
     <table class="users-table"><thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
