@@ -84,6 +84,10 @@ async function initSidebar() {
       }
     }
 
+    // Set before _onAuthReady() — pages (e.g. delivery-view.html) read this
+    // inside their own _onAuthReady to make role-specific UI decisions.
+    window._userRole = u.role;
+
     // Notify deferred loaders (e.g. calendar waits for auth)
     if (typeof window._onAuthReady === 'function') window._onAuthReady();
     if (u.role === 'admin' && typeof loadNotifications === 'function') { loadNotifications(); }
@@ -91,7 +95,6 @@ async function initSidebar() {
     const _sb = document.getElementById('sidebar'); if (_sb) _sb.style.visibility = 'visible';
     document.body.style.visibility = 'visible';
     const _ua = document.getElementById('userAvatar'); if (_ua) _ua.textContent = u.username[0].toUpperCase();
-    window._userRole = u.role;
     if (u.role === 'admin') document.querySelectorAll('.admin-only').forEach(el => {
       if (el.tagName === 'BUTTON' || el.tagName === 'A') el.style.display = 'flex';
       else el.style.display = '';
