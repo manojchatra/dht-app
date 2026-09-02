@@ -27,11 +27,11 @@
 .role-admin{background:var(--accent-bg);color:var(--accent)}
 .role-sales{background:var(--surface2);color:var(--text-muted)}
 .role-delivery{background:#e9d8fd;color:#553c9a}
-.inline-form{display:flex;flex-direction:column;gap:12px}
-.inline-form>div{width:100%}
+.inline-form{display:flex;gap:8px;align-items:flex-end;width:100%}
+.inline-form>div{flex:1;min-width:0}
 .inline-form input,.inline-form select{width:100%}
 .inline-form select+select{margin-top:8px}
-.inline-form>button{width:100%}
+.inline-form>button{flex-shrink:0}
 .email-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
 .email-row:last-child{border-bottom:none}
 
@@ -39,6 +39,9 @@
   .settings-grid{grid-template-columns:1fr !important}
   .users-table{display:none !important}
   .user-cards{display:block !important}
+  .inline-form{flex-direction:column}
+  .inline-form>div{width:100%}
+  .inline-form>button{width:100%}
 }
 .user-cards{display:none}
 .user-card{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--surface)}
