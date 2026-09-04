@@ -68,7 +68,7 @@ async function initSidebar() {
   // its own inline auth script), since pages defer their own data loading
   // to window._userRole/_onAuthReady being ready as soon as possible.
   const partialPromise = mount
-    ? fetch('/partials/sidebar.html').then(r => r.text()).catch(e => { console.error('[sidebar] failed to load partial', e); return null; })
+    ? fetch('/partials/sidebar.html', { cache: 'no-store' }).then(r => r.text()).catch(e => { console.error('[sidebar] failed to load partial', e); return null; })
     : Promise.resolve(null);
   const authPromise = fetch('/auth/me').then(r => r.json()).catch(() => null);
 
