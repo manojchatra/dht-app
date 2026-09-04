@@ -18,6 +18,7 @@ const {
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
+const { notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
 
 // ── Multer ────────────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
@@ -429,6 +430,12 @@ router.post('/', uploadFields, async (req, res) => {
         eventType: 'CONTRACT_CREATED', color: 'green',
         message: `${cnum} — New contract by ${cleanData.salesman||actor} for ${customer.name||''}`
       });
+      if (status === 'tbo') {
+        try {
+          const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+          await notifyContractCreatedTBO({ contract: freshContract, customerName: customer.name });
+        } catch (e) { console.error('[Email notify CONTRACT_CREATED failed — non-fatal]', e.message); }
+      }
     }
 
     res.json({ success: true, contractId, contractNumber });
@@ -655,16 +662,31 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         actor: _actor, detail: `${contract.status} → delivered` });
       addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'DELIVERED',
         color: 'green', message: `${_cnum} — ${_cuname} marked delivered` });
+      try {
+        const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+        await notifyDelivered({ contract: freshContract, customerName: _cuname });
+      } catch (e) { console.error('[Email notify DELIVERED failed — non-fatal]', e.message); }
     } else if (status === 'received') {
       logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'MARK_RECEIVED',
         actor: _actor, detail: `${contract.status} → received` });
       addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'RECEIVED',
         color: 'green', message: `${_cnum} — ${_cuname} marked received` });
+      try {
+        const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+        await notifyReceived({ contract: freshContract, customerName: _cuname });
+      } catch (e) { console.error('[Email notify RECEIVED failed — non-fatal]', e.message); }
     } else if (status === 'order_placed') {
       logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'ORDER_PLACED',
         actor: _actor, detail: `Web Order #: ${req.body.webOrderNumber.trim()} | Truck #: ${req.body.truckNumber.trim()}` });
       addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'ORDER_PLACED',
         color: 'green', message: `${_cnum} — ${_cuname} order placed (Web Order #${req.body.webOrderNumber.trim()})` });
+      try {
+        const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+        await notifyOrderPlaced({
+          contract: freshContract, customerName: _cuname,
+          webOrderNumber: req.body.webOrderNumber.trim(), truckNumber: req.body.truckNumber.trim()
+        });
+      } catch (e) { console.error('[Email notify ORDER_PLACED failed — non-fatal]', e.message); }
     } else {
       logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'STATUS_CHANGED',
         actor: _actor, detail: `${contract.status} → ${status}` });
@@ -747,6 +769,11 @@ router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
         const photoUrl = 'https://app.deserthottubsaz.com' + (toUrlPath(finalPhotoPath)||'');
         await moveToReceived(contract.contract_number, actualDate, photoUrl, driveData);
       } catch(e) { console.error('[Drive received failed]', e.message, e.stack); }
+      try {
+        const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+        const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
+        await notifyReceived({ contract: freshContract, customerName: custName });
+      } catch (e) { console.error('[Email notify RECEIVED failed — non-fatal]', e.message); }
       res.json({ success: true });
     } catch(err) {
       console.error('Received error:', err);

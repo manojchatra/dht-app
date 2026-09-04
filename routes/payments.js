@@ -5,6 +5,7 @@ const router  = express.Router();
 const db      = require('../db/database');
 const { generateReceiptPDF } = require('../utils/receiptGenerator');
 const { logActivity, addNotification } = require('../utils/activityLogger');
+const { notifyPaymentRecorded } = require('../utils/emailSender');
 
 // ── Record payment ────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
@@ -53,6 +54,7 @@ router.post('/', async (req, res) => {
     const paymentId = ins.lastInsertRowid;
 
     // Save receipt PDF to contract folder (non-fatal)
+    let receiptPath = null;
     try {
       const { generateReceiptPDF } = require('../utils/receiptGenerator');
       const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(paymentId);
@@ -60,8 +62,18 @@ router.post('/', async (req, res) => {
       const buf     = Buffer.isBuffer(pdfBuf) ? pdfBuf : Buffer.from(pdfBuf);
       const pdfDir  = path.join(__dirname, '../uploads/contracts', contract.contract_number);
       fs.mkdirSync(pdfDir, { recursive: true });
-      fs.writeFileSync(path.join(pdfDir, `receipt-${paymentId}.pdf`), buf);
+      receiptPath = path.join(pdfDir, `receipt-${paymentId}.pdf`);
+      fs.writeFileSync(receiptPath, buf);
     } catch(e) { console.error('[Receipt save failed — non-fatal]', e.message); }
+
+    // Email notification: Admin, with the receipt PDF attached (non-fatal)
+    try {
+      const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
+      await notifyPaymentRecorded({
+        contract, customerName: custName, amount: amt, method,
+        totalPaid, balance: newBalance, receiptPath
+      });
+    } catch (e) { console.error('[Email notify PAYMENT_RECORDED failed — non-fatal]', e.message); }
 
     // Activity log + notification
     const _pc = db.prepare('SELECT contract_number,data FROM contracts WHERE id=?').get(contractId);

@@ -17,6 +17,7 @@ const { compressAndGate } = require('../utils/imageUtils');
 const { requireRole } = require('../middleware/auth');
 const { moveToReceived } = require('../services/driveInventory');
 const { logActivity, addNotification } = require('../utils/activityLogger');
+const { notifyReceived } = require('../utils/emailSender');
 const { buildDriveData } = require('./contracts');
 
 router.use(requireRole(['admin', 'warehouse']));
@@ -148,6 +149,10 @@ router.post('/:id/receive', (req, res) => {
       const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
       addNotification(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'RECEIVED',
         color: 'green', message: `${contract.contract_number} — ${custName} marked received` });
+      try {
+        const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+        await notifyReceived({ contract: freshContract, customerName: custName });
+      } catch (e) { console.error('[Email notify RECEIVED failed — non-fatal]', e.message); }
 
       res.json({ success: true });
     } catch (err) {
