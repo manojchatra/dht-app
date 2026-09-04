@@ -350,6 +350,14 @@ function renderGrid() {
 
 const _schedData = {};
 
+// Bank Owned -> red bank icon, DHT Owned -> green dollar-in-circle icon.
+// Blank/unset (no linked inventory item, or item not yet marked either way) shows nothing.
+function financeIcon(finance){
+  if(finance==='Bank Owned') return '<i class="fa-solid fa-building-columns" style="color:var(--red)" title="Bank Owned"></i>';
+  if(finance==='DHT Owned') return '<i class="fa-solid fa-circle-dollar-to-slot" style="color:var(--green)" title="DHT Owned"></i>';
+  return '';
+}
+
 function buildCard(c) {
   const isAdmin    = window._userRole === 'admin';
   const isSales    = window._userRole === 'sales';
@@ -450,7 +458,7 @@ function buildCard(c) {
   }
 
   return '<div class="status-card">'
-    + '<div class="status-card-top"><span class="status-card-num">'+escHtml(c.contract_number||'Draft')+'</span><span class="badge '+(BADGE[c.status]||'badge-assigned')+'">'+(TAB_LABELS[c.status]||c.status)+'</span></div>'
+    + '<div class="status-card-top"><span class="status-card-num">'+escHtml(c.contract_number||'Draft')+'</span><span style="display:flex;align-items:center;gap:6px">'+financeIcon(c.linked_finance)+'<span class="badge '+(BADGE[c.status]||'badge-assigned')+'">'+(TAB_LABELS[c.status]||c.status)+'</span></span></div>'
     + '<div class="status-card-body">'
     + '<div class="sc-name">'+escHtml(c.customer_name||'—')+'</div>'
     + '<div class="sc-sub">'+escHtml(c.store||'—')+' · '+dateStr+'</div>'

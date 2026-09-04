@@ -218,6 +218,13 @@ const METHOD_LABELS = {cash:'Cash',cheque:'Cheque',credit_card:'Credit Card',fin
 const STATUS_LABEL = {assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
 const BADGE = {assigned:'badge-assigned',tbo:'badge-tbo',order_placed:'badge-tbo',received:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
 
+// Bank Owned -> red bank icon, DHT Owned -> green dollar-in-circle icon.
+function financeIcon(finance){
+  if(finance==='Bank Owned') return '<i class="fa-solid fa-building-columns" style="color:var(--red)" title="Bank Owned"></i>';
+  if(finance==='DHT Owned') return '<i class="fa-solid fa-circle-dollar-to-slot" style="color:var(--green)" title="DHT Owned"></i>';
+  return '';
+}
+
 async function loadContract() {
   try {
     const c = await fetch('/api/contracts/' + contractId).then(r => r.json());
@@ -413,6 +420,7 @@ function renderDetail(c) {
         (d.store ? '<span class="store-hl" style="margin-top:6px;display:inline-block"><i class="fa-solid fa-store"></i> ' + escHtml(d.store) + '</span>' : '') +
       '</div>' +
       '<div style="text-align:right">' +
+        financeIcon(c.linked_finance) + ' ' +
         '<span class="badge ' + (BADGE[c.status]||'badge-assigned') + '">' + (STATUS_LABEL[c.status]||c.status) + '</span>' +
         '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Date: <strong>' + (d.date?fmtUSDate(d.date):'\u2014') + '</strong>' +
           (d.deliveryDate ? '<br>Delivery: <strong>' + fmtUSDate(d.deliveryDate) + '</strong>' : '') +

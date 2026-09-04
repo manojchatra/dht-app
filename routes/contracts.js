@@ -123,9 +123,11 @@ router.get('/', (req, res) => {
         cu.phone_cell AS customer_phone,
         cu.address    AS customer_address,
         cu.address    AS address,
-        cu.city       AS city
+        cu.city       AS city,
+        inv.finance   AS linked_finance
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
+      LEFT JOIN inventory inv ON inv.contract_id = c.id
       ORDER BY c.created_at DESC
     `).all();
 
@@ -150,9 +152,11 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const row = db.prepare(`
-      SELECT c.*, cu.name AS customer_name, cu.address AS customer_address
+      SELECT c.*, cu.name AS customer_name, cu.address AS customer_address,
+        inv.finance AS linked_finance
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
+      LEFT JOIN inventory inv ON inv.contract_id = c.id
       WHERE c.id = ?
     `).get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
