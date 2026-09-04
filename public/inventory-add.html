@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Add to Inventory — Desert Hot Tubs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
+<script src="/js/html5-qrcode.min.js"></script>
+<style>
+.scan-region{width:100%;max-width:420px;border-radius:10px;overflow:hidden;background:#000;display:none;margin-bottom:10px}
+.scan-region video{width:100%;display:block}
+.scan-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.scan-thumb{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.field-grid{grid-template-columns:1fr}}
+.field-grid label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500}
+.field-grid input{width:100%}
+.resolved-badge{font-size:11px;color:var(--green);font-weight:600;margin-left:8px}
+</style>
+</head>
+<body>
+<div id="sidebar-root"></div>
+<script src="/js/sidebar.js"></script>
+<main class="main">
+  <div class="page-header"><h1>Add to Inventory</h1></div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><i class="fa-solid fa-barcode"></i>1. Scan SKU Barcode</div>
+    <div class="scan-row">
+      <button class="btn btn-secondary" id="skuScanBtn" onclick="startSkuScan()"><i class="fa-solid fa-camera"></i> Start SKU Scan</button>
+      <button class="btn btn-secondary" id="skuStopBtn" onclick="stopSkuScan()" style="display:none">Stop</button>
+      <img class="scan-thumb" id="skuThumb" style="display:none">
+    </div>
+    <div id="skuScannerRegion" class="scan-region"></div>
+    <div class="scan-row">
+      <input type="text" id="skuInput" placeholder="Or enter SKU manually" style="flex:1;min-width:160px">
+      <button class="btn btn-secondary" onclick="lookupSkuManual()"><i class="fa-solid fa-magnifying-glass"></i> Look Up</button>
+      <span class="resolved-badge" id="skuResolvedBadge" style="display:none"><i class="fa-solid fa-circle-check"></i> Resolved from SKU list</span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><i class="fa-solid fa-tag"></i>2. Scan Serial Number Barcode</div>
+    <div class="scan-row">
+      <button class="btn btn-secondary" id="serialScanBtn" onclick="startSerialScan()"><i class="fa-solid fa-camera"></i> Start Serial Scan</button>
+      <button class="btn btn-secondary" id="serialStopBtn" onclick="stopSerialScan()" style="display:none">Stop</button>
+      <img class="scan-thumb" id="serialThumb" style="display:none">
+    </div>
+    <div id="serialScannerRegion" class="scan-region"></div>
+    <div class="scan-row">
+      <input type="text" id="serialInput" placeholder="Or enter Serial Number manually" style="flex:1;min-width:160px">
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><i class="fa-solid fa-hot-tub-person"></i>Product Details</div>
+    <p class="helper" style="margin-bottom:12px;font-size:12px;color:var(--text-muted)">Auto-filled from the SKU lookup above — review and correct if needed.</p>
+    <div class="field-grid">
+      <div><label>Make *</label><input type="text" id="fldMake"></div>
+      <div><label>Series</label><input type="text" id="fldSeries"></div>
+      <div><label>Model *</label><input type="text" id="fldModel"></div>
+      <div><label>Shell Color</label><input type="text" id="fldShell"></div>
+      <div><label>Cabinet Color</label><input type="text" id="fldCabinet"></div>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;gap:10px">
+    <a href="/inventory" class="btn btn-secondary">Cancel</a>
+    <button class="btn btn-primary" id="submitBtn" onclick="submitInventoryItem()"><i class="fa-solid fa-plus"></i> Add to Inventory</button>
+  </div>
+</main>
+
+<script>
+// Toast
+function showToast(msg,type='success'){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';t.className='toast';document.body.appendChild(t)}
+  t.textContent=msg;t.className='toast '+type+' show';
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+let skuScanner=null, serialScanner=null;
+let skuPhotoBlob=null, serialPhotoBlob=null;
+
+function captureFrameAsPhoto(regionId){
+  return new Promise(function(resolve){
+    var video=document.querySelector('#'+regionId+' video');
+    if(!video){resolve(null);return;}
+    var canvas=document.createElement('canvas');
+    canvas.width=video.videoWidth||640; canvas.height=video.videoHeight||480;
+    canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+    canvas.toBlob(function(blob){resolve(blob);},'image/jpeg',0.85);
+  });
+}
+
+async function lookupSku(sku){
+  if(!sku){return;}
+  document.getElementById('skuResolvedBadge').style.display='none';
+  try{
+    const r=await fetch('/api/inventory-items/sku-lookup?sku='+encodeURIComponent(sku));
+    if(!r.ok){ showToast('SKU not found in the list — fill in details manually','error'); return; }
+    const j=await r.json();
+    document.getElementById('fldMake').value=j.make||'';
+    document.getElementById('fldSeries').value=j.series||'';
+    document.getElementById('fldModel').value=j.model||'';
+    document.getElementById('fldShell').value=j.shellColor||'';
+    document.getElementById('fldCabinet').value=j.cabinetColor||'';
+    document.getElementById('skuResolvedBadge').style.display='inline';
+  }catch(e){ showToast('SKU lookup failed: '+e.message,'error'); }
+}
+function lookupSkuManual(){ lookupSku(document.getElementById('skuInput').value.trim()); }
+
+function startSkuScan(){
+  document.getElementById('skuScannerRegion').style.display='block';
+  document.getElementById('skuScanBtn').style.display='none';
+  document.getElementById('skuStopBtn').style.display='inline-flex';
+  skuScanner=new Html5Qrcode('skuScannerRegion');
+  skuScanner.start(
+    {facingMode:'environment'},
+    {fps:10, qrbox:{width:260,height:160}},
+    function(decodedText){
+      document.getElementById('skuInput').value=decodedText;
+      captureFrameAsPhoto('skuScannerRegion').then(function(blob){
+        if(blob){ skuPhotoBlob=blob; var img=document.getElementById('skuThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
+      });
+      stopSkuScan();
+      lookupSku(decodedText);
+    },
+    function(){ /* per-frame decode miss — ignore */ }
+  ).catch(function(err){
+    showToast('Camera error: '+err,'error');
+    document.getElementById('skuScanBtn').style.display='inline-flex';
+    document.getElementById('skuStopBtn').style.display='none';
+    document.getElementById('skuScannerRegion').style.display='none';
+  });
+}
+function stopSkuScan(){
+  document.getElementById('skuScanBtn').style.display='inline-flex';
+  document.getElementById('skuStopBtn').style.display='none';
+  document.getElementById('skuScannerRegion').style.display='none';
+  if(skuScanner){ skuScanner.stop().then(function(){skuScanner.clear();}).catch(function(){}); skuScanner=null; }
+}
+
+function startSerialScan(){
+  document.getElementById('serialScannerRegion').style.display='block';
+  document.getElementById('serialScanBtn').style.display='none';
+  document.getElementById('serialStopBtn').style.display='inline-flex';
+  serialScanner=new Html5Qrcode('serialScannerRegion');
+  serialScanner.start(
+    {facingMode:'environment'},
+    {fps:10, qrbox:{width:260,height:160}},
+    function(decodedText){
+      document.getElementById('serialInput').value=decodedText;
+      captureFrameAsPhoto('serialScannerRegion').then(function(blob){
+        if(blob){ serialPhotoBlob=blob; var img=document.getElementById('serialThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
+      });
+      stopSerialScan();
+    },
+    function(){ /* per-frame decode miss — ignore */ }
+  ).catch(function(err){
+    showToast('Camera error: '+err,'error');
+    document.getElementById('serialScanBtn').style.display='inline-flex';
+    document.getElementById('serialStopBtn').style.display='none';
+    document.getElementById('serialScannerRegion').style.display='none';
+  });
+}
+function stopSerialScan(){
+  document.getElementById('serialScanBtn').style.display='inline-flex';
+  document.getElementById('serialStopBtn').style.display='none';
+  document.getElementById('serialScannerRegion').style.display='none';
+  if(serialScanner){ serialScanner.stop().then(function(){serialScanner.clear();}).catch(function(){}); serialScanner=null; }
+}
+
+async function submitInventoryItem(){
+  const make=document.getElementById('fldMake').value.trim();
+  const series=document.getElementById('fldSeries').value.trim();
+  const model=document.getElementById('fldModel').value.trim();
+  const shellColor=document.getElementById('fldShell').value.trim();
+  const cabinetColor=document.getElementById('fldCabinet').value.trim();
+  const serialNumber=document.getElementById('serialInput').value.trim();
+  const skuNumber=document.getElementById('skuInput').value.trim();
+  if(!serialNumber){ showToast('Serial number is required','error'); return; }
+  if(!make||!model){ showToast('Make and Model are required','error'); return; }
+
+  const btn=document.getElementById('submitBtn');
+  btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  try{
+    const fd=new FormData();
+    fd.append('make',make); fd.append('series',series); fd.append('model',model);
+    fd.append('shellColor',shellColor); fd.append('cabinetColor',cabinetColor);
+    fd.append('serialNumber',serialNumber); fd.append('skuNumber',skuNumber);
+    if(skuPhotoBlob) fd.append('skuPhoto',skuPhotoBlob,'sku-photo.jpg');
+    if(serialPhotoBlob) fd.append('serialPhoto',serialPhotoBlob,'serial-photo.jpg');
+    const r=await fetch('/api/inventory-items',{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok){ showToast(j.error||'Failed to add item','error'); return; }
+    showToast('Added to inventory','success');
+    setTimeout(function(){ window.location.href='/inventory'; }, 800);
+  }catch(e){ showToast(e.message||'Failed','error'); }
+  finally{ btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-plus"></i> Add to Inventory'; }
+}
+
+window.addEventListener('beforeunload', function(){
+  if(skuScanner) skuScanner.stop().catch(function(){});
+  if(serialScanner) serialScanner.stop().catch(function(){});
+});
+</script>
+</body>
+</html>

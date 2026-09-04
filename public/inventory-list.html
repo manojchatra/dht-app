@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>View Inventory — Desert Hot Tubs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
+<style>
+.inv-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.inv-toolbar input,.inv-toolbar select{min-width:140px}
+.search-wrap{position:relative;flex:1;min-width:200px}
+.search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px}
+.search-wrap input{width:100%;padding-left:34px}
+.inv-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.inv-table th{text-align:left;padding:8px 10px;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);font-weight:600;border-bottom:2px solid var(--border);white-space:nowrap}
+.inv-table td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+.inv-table select,.inv-table input[type=text]{font-size:12.5px;padding:5px 7px;width:100%;min-width:90px}
+.sold-row{opacity:.55}
+.photo-thumb{width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer}
+.no-photo{color:var(--text-light);font-size:11px}
+@media(max-width:900px){.inv-table{display:none}}
+.inv-cards{display:none}
+@media(max-width:900px){.inv-cards{display:block}}
+.inv-card{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--surface)}
+.inv-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.inv-card-title{font-weight:600;font-size:14px}
+.inv-card-sub{font-size:11.5px;color:var(--text-muted);margin-top:2px}
+.inv-card-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.inv-card-fields label{display:block;font-size:10.5px;color:var(--text-muted);margin-bottom:3px}
+.inv-card-fields select,.inv-card-fields input{width:100%;font-size:13px}
+</style>
+</head>
+<body>
+<div id="sidebar-root"></div>
+<script src="/js/sidebar.js"></script>
+<main class="main">
+  <div class="page-header">
+    <h1>Inventory</h1>
+    <a href="/inventory/add" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add to Inventory</a>
+  </div>
+
+  <div class="inv-toolbar">
+    <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search make, model, serial, SKU…" oninput="renderInventory()"></div>
+    <select id="availFilter" onchange="renderInventory()"><option value="">All availability</option><option value="In-stock">In-stock</option><option value="Hold">Hold</option><option value="Sold">Sold</option></select>
+    <select id="locFilter" onchange="renderInventory()">
+      <option value="">All locations</option>
+      <option>EMP Room</option><option>Phoenix Floor</option><option>Tolleson Floor</option>
+      <option>Chandler Floor</option><option>Surprise Floor</option><option>Goodyear Floor</option>
+    </select>
+  </div>
+
+  <div style="overflow-x:auto">
+    <table class="inv-table">
+      <thead><tr>
+        <th>Make</th><th>Series</th><th>Model</th><th>Shell</th><th>Cabinet</th>
+        <th>Serial Number</th><th>SKU Number</th><th>Availability</th><th>Location</th>
+        <th>Steps</th><th>Cover</th><th>Finance</th><th>Photos</th>
+      </tr></thead>
+      <tbody id="invTbody"><tr><td colspan="13" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="inv-cards" id="invCards"></div>
+</main>
+
+<div class="modal-overlay" id="photoModal">
+  <div class="modal-box" style="max-width:520px;text-align:center">
+    <div style="display:flex;justify-content:flex-end"><button onclick="closePhotoModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button></div>
+    <img id="photoModalImg" style="max-width:100%;border-radius:8px">
+  </div>
+</div>
+
+<script>
+// Toast
+function showToast(msg,type='success'){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';t.className='toast';document.body.appendChild(t)}
+  t.textContent=msg;t.className='toast '+type+' show';
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+const LOCATIONS=['EMP Room','Phoenix Floor','Tolleson Floor','Chandler Floor','Surprise Floor','Goodyear Floor'];
+let allItems=[];
+
+async function loadInventory(){
+  try{
+    const r=await fetch('/api/inventory-items');
+    if(!r.ok) throw new Error('Failed to load');
+    allItems=await r.json();
+    renderInventory();
+  }catch(e){
+    document.getElementById('invTbody').innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
+  }
+}
+
+function filterItems(){
+  const q=document.getElementById('searchInput').value.trim().toLowerCase();
+  const avail=document.getElementById('availFilter').value;
+  const loc=document.getElementById('locFilter').value;
+  return allItems.filter(function(it){
+    if(avail && it.availability!==avail) return false;
+    if(loc && it.location!==loc) return false;
+    if(q){
+      const hay=[it.make,it.series,it.model,it.serial_number,it.sku_number].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function availSelect(it){
+  const opts=['In-stock','Hold','Sold'];
+  return '<select onchange="updateField('+it.id+',\'availability\',this.value)">'+
+    opts.map(function(o){return '<option'+(o===it.availability?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
+}
+function locSelect(it){
+  return '<select onchange="updateField('+it.id+',\'location\',this.value)">'+
+    '<option value=""'+(!it.location?' selected':'')+'>—</option>'+
+    LOCATIONS.map(function(o){return '<option'+(o===it.location?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
+}
+function financeSelect(it){
+  const opts=['DHT Owned','Bank Owned'];
+  return '<select onchange="updateField('+it.id+',\'finance\',this.value)">'+
+    '<option value=""'+(!it.finance?' selected':'')+'>—</option>'+
+    opts.map(function(o){return '<option'+(o===it.finance?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
+}
+function textField(it,field){
+  return '<input type="text" value="'+escHtml(it[field]||'')+'" onblur="updateField('+it.id+',\''+field+'\',this.value)">';
+}
+function photoCell(it){
+  var out='';
+  if(it.sku_photo_url) out+='<img class="photo-thumb" src="'+it.sku_photo_url+'" title="SKU photo" onclick="openPhoto(\''+it.sku_photo_url+'\')" style="margin-right:4px">';
+  if(it.serial_photo_url) out+='<img class="photo-thumb" src="'+it.serial_photo_url+'" title="Serial photo" onclick="openPhoto(\''+it.serial_photo_url+'\')">';
+  if(!it.sku_photo_url && !it.serial_photo_url) out='<span class="no-photo">—</span>';
+  return out;
+}
+
+function renderInventory(){
+  const items=filterItems();
+  const tbody=document.getElementById('invTbody');
+  const cards=document.getElementById('invCards');
+  if(!items.length){
+    tbody.innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
+    cards.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No inventory items found</p></div>';
+    return;
+  }
+  tbody.innerHTML=items.map(function(it){
+    return '<tr class="'+(it.availability==='Sold'?'sold-row':'')+'">'
+      +'<td>'+escHtml(it.make||'')+'</td>'
+      +'<td>'+escHtml(it.series||'')+'</td>'
+      +'<td>'+escHtml(it.model||'')+'</td>'
+      +'<td>'+escHtml(it.shell_color||'')+'</td>'
+      +'<td>'+escHtml(it.cabinet_color||'')+'</td>'
+      +'<td>'+escHtml(it.serial_number||'')+'</td>'
+      +'<td>'+escHtml(it.sku_number||'')+'</td>'
+      +'<td>'+availSelect(it)+'</td>'
+      +'<td>'+locSelect(it)+'</td>'
+      +'<td>'+textField(it,'steps')+'</td>'
+      +'<td>'+textField(it,'cover')+'</td>'
+      +'<td>'+financeSelect(it)+'</td>'
+      +'<td>'+photoCell(it)+'</td>'
+      +'</tr>';
+  }).join('');
+
+  cards.innerHTML=items.map(function(it){
+    return '<div class="inv-card'+(it.availability==='Sold'?' sold-row':'')+'">'
+      +'<div class="inv-card-top"><div><div class="inv-card-title">'+escHtml(it.make||'')+' '+escHtml(it.model||'')+'</div>'
+      +'<div class="inv-card-sub">'+escHtml(it.series||'')+' · S/N '+escHtml(it.serial_number||'—')+' · SKU '+escHtml(it.sku_number||'—')+'</div>'
+      +'<div class="inv-card-sub">'+escHtml(it.shell_color||'')+' / '+escHtml(it.cabinet_color||'')+'</div></div>'
+      +'<div>'+photoCell(it)+'</div></div>'
+      +'<div class="inv-card-fields">'
+      +'<div><label>Availability</label>'+availSelect(it)+'</div>'
+      +'<div><label>Location</label>'+locSelect(it)+'</div>'
+      +'<div><label>Steps</label>'+textField(it,'steps')+'</div>'
+      +'<div><label>Cover</label>'+textField(it,'cover')+'</div>'
+      +'<div><label>Finance</label>'+financeSelect(it)+'</div>'
+      +'</div></div>';
+  }).join('');
+}
+
+async function updateField(id,field,value){
+  try{
+    const body={}; body[field]=value;
+    const r=await fetch('/api/inventory-items/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!r.ok){ showToast(j.error||'Update failed','error'); return; }
+    const item=allItems.find(function(it){return it.id===id;});
+    if(item) item[field]=value;
+    showToast('Saved','success');
+    if(field==='availability') renderInventory();
+  }catch(e){ showToast(e.message||'Failed','error'); }
+}
+
+function openPhoto(url){ document.getElementById('photoModalImg').src=url; document.getElementById('photoModal').classList.add('open'); }
+function closePhotoModal(){ document.getElementById('photoModal').classList.remove('open'); }
+document.getElementById('photoModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closePhotoModal(); });
+
+loadInventory();
+</script>
+</body>
+</html>

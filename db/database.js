@@ -103,6 +103,28 @@ db.exec(`
     updated_at           DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS inventory (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    make               TEXT,
+    series             TEXT,
+    model              TEXT,
+    shell_color        TEXT,
+    cabinet_color      TEXT,
+    serial_number      TEXT,
+    sku_number         TEXT,
+    availability       TEXT NOT NULL DEFAULT 'In-stock',
+    location           TEXT,
+    steps              TEXT,
+    cover              TEXT,
+    finance            TEXT,
+    sku_photo_path     TEXT,
+    serial_photo_path  TEXT,
+    contract_id        INTEGER REFERENCES contracts(id),
+    added_by           TEXT,
+    created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS idx_contracts_customer ON contracts(customer_id);
   CREATE INDEX IF NOT EXISTS idx_contracts_serial   ON contracts(serial_number);
   CREATE INDEX IF NOT EXISTS idx_contracts_status   ON contracts(status);
@@ -110,6 +132,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_payments_contract  ON payments(contract_id);
   CREATE INDEX IF NOT EXISTS idx_pdf_contract        ON post_delivery_feedback(contract_id);
   CREATE INDEX IF NOT EXISTS idx_pdf_status          ON post_delivery_feedback(status);
+  CREATE INDEX IF NOT EXISTS idx_inventory_serial    ON inventory(serial_number);
+  CREATE INDEX IF NOT EXISTS idx_inventory_sku        ON inventory(sku_number);
+  CREATE INDEX IF NOT EXISTS idx_inventory_contract   ON inventory(contract_id);
 `);
 
 // ── Seed default users ────────────────────────────────────────────────────────
@@ -192,6 +217,11 @@ const pdfCols = db.prepare('PRAGMA table_info(post_delivery_feedback)').all().ma
 if (!pdfCols.includes('google_review')) {
   db.exec('ALTER TABLE post_delivery_feedback ADD COLUMN google_review INTEGER');
   console.log('[DB] post_delivery_feedback.google_review column added');
+}
+const inventoryCols = db.prepare('PRAGMA table_info(inventory)').all().map(c=>c.name);
+if (!inventoryCols.includes('series')) {
+  db.exec('ALTER TABLE inventory ADD COLUMN series TEXT');
+  console.log('[DB] inventory.series column added');
 }
 
 // ── Activity log ─────────────────────────────────────────────────────────────

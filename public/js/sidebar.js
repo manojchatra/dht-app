@@ -46,8 +46,11 @@ function markSidebarActive() {
 
   if (p.startsWith('/contracts')) activateGroup('nav-contracts', 'sub-contracts');
   if (p.startsWith('/status'))    activateGroup('nav-status', 'sub-status');
+  if (p.startsWith('/inventory')) activateGroup('nav-inventory', 'sub-inventory');
   if (p === '/contracts/new') activateSub('/contracts/new');
   if (p === '/contracts')     activateSub('/contracts');
+  if (p === '/inventory/add') activateSub('/inventory/add');
+  if (p === '/inventory')     activateSub('/inventory');
   if (p.startsWith('/calendar'))  activateFlat('/calendar');
   // Delivery techs land on /delivery/:id from the Acknowledgement flow — keep it lit there too.
   if (p.startsWith('/acknowledgement') || p.startsWith('/delivery/')) activateFlat('/acknowledgement');

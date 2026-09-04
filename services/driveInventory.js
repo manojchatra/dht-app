@@ -200,10 +200,10 @@ function buildReceivedRow(d, receivedDate, serialPhotoUrl) {
 }
 
 // ── Inventory (read-only) ─────────────────────────────────────────────────────
-async function fetchFromSheets() {
+async function fetchFromSheets(tabName = INVENTORY_TAB) {
   const res = await getSheets().spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${INVENTORY_TAB}!A:Z`,
+    range: `${tabName}!A:Z`,
   });
   const rows = res.data.values || [];
   if (rows.length < 2) return [];
@@ -288,6 +288,82 @@ async function deleteInventoryRow(serialNumber) {
   });
   invalidateCache();
   console.log('[Drive] Removed serial', serialNumber, 'from Inventory');
+}
+
+// ── SKU master list (read-only, maintained by the user in Sheets) ─────────────
+// Expected tab "SKU List" with header row: SKU, Make, Series, Model, Shell Color, Cabinet Color
+const SKU_LIST_TAB   = 'SKU List';
+const SKU_CACHE_PATH = path.join(__dirname, '../../data/sku_list_cache.json');
+const SKU_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getSkuList(forceRefresh = false) {
+  const dir = path.dirname(SKU_CACHE_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive:true });
+  if (!forceRefresh && fs.existsSync(SKU_CACHE_PATH)) {
+    const cache = JSON.parse(fs.readFileSync(SKU_CACHE_PATH,'utf8'));
+    if (Date.now() - cache.timestamp < SKU_CACHE_TTL_MS) return cache.data;
+  }
+  const rows = await fetchFromSheets(SKU_LIST_TAB);
+  fs.writeFileSync(SKU_CACHE_PATH, JSON.stringify({ timestamp:Date.now(), data:rows }));
+  return rows;
+}
+
+// Case/whitespace-insensitive lookup of one SKU's Make/Model/Shell/Cabinet.
+async function lookupSku(sku) {
+  if (!sku) return null;
+  const list = await getSkuList();
+  const norm = sku.trim().toLowerCase();
+  const match = list.find(r => (r['SKU']||'').trim().toLowerCase() === norm);
+  if (!match) return null;
+  return {
+    sku:          match['SKU']||'',
+    make:         match['Make']||'',
+    series:       match['Series']||'',
+    model:        match['Model']||'',
+    shellColor:   match['Shell Color']||'',
+    cabinetColor: match['Cabinet Color']||'',
+  };
+}
+
+// ── Inventory Items (new DB-backed inventory — distinct from the read-only
+// "Inventory" tab above, which is only for picking an in-stock spa serial
+// during contract creation) ────────────────────────────────────────────────
+const INVENTORY_ITEMS_TAB = 'Inventory Items';
+const INVENTORY_ITEMS_HEADERS = [
+  'Serial Number','SKU Number','Make','Series','Model','Shell Color','Cabinet Color',
+  'Availability','Location','Steps','Cover','Finance','Added Date'
+];
+const INVENTORY_ITEM_FIELD_COLS = { availability:8, location:9, steps:10, cover:11, finance:12 };
+
+function buildInventoryItemRow(d) {
+  return [
+    d.serialNumber||'', d.skuNumber||'', d.make||'', d.series||'', d.model||'',
+    d.shellColor||'', d.cabinetColor||'',
+    d.availability||'In-stock', d.location||'', d.steps||'', d.cover||'', d.finance||'',
+    d.addedDate||new Date().toISOString().slice(0,10),
+  ];
+}
+
+async function appendInventoryItem(d) {
+  const sheets = getSheets();
+  await appendRow(sheets, INVENTORY_ITEMS_TAB, INVENTORY_ITEMS_HEADERS, buildInventoryItemRow(d));
+  console.log('[Drive] Added inventory item:', d.serialNumber);
+}
+
+// Finds a row by Serial Number (column A of Inventory Items).
+async function findInventoryItemRow(sheets, serialNumber) {
+  return findRowByContractId(sheets, INVENTORY_ITEMS_TAB, serialNumber);
+}
+
+async function updateInventoryItemField(serialNumber, field, value) {
+  const col = INVENTORY_ITEM_FIELD_COLS[field];
+  if (!col) throw new Error('Unknown inventory item field: ' + field);
+  const sheets = getSheets();
+  const rowIndex = await findInventoryItemRow(sheets, serialNumber);
+  if (rowIndex < 0) { console.warn('[Drive] Inventory item not found for update:', serialNumber); return false; }
+  await updateCell(sheets, INVENTORY_ITEMS_TAB, rowIndex, col, value);
+  console.log('[Drive] Updated inventory item', field, ':', serialNumber, '=', value);
+  return true;
 }
 
 // ── Write on contract save ────────────────────────────────────────────────────
@@ -518,6 +594,8 @@ async function readPaymentFromSheet(contractNumber) {
 module.exports = {
   searchInventory, getInventory, getLastSynced, invalidateCache,
   deleteInventoryRow,
+  getSkuList, lookupSku,
+  appendInventoryItem, updateInventoryItemField,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus,

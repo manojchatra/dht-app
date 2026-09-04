@@ -54,6 +54,7 @@ app.use('/auth', require('./routes/auth'));
 app.use('/api/contracts',    requireAuth, require('./routes/contracts'));
 app.use('/api/notifications', requireAuth, require('./routes/notifications'));
 app.use('/api/inventory',    requireAuth, require('./routes/inventory'));
+app.use('/api/inventory-items', requireAuth, require('./routes/inventory-items'));
 app.use('/api/users',        requireAuth, require('./routes/users'));
 app.use('/api/payments',     requireAuth, require('./routes/payments'));
 app.use('/api/settings',     requireAuth, require('./routes/settings-api'));
@@ -88,6 +89,8 @@ app.get('/contracts/view',  requireAuth, serve('view-contracts.html'));
 app.get('/contracts/preview', requireAuth, serve('preview-contract.html'));
 app.get('/contracts/:id',  requireAuth, serve('contract-detail.html'));
 app.get('/status',    requireAuth, serve('status.html'));
+app.get('/inventory',     requireAuth, serve('inventory-list.html'));
+app.get('/inventory/add', requireAuth, serve('inventory-add.html'));
 app.get('/calendar',  requireAuth, serve('calendar.html'));
 app.get('/settings',  requireAuth, serve('settings.html'));
 
