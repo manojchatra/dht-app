@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Warehouse — Desert Hot Tubs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
+<script src="/js/html5-qrcode.min.js"></script>
+<style>
+.add-inv-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent);color:#fff;border-radius:12px;padding:18px 22px;margin-bottom:20px}
+.add-inv-banner div{font-size:15px;font-weight:600}
+.add-inv-banner a{background:#fff;color:var(--accent);padding:10px 18px;border-radius:8px;font-weight:600;text-decoration:none;white-space:nowrap}
+.search-wrap{position:relative;max-width:360px;margin-bottom:16px}
+.search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px}
+.search-wrap input{width:100%;padding-left:34px}
+.queue-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.queue-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+.queue-card .qc-name{font-weight:600;font-size:14px;margin-bottom:4px}
+.queue-card .qc-sub{font-size:12px;color:var(--text-muted);margin-bottom:8px}
+.truck-pill{display:inline-flex;align-items:center;gap:5px;background:var(--accent-bg);color:var(--accent);padding:2px 10px;border-radius:12px;font-weight:600;font-size:11px;margin-top:6px}
+.scan-region{width:100%;border-radius:10px;overflow:hidden;background:#000;display:none;margin-bottom:10px}
+.scan-region video{width:100%;display:block}
+.scan-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.scan-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
+</style>
+</head>
+<body>
+<div id="sidebar-root"></div>
+<script src="/js/sidebar.js"></script>
+<main class="main">
+  <div class="page-header"><h1>Warehouse</h1></div>
+
+  <div class="add-inv-banner">
+    <div><i class="fa-solid fa-boxes-stacked"></i>&nbsp; Adding new stock?</div>
+    <a href="/inventory/add"><i class="fa-solid fa-plus"></i> Add to Inventory</a>
+  </div>
+
+  <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search Web Order # or Truck #…" oninput="renderQueue()"></div>
+
+  <div id="queueGrid" class="queue-grid"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div></div>
+</main>
+
+<div class="modal-overlay" id="receiveModal">
+  <div class="modal-box" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-truck-arrow-right" style="color:var(--accent)"></i> Mark Received — <span id="rcvContractNum"></span></h2>
+      <button onclick="closeReceiveModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
+    </div>
+
+    <p style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">Serial Number</p>
+    <div class="scan-row">
+      <button class="btn btn-secondary btn-sm" id="rcvSerialScanBtn" onclick="startRcvSerialScan()"><i class="fa-solid fa-camera"></i> Scan</button>
+      <button class="btn btn-secondary btn-sm" id="rcvSerialStopBtn" onclick="stopRcvSerialScan()" style="display:none">Stop</button>
+      <img class="scan-thumb" id="rcvSerialThumb" style="display:none">
+    </div>
+    <div id="rcvSerialScannerRegion" class="scan-region"></div>
+    <input type="text" id="rcvSerialInput" placeholder="Or enter Serial Number manually" style="width:100%;margin-bottom:16px">
+
+    <p style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">SKU Barcode</p>
+    <div class="scan-row">
+      <button class="btn btn-secondary btn-sm" id="rcvSkuScanBtn" onclick="startRcvSkuScan()"><i class="fa-solid fa-camera"></i> Scan</button>
+      <button class="btn btn-secondary btn-sm" id="rcvSkuStopBtn" onclick="stopRcvSkuScan()" style="display:none">Stop</button>
+      <img class="scan-thumb" id="rcvSkuThumb" style="display:none">
+    </div>
+    <div id="rcvSkuScannerRegion" class="scan-region"></div>
+    <input type="text" id="rcvSkuInput" placeholder="Or enter SKU manually" style="width:100%;margin-bottom:16px">
+
+    <div id="rcvError" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeReceiveModal()">Cancel</button>
+      <button class="btn btn-primary" id="rcvSaveBtn" onclick="submitReceive()"><i class="fa-solid fa-check"></i> Confirm Received</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showToast(msg,type='success'){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';t.className='toast';document.body.appendChild(t)}
+  t.textContent=msg;t.className='toast '+type+' show';
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+let queueItems=[];
+let rcvSerialScanner=null, rcvSkuScanner=null;
+let rcvSerialPhotoBlob=null, rcvSkuPhotoBlob=null;
+let rcvContractId=null;
+
+async function loadQueue(){
+  try{
+    const r=await fetch('/api/warehouse/queue');
+    if(!r.ok) throw new Error('Failed to load queue');
+    queueItems=await r.json();
+    renderQueue();
+  }catch(e){
+    document.getElementById('queueGrid').innerHTML='<div class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><p>'+escHtml(e.message)+'</p></div>';
+  }
+}
+
+function renderQueue(){
+  const q=document.getElementById('searchInput').value.trim().toLowerCase();
+  const filtered=queueItems.filter(function(it){
+    if(!q) return true;
+    return (it.web_order_number||'').toLowerCase().includes(q) || (it.truck_number||'').toLowerCase().includes(q);
+  });
+  const grid=document.getElementById('queueGrid');
+  if(!filtered.length){
+    grid.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No orders awaiting receipt</p></div>';
+    return;
+  }
+  grid.innerHTML=filtered.map(function(it){
+    const color=[it.shell_color,it.cabinet_color].filter(Boolean).join(' / ');
+    return '<div class="queue-card">'
+      +'<div class="qc-name">'+escHtml(it.customer_name||'—')+'</div>'
+      +'<div class="qc-sub">'+escHtml(it.make||'')+' '+escHtml(it.model||'')+(color?' · '+escHtml(color):'')+'</div>'
+      +'<div class="qc-sub">Web Order #: '+escHtml(it.web_order_number||'—')+'</div>'
+      +'<div class="truck-pill"><i class="fa-solid fa-truck"></i> '+escHtml(it.truck_number||'—')+'</div>'
+      +'<div style="margin-top:12px"><button class="btn btn-primary btn-sm" onclick="openReceiveModal('+it.id+',\''+escHtml(it.contract_number||'')+'\')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button></div>'
+      +'</div>';
+  }).join('');
+}
+
+function captureFrameAsPhoto(regionId){
+  return new Promise(function(resolve){
+    var video=document.querySelector('#'+regionId+' video');
+    if(!video){resolve(null);return;}
+    var canvas=document.createElement('canvas');
+    canvas.width=video.videoWidth||640; canvas.height=video.videoHeight||480;
+    canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+    canvas.toBlob(function(blob){resolve(blob);},'image/jpeg',0.85);
+  });
+}
+
+function openReceiveModal(id,contractNum){
+  rcvContractId=id;
+  document.getElementById('rcvContractNum').textContent=contractNum;
+  document.getElementById('rcvSerialInput').value='';
+  document.getElementById('rcvSkuInput').value='';
+  document.getElementById('rcvSerialThumb').style.display='none';
+  document.getElementById('rcvSkuThumb').style.display='none';
+  document.getElementById('rcvError').style.display='none';
+  rcvSerialPhotoBlob=null; rcvSkuPhotoBlob=null;
+  document.getElementById('receiveModal').classList.add('open');
+}
+function closeReceiveModal(){
+  document.getElementById('receiveModal').classList.remove('open');
+  stopRcvSerialScan(); stopRcvSkuScan();
+  rcvContractId=null;
+}
+document.getElementById('receiveModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closeReceiveModal(); });
+
+function startRcvSerialScan(){
+  document.getElementById('rcvSerialScannerRegion').style.display='block';
+  document.getElementById('rcvSerialScanBtn').style.display='none';
+  document.getElementById('rcvSerialStopBtn').style.display='inline-flex';
+  rcvSerialScanner=new Html5Qrcode('rcvSerialScannerRegion');
+  rcvSerialScanner.start(
+    {facingMode:'environment'}, {fps:10, qrbox:{width:240,height:150}},
+    function(decodedText){
+      document.getElementById('rcvSerialInput').value=decodedText;
+      captureFrameAsPhoto('rcvSerialScannerRegion').then(function(blob){
+        if(blob){ rcvSerialPhotoBlob=blob; var img=document.getElementById('rcvSerialThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
+      });
+      stopRcvSerialScan();
+    },
+    function(){}
+  ).catch(function(err){
+    showToast('Camera error: '+err,'error');
+    document.getElementById('rcvSerialScanBtn').style.display='inline-flex';
+    document.getElementById('rcvSerialStopBtn').style.display='none';
+    document.getElementById('rcvSerialScannerRegion').style.display='none';
+  });
+}
+function stopRcvSerialScan(){
+  document.getElementById('rcvSerialScanBtn').style.display='inline-flex';
+  document.getElementById('rcvSerialStopBtn').style.display='none';
+  document.getElementById('rcvSerialScannerRegion').style.display='none';
+  if(rcvSerialScanner){ rcvSerialScanner.stop().then(function(){rcvSerialScanner.clear();}).catch(function(){}); rcvSerialScanner=null; }
+}
+function startRcvSkuScan(){
+  document.getElementById('rcvSkuScannerRegion').style.display='block';
+  document.getElementById('rcvSkuScanBtn').style.display='none';
+  document.getElementById('rcvSkuStopBtn').style.display='inline-flex';
+  rcvSkuScanner=new Html5Qrcode('rcvSkuScannerRegion');
+  rcvSkuScanner.start(
+    {facingMode:'environment'}, {fps:10, qrbox:{width:240,height:150}},
+    function(decodedText){
+      document.getElementById('rcvSkuInput').value=decodedText;
+      captureFrameAsPhoto('rcvSkuScannerRegion').then(function(blob){
+        if(blob){ rcvSkuPhotoBlob=blob; var img=document.getElementById('rcvSkuThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
+      });
+      stopRcvSkuScan();
+    },
+    function(){}
+  ).catch(function(err){
+    showToast('Camera error: '+err,'error');
+    document.getElementById('rcvSkuScanBtn').style.display='inline-flex';
+    document.getElementById('rcvSkuStopBtn').style.display='none';
+    document.getElementById('rcvSkuScannerRegion').style.display='none';
+  });
+}
+function stopRcvSkuScan(){
+  document.getElementById('rcvSkuScanBtn').style.display='inline-flex';
+  document.getElementById('rcvSkuStopBtn').style.display='none';
+  document.getElementById('rcvSkuScannerRegion').style.display='none';
+  if(rcvSkuScanner){ rcvSkuScanner.stop().then(function(){rcvSkuScanner.clear();}).catch(function(){}); rcvSkuScanner=null; }
+}
+
+async function submitReceive(){
+  const serialNumber=document.getElementById('rcvSerialInput').value.trim();
+  const skuNumber=document.getElementById('rcvSkuInput').value.trim();
+  const errEl=document.getElementById('rcvError');
+  errEl.style.display='none';
+  if(!serialNumber){ errEl.textContent='Serial number is required'; errEl.style.display='block'; return; }
+  if(!rcvSerialPhotoBlob){ errEl.textContent='Serial number photo is required — scan it above'; errEl.style.display='block'; return; }
+  if(!rcvSkuPhotoBlob){ errEl.textContent='SKU barcode photo is required — scan it above'; errEl.style.display='block'; return; }
+
+  const btn=document.getElementById('rcvSaveBtn');
+  btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  try{
+    const fd=new FormData();
+    fd.append('serialNumber',serialNumber);
+    fd.append('skuNumber',skuNumber);
+    fd.append('serialPhoto',rcvSerialPhotoBlob,'serial-photo.jpg');
+    fd.append('skuPhoto',rcvSkuPhotoBlob,'sku-photo.jpg');
+    const r=await fetch('/api/warehouse/'+rcvContractId+'/receive',{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok){ errEl.textContent=j.error||'Failed'; errEl.style.display='block'; return; }
+    showToast('Marked as received','success');
+    closeReceiveModal();
+    loadQueue();
+  }catch(e){ errEl.textContent=e.message||'Failed'; errEl.style.display='block'; }
+  finally{ btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-check"></i> Confirm Received'; }
+}
+
+window._onAuthReady = loadQueue;
+window.addEventListener('beforeunload', function(){
+  if(rcvSerialScanner) rcvSerialScanner.stop().catch(function(){});
+  if(rcvSkuScanner) rcvSkuScanner.stop().catch(function(){});
+});
+</script>
+</body>
+</html>

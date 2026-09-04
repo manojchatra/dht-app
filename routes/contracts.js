@@ -828,3 +828,6 @@ router.post('/:id/images', (req, res) => {
 });
 
 module.exports = router;
+// Exposed for routes/warehouse.js, which needs the same Sheets row-shaping
+// logic for its own two-photo receive flow.
+module.exports.buildDriveData = buildDriveData;

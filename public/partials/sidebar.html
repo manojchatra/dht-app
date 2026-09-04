@@ -29,9 +29,10 @@
       <a class="nav-sub-item" data-tab="cancelled" href="/status?tab=cancelled"><i class="fa-solid fa-ban"></i> Cancelled</a>
     </div>
   </div>
-  <div class="admin-only" style="display:none">
+  <a class="nav-item admin-or-warehouse" style="display:none" href="/warehouse"><i class="fa-solid fa-truck-ramp-box"></i>Warehouse</a>
+  <div class="admin-or-warehouse" style="display:none">
     <button class="nav-item" id="nav-inventory" onclick="toggleNav('inventory')">
-      <i class="fa-solid fa-warehouse"></i>Inventory
+      <i class="fa-solid fa-boxes-stacked"></i>Inventory
       <i class="fa-solid fa-chevron-right nav-arrow"></i>
     </button>
     <div class="nav-sub" id="sub-inventory">

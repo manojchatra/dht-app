@@ -47,6 +47,7 @@ function markSidebarActive() {
   if (p.startsWith('/contracts')) activateGroup('nav-contracts', 'sub-contracts');
   if (p.startsWith('/status'))    activateGroup('nav-status', 'sub-status');
   if (p.startsWith('/inventory')) activateGroup('nav-inventory', 'sub-inventory');
+  if (p.startsWith('/warehouse')) activateFlat('/warehouse');
   if (p === '/contracts/new') activateSub('/contracts/new');
   if (p === '/contracts')     activateSub('/contracts');
   if (p === '/inventory/add') activateSub('/inventory/add');
@@ -80,13 +81,22 @@ async function initSidebar() {
   const _un = document.getElementById('userName'); if (_un) _un.textContent = u.username;
   const _tNames = { team_a: 'JV Spa Movers', team_b: 'Clear Choice Movers' };
   const _ur = document.getElementById('userRole');
-  if (_ur) _ur.textContent = u.role === 'admin' ? 'Administrator' : u.role === 'delivery' ? (_tNames[u.team] || 'Delivery') : 'Sales';
+  const _roleLabels = { admin: 'Administrator', delivery: _tNames[u.team] || 'Delivery', warehouse: 'Warehouse', sales: 'Sales' };
+  if (_ur) _ur.textContent = _roleLabels[u.role] || 'Sales';
 
   // Delivery role: restrict to delivery pages only
   if (u.role === 'delivery') {
     const _p = window.location.pathname;
     if (!_p.startsWith('/calendar') && !_p.startsWith('/delivery/') && !_p.startsWith('/acknowledgement/')) {
       window.location.href = '/calendar'; return;
+    }
+  }
+
+  // Warehouse role: restrict to its own dashboard + Inventory pages
+  if (u.role === 'warehouse') {
+    const _p = window.location.pathname;
+    if (!_p.startsWith('/warehouse') && !_p.startsWith('/inventory')) {
+      window.location.href = '/warehouse'; return;
     }
   }
 
@@ -102,6 +112,10 @@ async function initSidebar() {
   document.body.style.visibility = 'visible';
   const _ua = document.getElementById('userAvatar'); if (_ua) _ua.textContent = u.username[0].toUpperCase();
   if (u.role === 'admin') document.querySelectorAll('.admin-only').forEach(el => {
+    if (el.tagName === 'BUTTON' || el.tagName === 'A') el.style.display = 'flex';
+    else el.style.display = '';
+  });
+  if (u.role === 'admin' || u.role === 'warehouse') document.querySelectorAll('.admin-or-warehouse').forEach(el => {
     if (el.tagName === 'BUTTON' || el.tagName === 'A') el.style.display = 'flex';
     else el.style.display = '';
   });

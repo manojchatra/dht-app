@@ -27,6 +27,7 @@
 .role-admin{background:var(--accent-bg);color:var(--accent)}
 .role-sales{background:var(--surface2);color:var(--text-muted)}
 .role-delivery{background:#e9d8fd;color:#553c9a}
+.role-warehouse{background:#fef3c7;color:#92400e}
 .inline-form{display:flex;gap:8px;align-items:flex-end;width:100%}
 .inline-form>div{flex:1;min-width:0}
 .inline-form input,.inline-form select{width:100%}
@@ -99,6 +100,7 @@
     <option value="sales">Sales</option>
     <option value="admin">Admin</option>
     <option value="delivery">Delivery</option>
+    <option value="warehouse">Warehouse</option>
   </select>
   <select id="newUserTeam" style="display:none">
     <option value="team_a">JV Spa Movers</option>
@@ -266,7 +268,7 @@ async function loadUsers() {
     const users = await r.json();
     if (!Array.isArray(users)) throw new Error('Unexpected response: ' + JSON.stringify(users).slice(0,100));
     const tbody = document.getElementById('usersTbody');
-    const roleLabel = u => u.role==='admin'?'Admin':u.role==='delivery'?('Delivery — '+(u.team==='team_a'?'JV Spa Movers':'Clear Choice Movers')):'Sales';
+    const roleLabel = u => u.role==='admin'?'Admin':u.role==='delivery'?('Delivery — '+(u.team==='team_a'?'JV Spa Movers':'Clear Choice Movers')):u.role==='warehouse'?'Warehouse':'Sales';
     tbody.innerHTML = users.map(u =>
       '<tr><td style="font-weight:500">' + escHtml(u.name||'—') + '</td>' +
       '<td>' + escHtml(u.username) + '</td>' +
