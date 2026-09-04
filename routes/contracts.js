@@ -107,6 +107,10 @@ function toUrlPath(absPath) {
 // ── List contracts ────────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
   try {
+    // Salesperson-scoped visibility: a sales-role user only ever sees their
+    // own contracts, everywhere this list is used (status board, contracts
+    // list, dashboard counts, etc).
+    const scopedToSales = req.session.role === 'sales';
     const rows = db.prepare(`
       SELECT
         c.id, c.contract_number, c.store, c.date, c.delivery_date,
@@ -128,8 +132,9 @@ router.get('/', (req, res) => {
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       LEFT JOIN inventory inv ON inv.contract_id = c.id
+      ${scopedToSales ? 'WHERE c.salesman_user_id = ?' : ''}
       ORDER BY c.created_at DESC
-    `).all();
+    `).all(...(scopedToSales ? [req.session.userId] : []));
 
     const contracts = rows.map(r => ({
       ...r,
@@ -160,6 +165,9 @@ router.get('/:id', (req, res) => {
       WHERE c.id = ?
     `).get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
+    if (req.session.role === 'sales' && row.salesman_user_id !== req.session.userId) {
+      return res.status(403).json({ error: 'Forbidden — not your contract' });
+    }
 
     const payments = db.prepare('SELECT * FROM payments WHERE contract_id=? ORDER BY date,created_at').all(req.params.id);
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
@@ -318,16 +326,19 @@ router.post('/', uploadFields, async (req, res) => {
     const status      = initialStatus(product?.status);
 
     // 4. Insert contract
+    // Server-enforced, not just client-disabled: a sales-role user's contract
+    // is always attributed to themself, regardless of what the form submitted.
+    const salesmanUserId = req.session.role === 'sales' ? req.session.userId : (formData.salesmanUserId || null);
     const ins = db.prepare(`
       INSERT INTO contracts
-        (contract_number,customer_id,store,date,delivery_date,salesman,
+        (contract_number,customer_id,store,date,delivery_date,salesman,salesman_user_id,
          product_status,status,serial_number,make,model,
          grand_total,paid_amount,due_prior,
          data,contract_image_path,cheque_image_path,extra_images)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       contractNumber, customerId,
-      formData.store, formData.date, formData.deliveryDate, formData.salesman,
+      formData.store, formData.date, formData.deliveryDate, formData.salesman, salesmanUserId,
       product?.status, status, product?.serialNumber, product?.make, product?.model,
       grandTotal, paid, pending,
       JSON.stringify(cleanData),
@@ -481,6 +492,9 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
   try {
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Not found' });
+    if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {
+      return res.status(403).json({ error: 'Forbidden — not your contract' });
+    }
 
     // Block In Stock → Received
     if (status === 'received' && contract.product_status === 'instock') {

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sales — Desert Hot Tubs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
+<style>
+.inline-form{display:flex;gap:8px;align-items:flex-end;width:100%}
+.inline-form>div{flex:1;min-width:0}
+.inline-form input{width:100%}
+.inline-form>button{flex-shrink:0}
+.sales-table{width:100%;border-collapse:collapse;font-size:13px}
+.sales-table th{text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);font-weight:600;border-bottom:2px solid var(--border)}
+.sales-table td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.sales-table tr{cursor:pointer}
+.sales-table tr:hover td{background:var(--surface2)}
+.status-pill{font-size:11px;padding:2px 10px;border-radius:12px;font-weight:600}
+.status-pill.active{background:var(--green-bg);color:var(--green)}
+.status-pill.inactive{background:var(--red-bg);color:var(--red)}
+.toggle-switch{position:relative;display:inline-block;width:36px;height:20px}
+.toggle-switch input{display:none}
+.toggle-slider{position:absolute;inset:0;background:var(--border);border-radius:20px;transition:.15s;cursor:pointer}
+.toggle-slider:before{content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.15s}
+.toggle-switch input:checked+.toggle-slider{background:var(--green)}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(16px)}
+@media(max-width:640px){
+  .inline-form{flex-direction:column}
+  .inline-form>div{width:100%}
+  .inline-form>button{width:100%}
+  .sales-table{display:none}
+  .sales-cards{display:block !important}
+}
+.sales-cards{display:none}
+.sales-card{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--surface);cursor:pointer}
+.sales-card-top{display:flex;justify-content:space-between;align-items:center}
+.sales-card-name{font-weight:600;font-size:14px}
+.sales-card-sub{font-size:12px;color:var(--text-muted);margin-top:3px}
+</style>
+</head>
+<body>
+<div id="sidebar-root"></div>
+<script src="/js/sidebar.js"></script>
+<main class="main">
+  <div class="page-header"><h1>Sales</h1></div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Add Salesperson</div>
+    <div class="inline-form">
+      <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Name</label><input type="text" id="newSalesName" placeholder="Full name" autocomplete="off"></div>
+      <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Username</label><input type="text" id="newSalesUsername" placeholder="Username" autocomplete="off"></div>
+      <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Email</label><input type="email" id="newSalesEmail" placeholder="Email" autocomplete="off"></div>
+      <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Password</label><input type="password" id="newSalesPw" placeholder="Password" autocomplete="new-password"></div>
+      <button class="btn btn-primary" onclick="addSalesperson()"><i class="fa-solid fa-plus"></i> Add</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <table class="sales-table">
+      <thead><tr><th>Name</th><th>Email</th><th>Total Contracts</th><th>Status</th></tr></thead>
+      <tbody id="salesTbody"><tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+    </table>
+    <div class="sales-cards" id="salesCards"></div>
+  </div>
+</main>
+
+<script>
+function showToast(msg,type='success'){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';t.className='toast';document.body.appendChild(t)}
+  t.textContent=msg;t.className='toast '+type+' show';
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+async function loadSales(){
+  try{
+    const r=await fetch('/api/sales');
+    if(!r.ok) throw new Error('Failed to load');
+    const rows=await r.json();
+    const tbody=document.getElementById('salesTbody');
+    const cards=document.getElementById('salesCards');
+    if(!rows.length){
+      tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px">No salespeople yet</td></tr>';
+      cards.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No salespeople yet</p></div>';
+      return;
+    }
+    tbody.innerHTML=rows.map(function(u){
+      return '<tr onclick="window.location.href=\'/sales/'+u.id+'\'">'
+        +'<td style="font-weight:500">'+escHtml(u.name||u.username)+'</td>'
+        +'<td>'+escHtml(u.email||'—')+'</td>'
+        +'<td>'+u.contract_count+'</td>'
+        +'<td><span class="status-pill '+(u.active?'active':'inactive')+'">'+(u.active?'Active':'Inactive')+'</span></td>'
+        +'</tr>';
+    }).join('');
+    cards.innerHTML=rows.map(function(u){
+      return '<div class="sales-card" onclick="window.location.href=\'/sales/'+u.id+'\'">'
+        +'<div class="sales-card-top"><span class="sales-card-name">'+escHtml(u.name||u.username)+'</span>'
+        +'<span class="status-pill '+(u.active?'active':'inactive')+'">'+(u.active?'Active':'Inactive')+'</span></div>'
+        +'<div class="sales-card-sub">'+escHtml(u.email||'—')+' · '+u.contract_count+' contract'+(u.contract_count===1?'':'s')+'</div>'
+        +'</div>';
+    }).join('');
+  }catch(e){
+    document.getElementById('salesTbody').innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
+  }
+}
+
+async function addSalesperson(){
+  const name=document.getElementById('newSalesName').value.trim();
+  const username=document.getElementById('newSalesUsername').value.trim();
+  const email=document.getElementById('newSalesEmail').value.trim();
+  const password=document.getElementById('newSalesPw').value;
+  if(!name||!username||!email||!password){ showToast('Name, username, email, and password required','error'); return; }
+  try{
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,username,email,password})});
+    const j=await r.json();
+    if(!r.ok){ showToast(j.error||'Failed','error'); return; }
+    showToast('Salesperson added','success');
+    document.getElementById('newSalesName').value=document.getElementById('newSalesUsername').value=document.getElementById('newSalesEmail').value=document.getElementById('newSalesPw').value='';
+    loadSales();
+  }catch(e){ showToast(e.message||'Failed','error'); }
+}
+
+window._onAuthReady = loadSales;
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Salesperson — Desert Hot Tubs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
+<style>
+.profile-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:20px}
+.profile-name{font-size:20px;font-weight:700}
+.profile-email{font-size:13px;color:var(--text-muted);margin-top:2px}
+.status-pill{font-size:12px;padding:3px 12px;border-radius:12px;font-weight:600}
+.status-pill.active{background:var(--green-bg);color:var(--green)}
+.status-pill.inactive{background:var(--red-bg);color:var(--red)}
+.contracts-table{width:100%;border-collapse:collapse;font-size:13px}
+.contracts-table th{text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);font-weight:600;border-bottom:2px solid var(--border)}
+.contracts-table td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.contracts-table tr{cursor:pointer}
+.contracts-table tr:hover td{background:var(--surface2)}
+</style>
+</head>
+<body>
+<div id="sidebar-root"></div>
+<script src="/js/sidebar.js"></script>
+<main class="main">
+  <a href="/sales" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);text-decoration:none;margin-bottom:14px"><i class="fa-solid fa-arrow-left"></i> Back to Sales</a>
+
+  <div class="card" style="margin-bottom:20px">
+    <div class="profile-header">
+      <div>
+        <div class="profile-name" id="pName">…</div>
+        <div class="profile-email" id="pEmail"></div>
+        <span class="status-pill" id="pStatusPill" style="margin-top:8px;display:inline-block"></span>
+      </div>
+      <button class="btn btn-secondary" id="toggleActiveBtn" onclick="toggleActive()"></button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><i class="fa-solid fa-file-contract"></i>Contracts</div>
+    <table class="contracts-table">
+      <thead><tr><th>Contract #</th><th>Customer</th><th>Status</th><th>Date</th><th>Grand Total</th></tr></thead>
+      <tbody id="contractsTbody"><tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+function showToast(msg,type='success'){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';t.className='toast';document.body.appendChild(t)}
+  t.textContent=msg;t.className='toast '+type+' show';
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+const salesId=window.location.pathname.split('/').pop();
+let currentActive=1;
+const STATUS_LABEL={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
+
+async function loadProfile(){
+  try{
+    const r=await fetch('/api/sales/'+salesId);
+    if(!r.ok){ showToast('Failed to load salesperson','error'); return; }
+    const u=await r.json();
+    currentActive=u.active?1:0;
+    document.getElementById('pName').textContent=u.name||u.username;
+    document.getElementById('pEmail').textContent=u.email||'—';
+    renderStatus();
+
+    const tbody=document.getElementById('contractsTbody');
+    if(!u.contracts.length){
+      tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">No contracts yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML=u.contracts.map(function(c){
+      return '<tr onclick="window.location.href=\'/contracts/'+c.id+'\'">'
+        +'<td style="font-weight:500">'+escHtml(c.contract_number||'Draft')+'</td>'
+        +'<td>'+escHtml(c.customer_name||'—')+'</td>'
+        +'<td>'+(STATUS_LABEL[c.status]||c.status)+'</td>'
+        +'<td>'+(c.date||'—')+'</td>'
+        +'<td>'+(c.grand_total?'$'+c.grand_total:'—')+'</td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){ showToast(e.message||'Failed','error'); }
+}
+
+function renderStatus(){
+  const pill=document.getElementById('pStatusPill');
+  pill.className='status-pill '+(currentActive?'active':'inactive');
+  pill.textContent=currentActive?'Active':'Inactive';
+  const btn=document.getElementById('toggleActiveBtn');
+  btn.innerHTML=currentActive
+    ? '<i class="fa-solid fa-ban"></i> Mark Inactive'
+    : '<i class="fa-solid fa-circle-check"></i> Mark Active';
+}
+
+async function toggleActive(){
+  const newActive=currentActive?0:1;
+  try{
+    const r=await fetch('/api/sales/'+salesId+'/active',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:newActive})});
+    const j=await r.json();
+    if(!r.ok){ showToast(j.error||'Failed','error'); return; }
+    currentActive=newActive;
+    renderStatus();
+    showToast(newActive?'Marked active':'Marked inactive — this user can no longer log in','success');
+  }catch(e){ showToast(e.message||'Failed','error'); }
+}
+
+window._onAuthReady = loadProfile;
+</script>
+</body>
+</html>

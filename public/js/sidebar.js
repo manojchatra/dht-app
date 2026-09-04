@@ -48,6 +48,7 @@ function markSidebarActive() {
   if (p.startsWith('/status'))    activateGroup('nav-status', 'sub-status');
   if (p.startsWith('/inventory')) activateGroup('nav-inventory', 'sub-inventory');
   if (p.startsWith('/warehouse')) activateFlat('/warehouse');
+  if (p.startsWith('/sales'))     activateFlat('/sales');
   if (p === '/contracts/new') activateSub('/contracts/new');
   if (p === '/contracts')     activateSub('/contracts');
   if (p === '/inventory/add') activateSub('/inventory/add');
@@ -103,6 +104,7 @@ async function initSidebar() {
   // Set before _onAuthReady() — pages (e.g. delivery-view.html) read this
   // inside their own _onAuthReady to make role-specific UI decisions.
   window._userRole = u.role;
+  window._userId = u.userId;
 
   // Notify deferred loaders (e.g. calendar waits for auth)
   if (typeof window._onAuthReady === 'function') window._onAuthReady();

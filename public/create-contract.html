@@ -129,12 +129,9 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
       </div>
       <div>
         <label class="lbl">Salesman *</label>
-        <input type="text" id="salesman" list="salesmanList" placeholder="Start typing..." autocomplete="off">
-        <datalist id="salesmanList">
-          <option>Michael Ioli</option><option>Jeff Geffre</option><option>Robert Heger</option>
-          <option>Dave Pepe</option><option>Paul Williamson</option><option>Barbara Hodges</option>
-          <option>Gaurav Shetty</option><option>Joe Sorensen</option>
-        </datalist>
+        <select id="salesman">
+          <option value="">Select salesman...</option>
+        </select>
       </div>
     </div>
   </div>
@@ -733,6 +730,26 @@ let selectedShell='', selectedCabinet='', selectedCover='';
 let searchTimer=null, makeBT=null, modelBT=null;
 let extraImgCount=0;
 
+// ── Salesman dropdown — populated from real sales users, locked to self for sales role ──
+async function loadSalesmen(){
+  try{
+    const r=await fetch('/api/sales/active/list');
+    const list=await r.json();
+    const sel=document.getElementById('salesman');
+    if(!sel) return;
+    list.forEach(function(s){
+      var opt=document.createElement('option');
+      opt.value=s.id; opt.textContent=s.name;
+      sel.appendChild(opt);
+    });
+    if(window._userRole==='sales' && window._userId){
+      sel.value=String(window._userId);
+      sel.disabled=true;
+    }
+  }catch(e){ console.error('Failed to load salesmen', e); }
+}
+window._onAuthReady = loadSalesmen;
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',function(){
   buildChips('shellChips',   SHELL_COLORS,   function(v){selectedShell=v},   'shellColorOther');
@@ -980,8 +997,12 @@ function collectData(){
   function rd(name){var el=document.querySelector('[name="'+name+'"]:checked');return el?el.value:'';}
   function mc(sel){return[...document.querySelectorAll(sel)].filter(function(c){return c.checked}).map(function(c){return c.value});}
 
+  var salesmanEl=document.getElementById('salesman');
+  var salesmanOpt=salesmanEl&&salesmanEl.selectedIndex>-1?salesmanEl.options[salesmanEl.selectedIndex]:null;
   return{
-    store:selectedStore,date:v('saleDate'),deliveryDate:v('deliveryDate'),salesman:v('salesman'),
+    store:selectedStore,date:v('saleDate'),deliveryDate:v('deliveryDate'),
+    salesman:salesmanOpt?salesmanOpt.textContent:'',
+    salesmanUserId:v('salesman')?parseInt(v('salesman'),10):null,
     customer:{
       name:v('custName'),email:v('custEmail'),address:v('custAddress'),
       zip:v('custZip'),city:v('custCity'),state:v('custState')||'AZ',
@@ -1040,7 +1061,7 @@ async function goToPreview(){
   var data=collectData();
   if(!data.store){showToast('Please select a store location','error');return;}
   if(!data.customer.name){showToast('Customer name is required','error');return;}
-  if(!data.salesman){showToast('Salesman name is required','error');return;}
+  if(!data.salesmanUserId){showToast('Salesman is required','error');return;}
   if(!data.service.inTownDelivery && !data.service.outOfTownDelivery){showToast('Please select In-Town or Out-of-Town Delivery','error');return;}
   if(data.service.crane && !data.service.craneFee){showToast('Please enter a Crane fee','error');return;}
   if(data.service.outOfTownDelivery && !data.service.outOfTownDeliveryFee){showToast('Please enter an Out-of-Town Delivery fee','error');return;}

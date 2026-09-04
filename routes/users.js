@@ -20,7 +20,9 @@ router.post('/', (req, res) => {
   const { username, password, role, team, name, email } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
-  if (!['admin', 'sales', 'delivery', 'warehouse'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  // Sales users are created exclusively via the dedicated Sales section
+  // (routes/sales.js) now, not this generic form.
+  if (!['admin', 'delivery', 'warehouse'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
 
   try {
     const hash = bcrypt.hashSync(password, 10);
@@ -48,7 +50,7 @@ router.patch('/:id', (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
   }
-  if (role && ['admin', 'sales', 'delivery', 'warehouse'].includes(role)) {
+  if (role && ['admin', 'delivery', 'warehouse'].includes(role)) {
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
   }
   if (name) {

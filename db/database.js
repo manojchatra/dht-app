@@ -213,6 +213,14 @@ if (!userCols.includes('email')) {
   db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   console.log('[DB] users.email column added');
 }
+if (!userCols.includes('active')) {
+  db.exec('ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1');
+  console.log('[DB] users.active column added');
+}
+if (!existingCols.includes('salesman_user_id')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN salesman_user_id INTEGER REFERENCES users(id)');
+  console.log('[DB] contracts.salesman_user_id column added');
+}
 const pdfCols = db.prepare('PRAGMA table_info(post_delivery_feedback)').all().map(c=>c.name);
 if (!pdfCols.includes('google_review')) {
   db.exec('ALTER TABLE post_delivery_feedback ADD COLUMN google_review INTEGER');
