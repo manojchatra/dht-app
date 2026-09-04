@@ -945,11 +945,11 @@ function renderInvResults(rows){
   var tbody=document.createElement('tbody');
   rows.forEach(function(r){
     var tr=document.createElement('tr');
-    var isStock=(r.Availability||'').toLowerCase().includes('stock');
-    tr.innerHTML='<td>'+(r.Make||'')+'</td><td>'+(r.Series||'')+'</td><td>'+(r.Model||'')+'</td>'+
-      '<td>'+(r.Shell||'')+'</td><td>'+(r.Cabinet||'')+'</td>'+
-      '<td><strong>'+(r['Serial Number']||'')+'</strong></td>'+
-      '<td><span class="avail-chip'+(isStock?' avail-stock':'')+'">'+(r.Availability||'')+'</span></td>';
+    var isStock=(r.availability||'').toLowerCase()==='in-stock';
+    tr.innerHTML='<td>'+(r.make||'')+'</td><td>'+(r.series||'')+'</td><td>'+(r.model||'')+'</td>'+
+      '<td>'+(r.shell_color||'')+'</td><td>'+(r.cabinet_color||'')+'</td>'+
+      '<td><strong>'+(r.serial_number||'')+'</strong></td>'+
+      '<td><span class="avail-chip'+(isStock?' avail-stock':'')+'">'+(r.location||'—')+'</span></td>';
     tr.addEventListener('click',function(){selectUnit(r)});
     tbody.appendChild(tr);
   });
@@ -975,15 +975,15 @@ function selectChipFromValue(containerId, knownList, rawValue, otherId, setSelec
 }
 
 function selectUnit(row){
-  document.getElementById('prodMake').value=row.Make||'';
-  document.getElementById('prodSeries').value=row.Series||'';
-  document.getElementById('prodModel').value=row.Model||'';
-  document.getElementById('prodSerial').value=row['Serial Number']||'';
-  document.getElementById('spaSerial').textContent=row['Serial Number']||'Serial auto-filled';
-  document.getElementById('invTrigger').value=(row.Make||'')+' '+(row.Model||'')+' - '+(row['Serial Number']||'');
-  updateSeriesDl(row.Make||'');
-  selectChipFromValue('shellChips',   SHELL_COLORS,   row.Shell,   'shellColorOther',   function(v){selectedShell=v});
-  selectChipFromValue('cabinetChips', CABINET_COLORS, row.Cabinet, 'cabinetColorOther', function(v){selectedCabinet=v});
+  document.getElementById('prodMake').value=row.make||'';
+  document.getElementById('prodSeries').value=row.series||'';
+  document.getElementById('prodModel').value=row.model||'';
+  document.getElementById('prodSerial').value=row.serial_number||'';
+  document.getElementById('spaSerial').textContent=row.serial_number||'Serial auto-filled';
+  document.getElementById('invTrigger').value=(row.make||'')+' '+(row.model||'')+' - '+(row.serial_number||'');
+  updateSeriesDl(row.make||'');
+  selectChipFromValue('shellChips',   SHELL_COLORS,   row.shell_color,   'shellColorOther',   function(v){selectedShell=v});
+  selectChipFromValue('cabinetChips', CABINET_COLORS, row.cabinet_color, 'cabinetColorOther', function(v){selectedCabinet=v});
   closeInvModal();
   showToast('Item selected - fields auto-filled','success');
 }

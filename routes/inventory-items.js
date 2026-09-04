@@ -10,9 +10,9 @@ const multer  = require('multer');
 const router  = express.Router();
 const db      = require('../db/database');
 const { compressAndGate } = require('../utils/imageUtils');
-const { requireRole } = require('../middleware/auth');
+const { requireAdmin, requireRole } = require('../middleware/auth');
 const {
-  lookupSku, appendInventoryItem, updateInventoryItemField,
+  lookupSku, appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
 } = require('../services/driveInventory');
 
 // 'warehouse' isn't a creatable role yet (lands in Stage 5) — included here
@@ -169,6 +169,31 @@ router.patch('/:id', async (req, res) => {
   } catch (err) {
     console.error('Update inventory item error:', err);
     res.status(500).json({ error: 'Failed to update inventory item' });
+  }
+});
+
+// ── DELETE /:id — admin-only; blocked if the item is Sold / linked to a contract ─
+router.delete('/:id', requireAdmin, async (req, res) => {
+  try {
+    const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    if (item.availability === 'Sold' || item.contract_id) {
+      return res.status(400).json({ error: 'Cannot delete an item that is Sold or linked to a contract.' });
+    }
+
+    db.prepare('DELETE FROM inventory WHERE id=?').run(req.params.id);
+
+    [item.sku_photo_path, item.serial_photo_path].forEach(p => {
+      if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch(e) { console.error('[Delete inventory photo failed]', e.message); } }
+    });
+
+    try { await deleteInventoryItem(item.serial_number); }
+    catch(e) { console.error('[Drive delete inventory item failed — non-fatal]', e.message); }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete inventory item error:', err);
+    res.status(500).json({ error: 'Failed to delete inventory item' });
   }
 });
 

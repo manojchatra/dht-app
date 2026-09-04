@@ -366,6 +366,16 @@ async function updateInventoryItemField(serialNumber, field, value) {
   return true;
 }
 
+async function deleteInventoryItem(serialNumber) {
+  if (!serialNumber) return false;
+  const sheets = getSheets();
+  const rowIndex = await findInventoryItemRow(sheets, serialNumber);
+  if (rowIndex < 0) { console.warn('[Drive] Inventory item not found for delete:', serialNumber); return false; }
+  await deleteRow(sheets, INVENTORY_ITEMS_TAB, rowIndex);
+  console.log('[Drive] Deleted inventory item:', serialNumber);
+  return true;
+}
+
 // ── Write on contract save ────────────────────────────────────────────────────
 async function writeToAssigned(d) {
   const sheets = getSheets();
@@ -595,7 +605,7 @@ module.exports = {
   searchInventory, getInventory, getLastSynced, invalidateCache,
   deleteInventoryRow,
   getSkuList, lookupSku,
-  appendInventoryItem, updateInventoryItemField,
+  appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus,

@@ -14,7 +14,7 @@ const {
   revertToAssigned, updateTBOSerial, moveToOrderPlaced,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
-  updateReceivedSerial, deleteInventoryRow
+  updateReceivedSerial, deleteInventoryRow, updateInventoryItemField
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
@@ -410,6 +410,26 @@ router.post('/', uploadFields, async (req, res) => {
       }
     } catch (driveErr) {
       console.error('[Drive write failed — non-fatal]', driveErr.message);
+    }
+
+    // 7b. Link the picked in-stock DB inventory row (if any) to this contract.
+    // Enables the Finance Indicator for in-stock sales, which previously
+    // never fired for them because nothing tied a picked unit to the new
+    // contract. Mirrors routes/warehouse.js POST /:id/receive's "existing
+    // inventory row" branch. Skips silently if no matching row exists (e.g.
+    // a manually-typed serial with no prior DB record).
+    if (product?.status === 'instock' && product?.serialNumber) {
+      try {
+        const invRow = db.prepare('SELECT id FROM inventory WHERE serial_number = ?').get(product.serialNumber);
+        if (invRow) {
+          db.prepare(`UPDATE inventory SET availability='Sold', contract_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+            .run(contractId, invRow.id);
+          try { await updateInventoryItemField(product.serialNumber, 'availability', 'Sold'); }
+          catch(e) { console.error('[Drive update inventory item availability failed — non-fatal]', e.message); }
+        }
+      } catch (e) {
+        console.error('[Inventory link-on-contract failed — non-fatal]', e.message);
+      }
     }
 
     // Activity log

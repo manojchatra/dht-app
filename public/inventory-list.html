@@ -13,10 +13,13 @@
 <script src="/js/util.js"></script>
 <style>
 .inv-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
-.inv-toolbar input,.inv-toolbar select{min-width:140px}
-.search-wrap{position:relative;flex:1;min-width:200px}
+.inv-toolbar select{flex:1 1 160px;min-width:140px}
+.search-wrap{position:relative;flex:2 1 200px;min-width:200px}
 .search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px}
 .search-wrap input{width:100%;padding-left:34px}
+@media(max-width:640px){
+  .inv-toolbar .search-wrap,.inv-toolbar select{flex:1 1 100%}
+}
 .inv-table{width:100%;border-collapse:collapse;font-size:12.5px}
 .inv-table th{text-align:left;padding:8px 10px;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);font-weight:600;border-bottom:2px solid var(--border);white-space:nowrap}
 .inv-table td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -24,6 +27,12 @@
 .sold-row{opacity:.55}
 .photo-thumb{width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer}
 .no-photo{color:var(--text-light);font-size:11px}
+.inv-table td.actions-cell{white-space:nowrap;width:1%}
+.btn-row-save,.btn-row-delete{background:none;border:none;cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px;color:var(--text-muted)}
+.btn-row-save{color:var(--accent)}
+.btn-row-save:hover{background:var(--accent-bg)}
+.btn-row-delete:hover{background:var(--red-bg);color:var(--red)}
+tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
 @media(max-width:900px){.inv-table{display:none}}
 .inv-cards{display:none}
 @media(max-width:900px){.inv-cards{display:block}}
@@ -60,9 +69,9 @@
       <thead><tr>
         <th>Make</th><th>Series</th><th>Model</th><th>Shell</th><th>Cabinet</th>
         <th>Serial Number</th><th>SKU Number</th><th>Availability</th><th>Location</th>
-        <th>Steps</th><th>Cover</th><th>Finance</th><th>Photos</th>
+        <th>Steps</th><th>Cover</th><th>Finance</th><th>Photos</th><th>Actions</th>
       </tr></thead>
-      <tbody id="invTbody"><tr><td colspan="13" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+      <tbody id="invTbody"><tr><td colspan="14" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
     </table>
   </div>
   <div class="inv-cards" id="invCards"></div>
@@ -86,6 +95,7 @@ function showToast(msg,type='success'){
 
 const LOCATIONS=['EMP Room','Phoenix Floor','Tolleson Floor','Chandler Floor','Surprise Floor','Goodyear Floor'];
 let allItems=[];
+let pendingChanges={}; // id -> {field: newValue, ...} — not yet saved to the server
 
 async function loadInventory(){
   try{
@@ -94,7 +104,7 @@ async function loadInventory(){
     allItems=await r.json();
     renderInventory();
   }catch(e){
-    document.getElementById('invTbody').innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
+    document.getElementById('invTbody').innerHTML='<tr><td colspan="14" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
   }
 }
 
@@ -115,22 +125,23 @@ function filterItems(){
 
 function availSelect(it){
   const opts=['In-stock','Hold','Sold'];
-  return '<select onchange="updateField('+it.id+',\'availability\',this.value)">'+
+  return '<select onchange="markDirty('+it.id+',\'availability\',this.value)">'+
     opts.map(function(o){return '<option'+(o===it.availability?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
 function locSelect(it){
-  return '<select onchange="updateField('+it.id+',\'location\',this.value)">'+
+  return '<select onchange="markDirty('+it.id+',\'location\',this.value)">'+
     '<option value=""'+(!it.location?' selected':'')+'>—</option>'+
     LOCATIONS.map(function(o){return '<option'+(o===it.location?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
 function financeSelect(it){
   const opts=['DHT Owned','Bank Owned'];
-  return '<select onchange="updateField('+it.id+',\'finance\',this.value)">'+
+  return '<select onchange="markDirty('+it.id+',\'finance\',this.value)">'+
     '<option value=""'+(!it.finance?' selected':'')+'>—</option>'+
     opts.map(function(o){return '<option'+(o===it.finance?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
 function textField(it,field){
-  return '<input type="text" value="'+escHtml(it[field]||'')+'" onblur="updateField('+it.id+',\''+field+'\',this.value)">';
+  // 'change' (not 'blur') so a value that's unchanged on blur doesn't spuriously mark the row dirty.
+  return '<input type="text" value="'+escHtml(it[field]||'')+'" onchange="markDirty('+it.id+',\''+field+'\',this.value)">';
 }
 function photoCell(it){
   var out='';
@@ -139,18 +150,27 @@ function photoCell(it){
   if(!it.sku_photo_url && !it.serial_photo_url) out='<span class="no-photo">—</span>';
   return out;
 }
+function actionsCell(it){
+  const dirty = !!pendingChanges[it.id];
+  var out='<button type="button" id="save-'+it.id+'" class="btn-row-save" style="display:'+(dirty?'inline-block':'none')+'" onclick="saveRow('+it.id+')" title="Save changes"><i class="fa-solid fa-floppy-disk"></i></button>';
+  if(window._userRole==='admin'){
+    out+='<button type="button" class="btn-row-delete" onclick="deleteItem('+it.id+')" title="Delete item"><i class="fa-solid fa-trash"></i></button>';
+  }
+  return out;
+}
 
 function renderInventory(){
   const items=filterItems();
   const tbody=document.getElementById('invTbody');
   const cards=document.getElementById('invCards');
   if(!items.length){
-    tbody.innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
+    tbody.innerHTML='<tr><td colspan="14" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
     cards.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No inventory items found</p></div>';
     return;
   }
   tbody.innerHTML=items.map(function(it){
-    return '<tr class="'+(it.availability==='Sold'?'sold-row':'')+'">'
+    const dirty = !!pendingChanges[it.id];
+    return '<tr id="row-'+it.id+'" class="'+(it.availability==='Sold'?'sold-row ':'')+(dirty?'row-dirty':'')+'">'
       +'<td>'+escHtml(it.make||'')+'</td>'
       +'<td>'+escHtml(it.series||'')+'</td>'
       +'<td>'+escHtml(it.model||'')+'</td>'
@@ -164,11 +184,13 @@ function renderInventory(){
       +'<td>'+textField(it,'cover')+'</td>'
       +'<td>'+financeSelect(it)+'</td>'
       +'<td>'+photoCell(it)+'</td>'
+      +'<td class="actions-cell">'+actionsCell(it)+'</td>'
       +'</tr>';
   }).join('');
 
   cards.innerHTML=items.map(function(it){
-    return '<div class="inv-card'+(it.availability==='Sold'?' sold-row':'')+'">'
+    const dirty = !!pendingChanges[it.id];
+    return '<div id="card-'+it.id+'" class="inv-card'+(it.availability==='Sold'?' sold-row':'')+(dirty?' row-dirty':'')+'">'
       +'<div class="inv-card-top"><div><div class="inv-card-title">'+escHtml(it.make||'')+' '+escHtml(it.model||'')+'</div>'
       +'<div class="inv-card-sub">'+escHtml(it.series||'')+' · S/N '+escHtml(it.serial_number||'—')+' · SKU '+escHtml(it.sku_number||'—')+'</div>'
       +'<div class="inv-card-sub">'+escHtml(it.shell_color||'')+' / '+escHtml(it.cabinet_color||'')+'</div></div>'
@@ -179,28 +201,62 @@ function renderInventory(){
       +'<div><label>Steps</label>'+textField(it,'steps')+'</div>'
       +'<div><label>Cover</label>'+textField(it,'cover')+'</div>'
       +'<div><label>Finance</label>'+financeSelect(it)+'</div>'
-      +'</div></div>';
+      +'</div>'
+      +'<div style="margin-top:10px;text-align:right">'+actionsCell(it)+'</div></div>';
   }).join('');
 }
 
-async function updateField(id,field,value){
+// Records an unsaved field change for a row; does NOT hit the network.
+// Reveals that row's Save button and applies the dirty visual state.
+function markDirty(id,field,value){
+  if(!pendingChanges[id]) pendingChanges[id]={};
+  pendingChanges[id][field]=value;
+  const saveBtn=document.getElementById('save-'+id);
+  if(saveBtn) saveBtn.style.display='inline-block';
+  const row=document.getElementById('row-'+id); if(row) row.classList.add('row-dirty');
+  const card=document.getElementById('card-'+id); if(card) card.classList.add('row-dirty');
+}
+
+// Sends ONE PATCH with every pending field for this row, then clears the
+// pending entry and re-renders (same conventions as the old updateField()).
+async function saveRow(id){
+  const changes=pendingChanges[id];
+  if(!changes) return;
   try{
-    const body={}; body[field]=value;
-    const r=await fetch('/api/inventory-items/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('/api/inventory-items/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(changes)});
     const j=await r.json();
     if(!r.ok){ showToast(j.error||'Update failed','error'); return; }
     const item=allItems.find(function(it){return it.id===id;});
-    if(item) item[field]=value;
+    if(item) Object.assign(item,changes);
+    delete pendingChanges[id];
     showToast('Saved','success');
-    if(field==='availability') renderInventory();
+    renderInventory(); // also needed when 'availability' changed, to re-sort Sold to the bottom
   }catch(e){ showToast(e.message||'Failed','error'); }
+}
+
+async function deleteItem(id){
+  const item=allItems.find(function(it){return it.id===id;});
+  if(!item) return;
+  if(!confirm('Delete this inventory item ('+(item.make||'')+' '+(item.model||'')+' — S/N '+(item.serial_number||'')+')? This cannot be undone.')) return;
+  try{
+    const r=await fetch('/api/inventory-items/'+id,{method:'DELETE'});
+    const j=await r.json();
+    if(!r.ok){ showToast(j.error||'Delete failed','error'); return; }
+    allItems=allItems.filter(function(it){return it.id!==id;});
+    delete pendingChanges[id];
+    showToast('Item deleted','success');
+    renderInventory();
+  }catch(e){ showToast(e.message||'Delete failed','error'); }
 }
 
 function openPhoto(url){ document.getElementById('photoModalImg').src=url; document.getElementById('photoModal').classList.add('open'); }
 function closePhotoModal(){ document.getElementById('photoModal').classList.remove('open'); }
 document.getElementById('photoModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closePhotoModal(); });
 
-loadInventory();
+// Deferred until sidebar.js's auth check sets window._userRole, so the
+// admin-only delete button in actionsCell() is never computed before it's known
+// (same convention as view-contracts.html / status.html / contract-detail.html).
+window._onAuthReady = loadInventory;
 </script>
 </body>
 </html>
