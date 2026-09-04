@@ -145,6 +145,7 @@ textarea{resize:vertical;min-height:60px}
 .toast.show{transform:translateY(0);opacity:1}
 .toast.success{border-color:var(--green);color:var(--green)}
 .toast.error{border-color:var(--red);color:var(--red)}
+.toast.warning{border-color:var(--yellow);color:var(--yellow)}
 
 /* Modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(42,31,24,.35);z-index:100;align-items:center;justify-content:center}
@@ -257,6 +258,7 @@ textarea{resize:vertical;min-height:60px}
 .toast.show{transform:translateY(0);opacity:1}
 .toast.success{border-color:var(--green);color:var(--green)}
 .toast.error{border-color:var(--red);color:var(--red)}
+.toast.warning{border-color:var(--yellow);color:var(--yellow)}
 
 /* Modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(42,31,24,.35);z-index:100;align-items:center;justify-content:center}

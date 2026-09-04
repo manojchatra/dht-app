@@ -308,21 +308,63 @@ async function getSkuList(forceRefresh = false) {
   return rows;
 }
 
-// Case/whitespace-insensitive lookup of one SKU's Make/Model/Shell/Cabinet.
-async function lookupSku(sku) {
-  if (!sku) return null;
-  const list = await getSkuList();
-  const norm = sku.trim().toLowerCase();
-  const match = list.find(r => (r['SKU']||'').trim().toLowerCase() === norm);
-  if (!match) return null;
+// Strips spaces/dashes so formatting differences (not just case) don't cause
+// a false miss — SKUs here are long numeric barcodes (e.g. "141101267100.26").
+function normalizeSku(s) {
+  return String(s||'').trim().toLowerCase().replace(/[\s-]/g, '');
+}
+
+// Standard iterative Levenshtein distance, no dependency.
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i-1] === b[j-1] ? prev : 1 + Math.min(prev, dp[j], dp[j-1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+function buildSkuMatch(r) {
   return {
-    sku:          match['SKU']||'',
-    make:         match['Make']||'',
-    series:       match['Series']||'',
-    model:        match['Model']||'',
-    shellColor:   match['Shell Color']||'',
-    cabinetColor: match['Cabinet Color']||'',
+    sku:          r['SKU']||'',
+    make:         r['Make']||'',
+    series:       r['Series']||'',
+    model:        r['Model']||'',
+    shellColor:   r['Shell Color']||'',
+    cabinetColor: r['Cabinet Color']||'',
   };
+}
+
+// Formatting-normalized lookup of one SKU's Make/Model/Shell/Cabinet. On a
+// clean miss, also checks for a single close match (edit distance <= 2) —
+// safe here since these SKUs are long/high-entropy numeric codes, so two
+// genuinely different real SKUs landing that close together is very
+// unlikely. Returns { match, suggestion } — exactly one is non-null, or
+// both are null if nothing is close enough to suggest.
+async function lookupSku(sku) {
+  if (!sku) return { match: null, suggestion: null };
+  const list = await getSkuList();
+  const norm = normalizeSku(sku);
+
+  let closest = null, closestDist = Infinity;
+  for (const r of list) {
+    const rNorm = normalizeSku(r['SKU']);
+    if (!rNorm) continue;
+    if (rNorm === norm) return { match: buildSkuMatch(r), suggestion: null };
+    const d = levenshtein(norm, rNorm);
+    if (d < closestDist) { closestDist = d; closest = r; }
+  }
+  if (closest && closestDist <= 2) return { match: null, suggestion: buildSkuMatch(closest) };
+  return { match: null, suggestion: null };
 }
 
 // ── Inventory Items (new DB-backed inventory — distinct from the read-only

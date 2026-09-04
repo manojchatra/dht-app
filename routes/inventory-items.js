@@ -84,9 +84,10 @@ router.get('/', (req, res) => {
 // ── GET /sku-lookup?sku=... — resolve Make/Model/Colors from the SKU master list ─
 router.get('/sku-lookup', async (req, res) => {
   try {
-    const match = await lookupSku(req.query.sku || '');
-    if (!match) return res.status(404).json({ error: 'SKU not found' });
-    res.json(match);
+    const { match, suggestion } = await lookupSku(req.query.sku || '');
+    if (match) return res.json(match);
+    if (suggestion) return res.status(404).json({ error: 'SKU not found', suggestion });
+    res.status(404).json({ error: 'SKU not found' });
   } catch (err) {
     console.error('SKU lookup error:', err);
     res.status(500).json({ error: 'SKU lookup failed', detail: err.message });
@@ -158,14 +159,21 @@ router.patch('/:id', async (req, res) => {
     params.push(req.params.id);
     db.prepare(`UPDATE inventory SET ${updates.join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(...params);
 
+    // sheetSynced=false tells the UI to warn the user the Sheets mirror
+    // couldn't find this item (most commonly a Serial Number mismatch/typo
+    // between the DB and the sheet) — the DB save above still succeeded.
+    let sheetSynced = true;
     for (const field of EDITABLE_FIELDS) {
       if (req.body[field] !== undefined) {
-        try { await updateInventoryItemField(item.serial_number, field, req.body[field]); }
-        catch(e) { console.error('[Drive update inventory field failed — non-fatal]', e.message); }
+        try {
+          const ok = await updateInventoryItemField(item.serial_number, field, req.body[field]);
+          if (!ok) sheetSynced = false;
+        }
+        catch(e) { console.error('[Drive update inventory field failed — non-fatal]', e.message); sheetSynced = false; }
       }
     }
 
-    res.json({ success: true });
+    res.json({ success: true, sheetSynced });
   } catch (err) {
     console.error('Update inventory item error:', err);
     res.status(500).json({ error: 'Failed to update inventory item' });
@@ -187,10 +195,11 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch(e) { console.error('[Delete inventory photo failed]', e.message); } }
     });
 
-    try { await deleteInventoryItem(item.serial_number); }
-    catch(e) { console.error('[Drive delete inventory item failed — non-fatal]', e.message); }
+    let sheetSynced = true;
+    try { sheetSynced = await deleteInventoryItem(item.serial_number); }
+    catch(e) { console.error('[Drive delete inventory item failed — non-fatal]', e.message); sheetSynced = false; }
 
-    res.json({ success: true });
+    res.json({ success: true, sheetSynced });
   } catch (err) {
     console.error('Delete inventory item error:', err);
     res.status(500).json({ error: 'Failed to delete inventory item' });

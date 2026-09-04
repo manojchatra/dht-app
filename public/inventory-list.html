@@ -229,7 +229,11 @@ async function saveRow(id){
     const item=allItems.find(function(it){return it.id===id;});
     if(item) Object.assign(item,changes);
     delete pendingChanges[id];
-    showToast('Saved','success');
+    if(j.sheetSynced===false){
+      showToast('Saved, but couldn\'t find this item in the spreadsheet — check the Serial Number for typos','warning');
+    }else{
+      showToast('Saved','success');
+    }
     renderInventory(); // also needed when 'availability' changed, to re-sort Sold to the bottom
   }catch(e){ showToast(e.message||'Failed','error'); }
 }
@@ -244,7 +248,11 @@ async function deleteItem(id){
     if(!r.ok){ showToast(j.error||'Delete failed','error'); return; }
     allItems=allItems.filter(function(it){return it.id!==id;});
     delete pendingChanges[id];
-    showToast('Item deleted','success');
+    if(j.sheetSynced===false){
+      showToast('Deleted, but couldn\'t remove it from the spreadsheet — check the Serial Number for typos','warning');
+    }else{
+      showToast('Item deleted','success');
+    }
     renderInventory();
   }catch(e){ showToast(e.message||'Delete failed','error'); }
 }

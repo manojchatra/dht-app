@@ -22,6 +22,8 @@
 .field-grid label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500}
 .field-grid input{width:100%}
 .resolved-badge{font-size:11px;color:var(--green);font-weight:600;margin-left:8px}
+.sku-suggestion{font-size:12px;color:var(--yellow);margin-top:6px}
+.sku-suggestion a{color:var(--yellow);text-decoration:underline;cursor:pointer;font-weight:600}
 </style>
 </head>
 <body>
@@ -43,6 +45,7 @@
       <button class="btn btn-secondary" onclick="lookupSkuManual()"><i class="fa-solid fa-magnifying-glass"></i> Look Up</button>
       <span class="resolved-badge" id="skuResolvedBadge" style="display:none"><i class="fa-solid fa-circle-check"></i> Resolved from SKU list</span>
     </div>
+    <div id="skuSuggestion" class="sku-suggestion" style="display:none"></div>
   </div>
 
   <div class="card" style="margin-bottom:16px">
@@ -102,10 +105,15 @@ function captureFrameAsPhoto(regionId){
 async function lookupSku(sku){
   if(!sku){return;}
   document.getElementById('skuResolvedBadge').style.display='none';
+  hideSkuSuggestion();
   try{
     const r=await fetch('/api/inventory-items/sku-lookup?sku='+encodeURIComponent(sku));
-    if(!r.ok){ showToast('SKU not found in the list — fill in details manually','error'); return; }
     const j=await r.json();
+    if(!r.ok){
+      if(j.suggestion){ showSkuSuggestion(j.suggestion); }
+      else{ showToast('SKU not found in the list — fill in details manually','error'); }
+      return;
+    }
     document.getElementById('fldMake').value=j.make||'';
     document.getElementById('fldSeries').value=j.series||'';
     document.getElementById('fldModel').value=j.model||'';
@@ -115,6 +123,19 @@ async function lookupSku(sku){
   }catch(e){ showToast('SKU lookup failed: '+e.message,'error'); }
 }
 function lookupSkuManual(){ lookupSku(document.getElementById('skuInput').value.trim()); }
+function showSkuSuggestion(s){
+  const el=document.getElementById('skuSuggestion');
+  el.innerHTML='SKU not found. Did you mean <a onclick="acceptSkuSuggestion(\''+escHtml(s.sku)+'\')">'+escHtml(s.sku)+'</a>?';
+  el.style.display='block';
+}
+function hideSkuSuggestion(){
+  const el=document.getElementById('skuSuggestion');
+  el.style.display='none'; el.innerHTML='';
+}
+function acceptSkuSuggestion(sku){
+  document.getElementById('skuInput').value=sku;
+  lookupSku(sku);
+}
 
 function startSkuScan(){
   document.getElementById('skuScannerRegion').style.display='block';
