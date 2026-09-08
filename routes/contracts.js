@@ -861,7 +861,7 @@ router.get('/:id/pdf', async (req, res) => {
 
 // ── Add image to existing contract — saves to contract folder ────────────────
 router.post('/:id/images', (req, res) => {
-  uploadSingle(req, res, err => {
+  uploadSingle(req, res, async err => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -878,7 +878,11 @@ router.post('/:id/images', (req, res) => {
     const ext      = path.extname(req.file.originalname) || path.extname(req.file.path) || '.jpg';
     const destPath = path.join(contractFolder, `extra-${existing.length+1}-${safe}${ext}`);
     try { fs.renameSync(req.file.path, destPath); } catch(e) { /* keep original path */ }
-    const finalPath = fs.existsSync(destPath) ? destPath : req.file.path;
+    let finalPath = fs.existsSync(destPath) ? destPath : req.file.path;
+
+    const compResult = await compressAndGate(finalPath);
+    if (compResult.error) return res.status(400).json({ error: compResult.error });
+    if (compResult.path) finalPath = compResult.path;
 
     existing.push({ path: finalPath, label });
     db.prepare('UPDATE contracts SET extra_images = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')

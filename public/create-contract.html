@@ -895,7 +895,7 @@ function addExtraImgSlot(){
   var zone=document.createElement('div');zone.className='upload-zone';
   var fileInput=document.createElement('input');
   fileInput.type='file';fileInput.id='extraImg'+idx;fileInput.name='extraImages';
-  fileInput.accept='image/*';fileInput.setAttribute('capture','environment');
+  fileInput.accept='image/*,application/pdf';fileInput.setAttribute('capture','environment');
   var previewId='extraPreview'+idx;
   fileInput.addEventListener('change',function(){onImgSelect(this,previewId,'','')});
   var icon=document.createElement('i');icon.className='fa-solid fa-image';
