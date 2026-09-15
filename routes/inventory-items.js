@@ -99,7 +99,7 @@ router.post('/', (req, res) => {
   uploadPhotos(req, res, async (err) => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     try {
-      const { make, series, model, shellColor, cabinetColor, serialNumber, skuNumber } = req.body;
+      const { make, series, model, shellColor, cabinetColor, serialNumber, skuNumber, speaker } = req.body;
       if (!serialNumber || !serialNumber.trim()) return res.status(400).json({ error: 'Serial number is required' });
       if (!make || !model) return res.status(400).json({ error: 'Make and model are required' });
 
@@ -114,12 +114,12 @@ router.post('/', (req, res) => {
       const result = db.prepare(`
         INSERT INTO inventory
           (make, series, model, shell_color, cabinet_color, serial_number, sku_number,
-           availability, sku_photo_path, serial_photo_path, added_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+           availability, sku_photo_path, serial_photo_path, added_by, speaker)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         make.trim(), (series||'').trim(), model.trim(), (shellColor||'').trim(), (cabinetColor||'').trim(),
         serialNumber.trim(), (skuNumber||'').trim(),
-        'In-stock', skuPhotoPath, serialPhotoPath, req.session.username || 'system'
+        'In-stock', skuPhotoPath, serialPhotoPath, req.session.username || 'system', (speaker||'').trim()
       );
 
       try {
@@ -127,7 +127,7 @@ router.post('/', (req, res) => {
           serialNumber: serialNumber.trim(), skuNumber: (skuNumber||'').trim(),
           make: make.trim(), series: (series||'').trim(), model: model.trim(),
           shellColor: (shellColor||'').trim(), cabinetColor: (cabinetColor||'').trim(),
-          availability: 'In-stock',
+          availability: 'In-stock', speaker: (speaker||'').trim(),
         });
       } catch(e) { console.error('[Drive add inventory item failed — non-fatal]', e.message); }
 
@@ -140,7 +140,7 @@ router.post('/', (req, res) => {
 });
 
 // ── PATCH /:id — update Availability/Location/Steps/Cover/Finance ────────────
-const EDITABLE_FIELDS = ['availability', 'location', 'steps', 'cover', 'finance'];
+const EDITABLE_FIELDS = ['availability', 'location', 'steps', 'cover', 'finance', 'speaker'];
 router.patch('/:id', async (req, res) => {
   try {
     const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);

@@ -70,6 +70,7 @@
       <div><label>Model *</label><input type="text" id="fldModel"></div>
       <div><label>Shell Color</label><input type="text" id="fldShell"></div>
       <div><label>Cabinet Color</label><input type="text" id="fldCabinet"></div>
+      <div><label>Speaker</label><select id="fldSpeaker"><option value="">—</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
     </div>
   </div>
 
@@ -119,6 +120,7 @@ async function lookupSku(sku){
     document.getElementById('fldModel').value=j.model||'';
     document.getElementById('fldShell').value=j.shellColor||'';
     document.getElementById('fldCabinet').value=j.cabinetColor||'';
+    document.getElementById('fldSpeaker').value=j.speaker||'';
     document.getElementById('skuResolvedBadge').style.display='inline';
   }catch(e){ showToast('SKU lookup failed: '+e.message,'error'); }
 }
@@ -204,6 +206,7 @@ async function submitInventoryItem(){
   const model=document.getElementById('fldModel').value.trim();
   const shellColor=document.getElementById('fldShell').value.trim();
   const cabinetColor=document.getElementById('fldCabinet').value.trim();
+  const speaker=document.getElementById('fldSpeaker').value;
   const serialNumber=document.getElementById('serialInput').value.trim();
   const skuNumber=document.getElementById('skuInput').value.trim();
   if(!serialNumber){ showToast('Serial number is required','error'); return; }
@@ -216,6 +219,7 @@ async function submitInventoryItem(){
     fd.append('make',make); fd.append('series',series); fd.append('model',model);
     fd.append('shellColor',shellColor); fd.append('cabinetColor',cabinetColor);
     fd.append('serialNumber',serialNumber); fd.append('skuNumber',skuNumber);
+    fd.append('speaker',speaker);
     if(skuPhotoBlob) fd.append('skuPhoto',skuPhotoBlob,'sku-photo.jpg');
     if(serialPhotoBlob) fd.append('serialPhoto',serialPhotoBlob,'serial-photo.jpg');
     const r=await fetch('/api/inventory-items',{method:'POST',body:fd});

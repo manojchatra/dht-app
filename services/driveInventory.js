@@ -341,6 +341,7 @@ function buildSkuMatch(r) {
     model:        r['Model']||'',
     shellColor:   r['Shell Color']||'',
     cabinetColor: r['Cabinet Color']||'',
+    speaker:      (r['Speaker']||'').trim().toUpperCase()==='YES' ? 'Yes' : '',
   };
 }
 
@@ -373,9 +374,9 @@ async function lookupSku(sku) {
 const INVENTORY_ITEMS_TAB = 'Inventory Items';
 const INVENTORY_ITEMS_HEADERS = [
   'Serial Number','SKU Number','Make','Series','Model','Shell Color','Cabinet Color',
-  'Availability','Location','Steps','Cover','Finance','Added Date'
+  'Availability','Location','Steps','Cover','Finance','Added Date','Speaker'
 ];
-const INVENTORY_ITEM_FIELD_COLS = { availability:8, location:9, steps:10, cover:11, finance:12 };
+const INVENTORY_ITEM_FIELD_COLS = { availability:8, location:9, steps:10, cover:11, finance:12, speaker:14 };
 
 function buildInventoryItemRow(d) {
   return [
@@ -383,6 +384,7 @@ function buildInventoryItemRow(d) {
     d.shellColor||'', d.cabinetColor||'',
     d.availability||'In-stock', d.location||'', d.steps||'', d.cover||'', d.finance||'',
     d.addedDate||new Date().toISOString().slice(0,10),
+    d.speaker||'',
   ];
 }
 

@@ -69,9 +69,9 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
       <thead><tr>
         <th>Make</th><th>Series</th><th>Model</th><th>Shell</th><th>Cabinet</th>
         <th>Serial Number</th><th>SKU Number</th><th>Availability</th><th>Location</th>
-        <th>Steps</th><th>Cover</th><th>Finance</th><th>Photos</th><th>Actions</th>
+        <th>Steps</th><th>Cover</th><th>Finance</th><th>Speaker</th><th>Photos</th><th>Actions</th>
       </tr></thead>
-      <tbody id="invTbody"><tr><td colspan="14" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+      <tbody id="invTbody"><tr><td colspan="15" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
     </table>
   </div>
   <div class="inv-cards" id="invCards"></div>
@@ -104,7 +104,7 @@ async function loadInventory(){
     allItems=await r.json();
     renderInventory();
   }catch(e){
-    document.getElementById('invTbody').innerHTML='<tr><td colspan="14" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
+    document.getElementById('invTbody').innerHTML='<tr><td colspan="15" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
   }
 }
 
@@ -139,6 +139,12 @@ function financeSelect(it){
     '<option value=""'+(!it.finance?' selected':'')+'>—</option>'+
     opts.map(function(o){return '<option'+(o===it.finance?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
+function speakerSelect(it){
+  const opts=['Yes','No'];
+  return '<select onchange="markDirty('+it.id+',\'speaker\',this.value)">'+
+    '<option value=""'+(!it.speaker?' selected':'')+'>—</option>'+
+    opts.map(function(o){return '<option'+(o===it.speaker?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
+}
 function textField(it,field){
   // 'change' (not 'blur') so a value that's unchanged on blur doesn't spuriously mark the row dirty.
   return '<input type="text" value="'+escHtml(it[field]||'')+'" onchange="markDirty('+it.id+',\''+field+'\',this.value)">';
@@ -164,7 +170,7 @@ function renderInventory(){
   const tbody=document.getElementById('invTbody');
   const cards=document.getElementById('invCards');
   if(!items.length){
-    tbody.innerHTML='<tr><td colspan="14" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
+    tbody.innerHTML='<tr><td colspan="15" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
     cards.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No inventory items found</p></div>';
     return;
   }
@@ -183,6 +189,7 @@ function renderInventory(){
       +'<td>'+textField(it,'steps')+'</td>'
       +'<td>'+textField(it,'cover')+'</td>'
       +'<td>'+financeSelect(it)+'</td>'
+      +'<td>'+speakerSelect(it)+'</td>'
       +'<td>'+photoCell(it)+'</td>'
       +'<td class="actions-cell">'+actionsCell(it)+'</td>'
       +'</tr>';
@@ -201,6 +208,7 @@ function renderInventory(){
       +'<div><label>Steps</label>'+textField(it,'steps')+'</div>'
       +'<div><label>Cover</label>'+textField(it,'cover')+'</div>'
       +'<div><label>Finance</label>'+financeSelect(it)+'</div>'
+      +'<div><label>Speaker</label>'+speakerSelect(it)+'</div>'
       +'</div>'
       +'<div style="margin-top:10px;text-align:right">'+actionsCell(it)+'</div></div>';
   }).join('');

@@ -984,6 +984,7 @@ function selectUnit(row){
   updateSeriesDl(row.make||'');
   selectChipFromValue('shellChips',   SHELL_COLORS,   row.shell_color,   'shellColorOther',   function(v){selectedShell=v});
   selectChipFromValue('cabinetChips', CABINET_COLORS, row.cabinet_color, 'cabinetColorOther', function(v){selectedCabinet=v});
+  document.getElementById('inclSpeaker').checked = row.speaker === 'Yes';
   closeInvModal();
   showToast('Item selected - fields auto-filled','success');
 }

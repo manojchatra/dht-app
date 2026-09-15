@@ -231,6 +231,10 @@ if (!inventoryCols.includes('series')) {
   db.exec('ALTER TABLE inventory ADD COLUMN series TEXT');
   console.log('[DB] inventory.series column added');
 }
+if (!inventoryCols.includes('speaker')) {
+  db.exec('ALTER TABLE inventory ADD COLUMN speaker TEXT');
+  console.log('[DB] inventory.speaker column added');
+}
 
 // ── Activity log ─────────────────────────────────────────────────────────────
 db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
