@@ -42,13 +42,14 @@ const { getInventory, appendInventoryItem, inventoryItemExistsInSheet } = requir
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-// Paced well under the Google Sheets API's per-minute write-request quota —
-// a tight loop with no delay will hit that quota partway through any
-// nontrivial import (observed in practice: "Quota exceeded for quota metric
-// 'Write requests'..."). The DB insert always succeeds regardless (that's
-// the source of truth); this only affects how reliably the Sheets mirror
-// keeps up.
-const SHEETS_WRITE_DELAY_MS = 1100;
+// Paced well under the Google Sheets API's per-minute quotas — a tight loop
+// with no delay will hit them partway through any nontrivial import
+// (observed in practice for both writes AND reads: "Quota exceeded for
+// quota metric 'Write requests'..." / "'Read requests'..."). The DB always
+// succeeds regardless (that's the source of truth); this only affects how
+// reliably the Sheets mirror keeps up. Applied after EVERY Sheets API call
+// in the loop below, not just the ones that end up writing something.
+const SHEETS_API_DELAY_MS = 1100;
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // Retries specifically on a quota error (waits out a full quota window),
@@ -65,10 +66,32 @@ async function appendWithRetry(data, attempts = 3) {
         return false;
       }
       console.warn(`[Sheets quota hit, waiting 65s before retry ${i + 1}/${attempts - 1}] ${data.serialNumber}`);
-      await sleep(65000); // Sheets API write quota resets on a per-minute window
+      await sleep(65000); // Sheets API quota resets on a per-minute window
     }
   }
   return false;
+}
+
+// Same quota-retry treatment for the read-side existence check used by the
+// backfill path below — returns true/false when known, or null if the check
+// itself couldn't be confirmed even after retries (in which case the caller
+// must NOT attempt a backfill, to avoid risking a duplicate append for a row
+// that might actually already be in the Sheet).
+async function existsWithRetry(serialNumber, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await inventoryItemExistsInSheet(serialNumber);
+    } catch (e) {
+      const isQuota = /quota exceeded/i.test(e.message || '');
+      if (!isQuota || i === attempts - 1) {
+        console.error(`[Backfill check failed — non-fatal, skipping backfill for this row] ${serialNumber}:`, e.message);
+        return null;
+      }
+      console.warn(`[Sheets quota hit, waiting 65s before retry ${i + 1}/${attempts - 1}] ${serialNumber}`);
+      await sleep(65000);
+    }
+  }
+  return null;
 }
 
 // Best-effort mapping of the source sheet's free-text "Availability" (really
@@ -111,22 +134,22 @@ async function main() {
       // Already in the DB (from this run or an earlier one) — but if an
       // earlier run hit the Sheets write quota partway through, this row
       // may never have made it into the Sheet. Check and backfill it.
+      // Paced the same as a write, since this read-side check hits its own
+      // separate Sheets API quota just as easily across hundreds of rows.
       if (!DRY_RUN) {
-        try {
-          const inSheet = await inventoryItemExistsInSheet(serialNumber);
-          if (!inSheet) {
-            const full = db.prepare('SELECT * FROM inventory WHERE serial_number = ?').get(serialNumber);
-            const ok = await appendWithRetry({
-              make: full.make, series: full.series, model: full.model,
-              shellColor: full.shell_color, cabinetColor: full.cabinet_color,
-              serialNumber: full.serial_number, skuNumber: full.sku_number || '',
-              location: full.location || '', steps: full.steps || '', cover: full.cover || '',
-              finance: full.finance || '', availability: full.availability,
-            });
-            if (ok) backfilled++;
-            await sleep(SHEETS_WRITE_DELAY_MS);
-          }
-        } catch (e) { console.error(`[Backfill check failed — non-fatal] ${serialNumber}:`, e.message); }
+        const inSheet = await existsWithRetry(serialNumber);
+        if (inSheet === false) {
+          const full = db.prepare('SELECT * FROM inventory WHERE serial_number = ?').get(serialNumber);
+          const ok = await appendWithRetry({
+            make: full.make, series: full.series, model: full.model,
+            shellColor: full.shell_color, cabinetColor: full.cabinet_color,
+            serialNumber: full.serial_number, skuNumber: full.sku_number || '',
+            location: full.location || '', steps: full.steps || '', cover: full.cover || '',
+            finance: full.finance || '', availability: full.availability,
+          });
+          if (ok) backfilled++;
+        }
+        await sleep(SHEETS_API_DELAY_MS);
       }
       continue;
     }
@@ -169,7 +192,7 @@ async function main() {
     );
 
     await appendWithRetry(data);
-    await sleep(SHEETS_WRITE_DELAY_MS);
+    await sleep(SHEETS_API_DELAY_MS);
 
     imported++;
   }
