@@ -61,6 +61,7 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
       <option value="">All locations</option>
       <option>EMP Room</option><option>Phoenix Floor</option><option>Tolleson Floor</option>
       <option>Chandler Floor</option><option>Surprise Floor</option><option>Goodyear Floor</option>
+      <option>Warehouse</option>
     </select>
   </div>
 
@@ -93,7 +94,7 @@ function showToast(msg,type='success'){
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
 }
 
-const LOCATIONS=['EMP Room','Phoenix Floor','Tolleson Floor','Chandler Floor','Surprise Floor','Goodyear Floor'];
+const LOCATIONS=['EMP Room','Phoenix Floor','Tolleson Floor','Chandler Floor','Surprise Floor','Goodyear Floor','Warehouse'];
 let allItems=[];
 let pendingChanges={}; // id -> {field: newValue, ...} — not yet saved to the server
 

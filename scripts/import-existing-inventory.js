@@ -83,6 +83,7 @@ const LOCATION_MAP = [
   { match: 'chandler', value: 'Chandler Floor' },
   { match: 'surprise', value: 'Surprise Floor' },
   { match: 'goodyear', value: 'Goodyear Floor' },
+  { match: 'stock',    value: 'Warehouse' },
 ];
 function mapLocation(raw) {
   const norm = (raw || '').trim().toLowerCase();

@@ -4,7 +4,6 @@ const db = require('../db/database');
 const { getInventory, getLastSynced } = require('../services/driveInventory');
 
 // Keyword → substring match against the DB `location` column (case-insensitive).
-// 'stock' has no matching floor value in LOCATIONS — treated as "no floor set".
 const STORE_MAP = {
   emp: 'emp room',
   phoenix: 'phoenix',
@@ -12,6 +11,7 @@ const STORE_MAP = {
   chandler: 'chandler',
   surprise: 'surprise',
   tolleson: 'tolleson',
+  stock: 'warehouse',
 };
 
 // GET /api/inventory/search?q=sovereign&store=phoenix
@@ -29,9 +29,7 @@ router.get('/search', (req, res) => {
 
     let rows = db.prepare(`SELECT * FROM inventory WHERE availability = 'In-stock'`).all();
 
-    if (storeFilter === 'stock') {
-      rows = rows.filter(r => !r.location || !r.location.trim());
-    } else if (storeFilter) {
+    if (storeFilter) {
       const target = STORE_MAP[storeFilter] || storeFilter;
       rows = rows.filter(r => (r.location || '').toLowerCase().includes(target));
     }
