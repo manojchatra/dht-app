@@ -85,6 +85,28 @@ router.post('/', (req, res) => {
   }
 });
 
+// PATCH /api/sales/:id — edit Name/Email and/or reset password. Username is
+// intentionally not editable here — it's tied to login, and this endpoint's
+// only caller (the Sales profile page) has no need to change it.
+router.patch('/:id', (req, res) => {
+  const { name, email, password } = req.body;
+  const user = db.prepare(`SELECT id FROM users WHERE id=? AND role='sales'`).get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
+  if (email !== undefined && !email.trim()) return res.status(400).json({ error: 'Email cannot be empty' });
+  if (password && password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  if (name)  db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+  if (email) db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim(), req.params.id);
+  if (password) {
+    const hash = bcrypt.hashSync(password, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.params.id);
+  }
+
+  res.json({ success: true });
+});
+
 // PATCH /api/sales/:id/active — toggle active/inactive
 router.patch('/:id/active', (req, res) => {
   const { active } = req.body;
