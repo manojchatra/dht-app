@@ -20,11 +20,14 @@
 @media(max-width:640px){
   .inv-toolbar .search-wrap,.inv-toolbar select{flex:1 1 100%}
 }
-/* .main is already a flex column filling the viewport (theme.css) — flex:1
-   here lets the table claim whatever space is actually left below the
-   header/toolbar, instead of guessing a fixed height that leaves a gap
-   on some screens and clips content on others. min-height:0 is required
-   for a flex child to actually scroll instead of growing to fit its content. */
+/* theme.css's shared .main is only min-height:100vh (a floor, not a
+   ceiling), so flex:1 alone has nothing to constrain against — .main just
+   grows to fit the full table and the page scrolls again. Pin .main to an
+   actual height here (this page's own <style> loads after theme.css's
+   <link>, so this override applies only on this page, nowhere else) so
+   flex:1 + min-height:0 below can actually bound the table and scroll
+   internally instead of growing the whole page. */
+@media(min-width:901px){.main{height:100vh}}
 .inv-table-wrap{flex:1;min-height:0;overflow:auto;border:1px solid var(--border);border-radius:10px}
 .inv-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
 .inv-table th{text-align:left;padding:8px 10px;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);font-weight:600;border-bottom:2px solid var(--border);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:2}
