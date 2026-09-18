@@ -399,6 +399,14 @@ async function findInventoryItemRow(sheets, serialNumber) {
   return findRowByContractId(sheets, INVENTORY_ITEMS_TAB, serialNumber);
 }
 
+// Exported for bulk-import/repair scripts that need to check before appending,
+// to avoid creating duplicate rows when re-running after a partial failure.
+async function inventoryItemExistsInSheet(serialNumber) {
+  const sheets = getSheets();
+  const rowIndex = await findInventoryItemRow(sheets, serialNumber);
+  return rowIndex >= 0;
+}
+
 async function updateInventoryItemField(serialNumber, field, value) {
   const col = INVENTORY_ITEM_FIELD_COLS[field];
   if (!col) throw new Error('Unknown inventory item field: ' + field);
@@ -649,7 +657,7 @@ module.exports = {
   searchInventory, getInventory, getLastSynced, invalidateCache,
   deleteInventoryRow,
   getSkuList, lookupSku,
-  appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
+  appendInventoryItem, updateInventoryItemField, deleteInventoryItem, inventoryItemExistsInSheet,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus,

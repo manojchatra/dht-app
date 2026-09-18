@@ -16,9 +16,19 @@
  *   (new) sku_number, finance -> left blank, not present in the source data
  *
  * Rows with no Serial Number are skipped (nothing to key off of). Rows whose
- * Serial Number already exists in the inventory table are skipped too, so
- * this script is safe to re-run (e.g. after adding more rows to the source
- * sheet) without creating duplicates.
+ * Serial Number already exists in the inventory table are skipped for the DB
+ * insert (so this script is safe to re-run, e.g. after adding more rows to
+ * the source sheet, without creating duplicates) — but each duplicate is
+ * still checked against the "Inventory Items" Sheets tab and backfilled
+ * there if missing, so re-running this script after a partial failure (e.g.
+ * hitting the Sheets API's write-rate quota partway through a large import)
+ * repairs the Sheets mirror for whatever didn't make it the first time,
+ * without touching the DB (which is always correct — it's the source of
+ * truth and the DB insert never depends on the Sheets write succeeding).
+ *
+ * Sheets writes are paced (~1.1s apart) to stay under the API's per-minute
+ * write-request quota, and retry once with a 65s wait if that quota is hit
+ * anyway, rather than just giving up on the first rate-limit error.
  *
  * Usage: node scripts/import-existing-inventory.js [--dry-run]
  * Run on the server, where real Google Sheets credentials exist — this will
@@ -28,9 +38,38 @@
 require('dotenv').config();
 const path = require('path');
 const db = require(path.join(__dirname, '../db/database'));
-const { getInventory, appendInventoryItem } = require(path.join(__dirname, '../services/driveInventory'));
+const { getInventory, appendInventoryItem, inventoryItemExistsInSheet } = require(path.join(__dirname, '../services/driveInventory'));
 
 const DRY_RUN = process.argv.includes('--dry-run');
+
+// Paced well under the Google Sheets API's per-minute write-request quota —
+// a tight loop with no delay will hit that quota partway through any
+// nontrivial import (observed in practice: "Quota exceeded for quota metric
+// 'Write requests'..."). The DB insert always succeeds regardless (that's
+// the source of truth); this only affects how reliably the Sheets mirror
+// keeps up.
+const SHEETS_WRITE_DELAY_MS = 1100;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Retries specifically on a quota error (waits out a full quota window),
+// rather than giving up on the first transient rate-limit hit.
+async function appendWithRetry(data, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await appendInventoryItem(data);
+      return true;
+    } catch (e) {
+      const isQuota = /quota exceeded/i.test(e.message || '');
+      if (!isQuota || i === attempts - 1) {
+        console.error(`[Sheets write failed — non-fatal, DB row was still saved] ${data.serialNumber}:`, e.message);
+        return false;
+      }
+      console.warn(`[Sheets quota hit, waiting 65s before retry ${i + 1}/${attempts - 1}] ${data.serialNumber}`);
+      await sleep(65000); // Sheets API write quota resets on a per-minute window
+    }
+  }
+  return false;
+}
 
 // Best-effort mapping of the source sheet's free-text "Availability" (really
 // location) values onto the new table's fixed location dropdown options.
@@ -58,7 +97,7 @@ async function main() {
   const rows = await getInventory(true); // force-refresh, don't trust a stale cache for this
   console.log(`Read ${rows.length} rows from the existing "Inventory" sheet tab.\n`);
 
-  let imported = 0, skippedNoSerial = 0, skippedDuplicate = 0, unmappedLocation = 0;
+  let imported = 0, skippedNoSerial = 0, skippedDuplicate = 0, unmappedLocation = 0, backfilled = 0;
   const unmappedSamples = [];
 
   for (const row of rows) {
@@ -66,7 +105,30 @@ async function main() {
     if (!serialNumber) { skippedNoSerial++; continue; }
 
     const existing = db.prepare('SELECT id FROM inventory WHERE serial_number = ?').get(serialNumber);
-    if (existing) { skippedDuplicate++; continue; }
+    if (existing) {
+      skippedDuplicate++;
+      // Already in the DB (from this run or an earlier one) — but if an
+      // earlier run hit the Sheets write quota partway through, this row
+      // may never have made it into the Sheet. Check and backfill it.
+      if (!DRY_RUN) {
+        try {
+          const inSheet = await inventoryItemExistsInSheet(serialNumber);
+          if (!inSheet) {
+            const full = db.prepare('SELECT * FROM inventory WHERE serial_number = ?').get(serialNumber);
+            const ok = await appendWithRetry({
+              make: full.make, series: full.series, model: full.model,
+              shellColor: full.shell_color, cabinetColor: full.cabinet_color,
+              serialNumber: full.serial_number, skuNumber: full.sku_number || '',
+              location: full.location || '', steps: full.steps || '', cover: full.cover || '',
+              finance: full.finance || '', availability: full.availability,
+            });
+            if (ok) backfilled++;
+            await sleep(SHEETS_WRITE_DELAY_MS);
+          }
+        } catch (e) { console.error(`[Backfill check failed — non-fatal] ${serialNumber}:`, e.message); }
+      }
+      continue;
+    }
 
     const loc = mapLocation(row['Availability']);
     if (!loc.matched) {
@@ -105,20 +167,18 @@ async function main() {
       data.steps, data.cover, data.finance, 'import-script'
     );
 
-    try {
-      await appendInventoryItem(data);
-    } catch (e) {
-      console.error(`[Sheets write failed — non-fatal, DB row was still saved] ${serialNumber}:`, e.message);
-    }
+    await appendWithRetry(data);
+    await sleep(SHEETS_WRITE_DELAY_MS);
 
     imported++;
   }
 
   console.log('--- Summary ---');
-  console.log(`Imported:            ${imported}`);
-  console.log(`Skipped (no serial): ${skippedNoSerial}`);
-  console.log(`Skipped (duplicate): ${skippedDuplicate}`);
-  console.log(`Unmapped location:   ${unmappedLocation}${unmappedSamples.length ? ' — e.g. ' + unmappedSamples.join(', ') : ''}`);
+  console.log(`Imported:                ${imported}`);
+  console.log(`Skipped (no serial):     ${skippedNoSerial}`);
+  console.log(`Skipped (duplicate):     ${skippedDuplicate}`);
+  console.log(`Backfilled into Sheets:  ${backfilled} (duplicate rows that were missing from the Sheets mirror, now added)`);
+  console.log(`Unmapped location:       ${unmappedLocation}${unmappedSamples.length ? ' — e.g. ' + unmappedSamples.join(', ') : ''}`);
   if (DRY_RUN) console.log('\nThis was a dry run — nothing was written. Re-run without --dry-run to actually import.');
 }
 
