@@ -4,7 +4,25 @@ const router  = express.Router();
 const db      = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
 
-// All user management routes require admin
+// PATCH /api/users/me/password — change own password (any logged-in role).
+// Must be registered before the router-wide requireAdmin gate below, or it's
+// unreachable for every non-admin role despite the comment/intent.
+router.patch('/me/password', (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both passwords required' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password incorrect' });
+  }
+
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.session.userId);
+  res.json({ success: true });
+});
+
+// Everything below requires admin.
 router.use(requireAdmin);
 
 // GET /api/users
@@ -67,22 +85,6 @@ router.delete('/:id', (req, res) => {
   const id = parseInt(req.params.id);
   if (id === req.session.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
-  res.json({ success: true });
-});
-
-// PATCH /api/users/me/password — change own password (any role)
-router.patch('/me/password', (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both passwords required' });
-  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
-  if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
-    return res.status(401).json({ error: 'Current password incorrect' });
-  }
-
-  const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.session.userId);
   res.json({ success: true });
 });
 

@@ -85,18 +85,20 @@ async function initSidebar() {
   const _roleLabels = { admin: 'Administrator', delivery: _tNames[u.team] || 'Delivery', warehouse: 'Warehouse', sales: 'Sales' };
   if (_ur) _ur.textContent = _roleLabels[u.role] || 'Sales';
 
-  // Delivery role: restrict to delivery pages only
+  // Delivery role: restrict to delivery pages only (+ /settings, so they can
+  // change their own password — the page itself hides every admin-only card).
   if (u.role === 'delivery') {
     const _p = window.location.pathname;
-    if (!_p.startsWith('/calendar') && !_p.startsWith('/delivery/') && !_p.startsWith('/acknowledgement/')) {
+    if (!_p.startsWith('/calendar') && !_p.startsWith('/delivery/') && !_p.startsWith('/acknowledgement/') && !_p.startsWith('/settings')) {
       window.location.href = '/calendar'; return;
     }
   }
 
-  // Warehouse role: restrict to its own dashboard + Inventory pages
+  // Warehouse role: restrict to its own dashboard + Inventory pages (+
+  // /settings, same reason as delivery above).
   if (u.role === 'warehouse') {
     const _p = window.location.pathname;
-    if (!_p.startsWith('/warehouse') && !_p.startsWith('/inventory')) {
+    if (!_p.startsWith('/warehouse') && !_p.startsWith('/inventory') && !_p.startsWith('/settings')) {
       window.location.href = '/warehouse'; return;
     }
   }
