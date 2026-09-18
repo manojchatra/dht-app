@@ -61,10 +61,14 @@ async function finalizePhoto(tmpFile, serialNumber, label) {
   return finalPath;
 }
 
-// ── GET /queue — Order-Placed contracts awaiting receipt (narrow fields only) ─
+// ── GET /queue — everything awaiting receipt: Order-Placed contracts (narrow
+// fields only) plus Ordered general-stock inventory items, merged into one
+// list so warehouse has a single place to check. Each row is tagged `type`
+// so the frontend routes to the right receive flow (photos required for a
+// customer-linked contract, not for general stock).
 router.get('/queue', (req, res) => {
   try {
-    const rows = db.prepare(`
+    const contractRows = db.prepare(`
       SELECT c.id, c.contract_number, c.make, c.model, c.web_order_number, c.truck_number,
         json_extract(c.data,'$.product.shellColor')   AS shell_color,
         json_extract(c.data,'$.product.cabinetColor') AS cabinet_color,
@@ -73,8 +77,16 @@ router.get('/queue', (req, res) => {
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.status = 'order_placed'
       ORDER BY c.created_at DESC
-    `).all();
-    res.json(rows);
+    `).all().map(r => ({ ...r, type: 'contract' }));
+
+    const inventoryRows = db.prepare(`
+      SELECT id, make, model, shell_color, cabinet_color, web_order_number, truck_number
+      FROM inventory
+      WHERE availability = 'Ordered'
+      ORDER BY created_at DESC
+    `).all().map(r => ({ ...r, type: 'inventory', customer_name: '' }));
+
+    res.json([...contractRows, ...inventoryRows]);
   } catch (err) {
     console.error('Warehouse queue error:', err);
     res.status(500).json({ error: 'Failed to load queue' });

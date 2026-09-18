@@ -104,6 +104,27 @@ async function findRowByContractId(sheets, tabName, contractId) {
   }
 }
 
+// Same scan as findRowByContractId, generalized to search any column — used
+// for locating an "Ordered" inventory row (blank Serial Number in column A
+// until it's received) by its Web Order Number instead.
+async function findRowByColumnValue(sheets, tabName, colIndex1Based, value) {
+  try {
+    const colLetter = String.fromCharCode(64 + colIndex1Based);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!${colLetter}:${colLetter}`,
+    });
+    const values = res.data.values || [];
+    for (let i = 1; i < values.length; i++) {
+      if ((values[i][0]||'').trim() === value.trim()) return i + 1; // 1-indexed
+    }
+    return -1;
+  } catch(e) {
+    if (e.message && e.message.includes('Unable to parse range')) return -1;
+    throw e;
+  }
+}
+
 async function deleteRow(sheets, tabName, rowIndex1Based) {
   const sheetId = await getSheetId(sheets, tabName);
   if (sheetId === null) return;
@@ -374,9 +395,11 @@ async function lookupSku(sku) {
 const INVENTORY_ITEMS_TAB = 'Inventory Items';
 const INVENTORY_ITEMS_HEADERS = [
   'Serial Number','SKU Number','Make','Series','Model','Shell Color','Cabinet Color',
-  'Availability','Location','Steps','Cover','Finance','Added Date','Speaker'
+  'Availability','Location','Steps','Cover','Finance','Added Date','Speaker',
+  'Web Order Number','Truck Number'
 ];
 const INVENTORY_ITEM_FIELD_COLS = { availability:8, location:9, steps:10, cover:11, finance:12, speaker:14 };
+const INVENTORY_ITEM_WEB_ORDER_COL = 15;
 
 function buildInventoryItemRow(d) {
   return [
@@ -385,6 +408,7 @@ function buildInventoryItemRow(d) {
     d.availability||'In-stock', d.location||'', d.steps||'', d.cover||'', d.finance||'',
     d.addedDate||new Date().toISOString().slice(0,10),
     d.speaker||'',
+    d.webOrderNumber||'', d.truckNumber||'',
   ];
 }
 
@@ -405,6 +429,25 @@ async function inventoryItemExistsInSheet(serialNumber) {
   const sheets = getSheets();
   const rowIndex = await findInventoryItemRow(sheets, serialNumber);
   return rowIndex >= 0;
+}
+
+// An "Ordered" row has a blank Serial Number (column A) until it's received,
+// so it can't be found the normal way — locate it by Web Order Number instead.
+async function findInventoryItemRowByWebOrder(sheets, webOrderNumber) {
+  return findRowByColumnValue(sheets, INVENTORY_ITEMS_TAB, INVENTORY_ITEM_WEB_ORDER_COL, webOrderNumber);
+}
+
+// Marks an "Ordered" row received in the Sheet: writes the real serial into
+// column A and flips Availability (column H) to 'In-stock', located by Web
+// Order Number since Serial Number is still blank at this point.
+async function markInventoryItemReceivedInSheet(webOrderNumber, serialNumber) {
+  const sheets = getSheets();
+  const rowIndex = await findInventoryItemRowByWebOrder(sheets, webOrderNumber);
+  if (rowIndex < 0) { console.warn('[Drive] Ordered inventory item not found for receive:', webOrderNumber); return false; }
+  await updateCell(sheets, INVENTORY_ITEMS_TAB, rowIndex, 1, serialNumber);
+  await updateCell(sheets, INVENTORY_ITEMS_TAB, rowIndex, INVENTORY_ITEM_FIELD_COLS.availability, 'In-stock');
+  console.log('[Drive] Marked inventory item received:', webOrderNumber, '-> serial', serialNumber);
+  return true;
 }
 
 async function updateInventoryItemField(serialNumber, field, value) {
@@ -658,6 +701,7 @@ module.exports = {
   deleteInventoryRow,
   getSkuList, lookupSku,
   appendInventoryItem, updateInventoryItemField, deleteInventoryItem, inventoryItemExistsInSheet,
+  markInventoryItemReceivedInSheet,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus,

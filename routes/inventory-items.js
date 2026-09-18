@@ -13,6 +13,7 @@ const { compressAndGate } = require('../utils/imageUtils');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const {
   lookupSku, appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
+  markInventoryItemReceivedInSheet,
 } = require('../services/driveInventory');
 
 // 'warehouse' isn't a creatable role yet (lands in Stage 5) — included here
@@ -99,9 +100,43 @@ router.post('/', (req, res) => {
   uploadPhotos(req, res, async (err) => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     try {
-      const { make, series, model, shellColor, cabinetColor, serialNumber, skuNumber, speaker } = req.body;
-      if (!serialNumber || !serialNumber.trim()) return res.status(400).json({ error: 'Serial number is required' });
+      const { make, series, model, shellColor, cabinetColor, serialNumber, skuNumber, speaker, webOrderNumber, truckNumber } = req.body;
+      const hasSerial = serialNumber && serialNumber.trim();
+      const hasOrderInfo = webOrderNumber && webOrderNumber.trim() && truckNumber && truckNumber.trim();
+
+      if (!hasSerial && !hasOrderInfo) {
+        return res.status(400).json({ error: 'Serial Number, or both Web Order Number and Truck Number, are required' });
+      }
       if (!make || !model) return res.status(400).json({ error: 'Make and model are required' });
+
+      // "Ordered" stock (on order, not yet physically in hand) — tracked by
+      // Web Order Number/Truck Number instead of a serial until warehouse
+      // marks it received. No duplicate check: a single web order can
+      // legitimately cover multiple units, same as it does on contracts.
+      if (!hasSerial) {
+        const result = db.prepare(`
+          INSERT INTO inventory
+            (make, series, model, shell_color, cabinet_color, sku_number,
+             availability, added_by, speaker, web_order_number, truck_number)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        `).run(
+          make.trim(), (series||'').trim(), model.trim(), (shellColor||'').trim(), (cabinetColor||'').trim(),
+          (skuNumber||'').trim(), 'Ordered', req.session.username || 'system', (speaker||'').trim(),
+          webOrderNumber.trim(), truckNumber.trim()
+        );
+
+        try {
+          await appendInventoryItem({
+            skuNumber: (skuNumber||'').trim(),
+            make: make.trim(), series: (series||'').trim(), model: model.trim(),
+            shellColor: (shellColor||'').trim(), cabinetColor: (cabinetColor||'').trim(),
+            availability: 'Ordered', speaker: (speaker||'').trim(),
+            webOrderNumber: webOrderNumber.trim(), truckNumber: truckNumber.trim(),
+          });
+        } catch(e) { console.error('[Drive add inventory item failed — non-fatal]', e.message); }
+
+        return res.json({ success: true, id: result.lastInsertRowid });
+      }
 
       const existing = db.prepare('SELECT id FROM inventory WHERE serial_number = ?').get(serialNumber.trim());
       if (existing) return res.status(409).json({ error: 'An item with this serial number is already in inventory.' });
@@ -177,6 +212,38 @@ router.patch('/:id', async (req, res) => {
   } catch (err) {
     console.error('Update inventory item error:', err);
     res.status(500).json({ error: 'Failed to update inventory item' });
+  }
+});
+
+// ── PATCH /:id/receive — mark an "Ordered" item received: sets the real ────
+// Serial Number and flips availability to 'In-stock'. No photos required —
+// unlike the contract-linked warehouse receive flow, this is general stock,
+// not tied to a customer delivery.
+router.patch('/:id/receive', async (req, res) => {
+  try {
+    const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    if (item.availability !== 'Ordered') {
+      return res.status(400).json({ error: 'Only Ordered items can be marked received here.' });
+    }
+
+    const serialNumber = (req.body.serialNumber || '').trim();
+    if (!serialNumber) return res.status(400).json({ error: 'Serial number is required' });
+
+    const existing = db.prepare('SELECT id FROM inventory WHERE serial_number = ? AND id != ?').get(serialNumber, req.params.id);
+    if (existing) return res.status(409).json({ error: 'An item with this serial number is already in inventory.' });
+
+    db.prepare(`UPDATE inventory SET serial_number=?, availability='In-stock', updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(serialNumber, req.params.id);
+
+    let sheetSynced = true;
+    try { sheetSynced = await markInventoryItemReceivedInSheet(item.web_order_number, serialNumber); }
+    catch(e) { console.error('[Drive mark inventory received failed — non-fatal]', e.message); sheetSynced = false; }
+
+    res.json({ success: true, sheetSynced });
+  } catch (err) {
+    console.error('Mark inventory item received error:', err);
+    res.status(500).json({ error: 'Failed to mark item received' });
   }
 });
 

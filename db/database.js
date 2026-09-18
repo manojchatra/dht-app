@@ -235,6 +235,14 @@ if (!inventoryCols.includes('speaker')) {
   db.exec('ALTER TABLE inventory ADD COLUMN speaker TEXT');
   console.log('[DB] inventory.speaker column added');
 }
+if (!inventoryCols.includes('web_order_number')) {
+  db.exec('ALTER TABLE inventory ADD COLUMN web_order_number TEXT');
+  console.log('[DB] inventory.web_order_number column added');
+}
+if (!inventoryCols.includes('truck_number')) {
+  db.exec('ALTER TABLE inventory ADD COLUMN truck_number TEXT');
+  console.log('[DB] inventory.truck_number column added');
+}
 
 // ── Activity log ─────────────────────────────────────────────────────────────
 db.exec(`CREATE TABLE IF NOT EXISTS activity_log (

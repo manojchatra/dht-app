@@ -24,6 +24,9 @@
 .resolved-badge{font-size:11px;color:var(--green);font-weight:600;margin-left:8px}
 .sku-suggestion{font-size:12px;color:var(--yellow);margin-top:6px}
 .sku-suggestion a{color:var(--yellow);text-decoration:underline;cursor:pointer;font-weight:600}
+.mode-toggle{display:flex;gap:8px;margin-bottom:16px}
+.mode-toggle button{flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-weight:600;font-size:13px;color:var(--text-muted)}
+.mode-toggle button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -31,6 +34,11 @@
 <script src="/js/sidebar.js"></script>
 <main class="main">
   <div class="page-header"><h1>Add to Inventory</h1></div>
+
+  <div class="mode-toggle">
+    <button type="button" id="modeInHandBtn" class="active" onclick="setMode('inhand')"><i class="fa-solid fa-box"></i> In Hand</button>
+    <button type="button" id="modeOnOrderBtn" onclick="setMode('onorder')"><i class="fa-solid fa-truck-fast"></i> On Order</button>
+  </div>
 
   <div class="card" style="margin-bottom:16px">
     <div class="card-header"><i class="fa-solid fa-barcode"></i>1. Scan SKU Barcode</div>
@@ -48,7 +56,7 @@
     <div id="skuSuggestion" class="sku-suggestion" style="display:none"></div>
   </div>
 
-  <div class="card" style="margin-bottom:16px">
+  <div class="card" style="margin-bottom:16px" id="serialCard">
     <div class="card-header"><i class="fa-solid fa-tag"></i>2. Scan Serial Number Barcode</div>
     <div class="scan-row">
       <button class="btn btn-secondary" id="serialScanBtn" onclick="startSerialScan()"><i class="fa-solid fa-camera"></i> Start Serial Scan</button>
@@ -58,6 +66,15 @@
     <div id="serialScannerRegion" class="scan-region"></div>
     <div class="scan-row">
       <input type="text" id="serialInput" placeholder="Or enter Serial Number manually" style="flex:1;min-width:160px">
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;display:none" id="orderCard">
+    <div class="card-header"><i class="fa-solid fa-truck-fast"></i>2. Order Details</div>
+    <p class="helper" style="margin-bottom:12px;font-size:12px;color:var(--text-muted)">This stock hasn't arrived yet — warehouse will fill in the Serial Number when it's marked received.</p>
+    <div class="field-grid">
+      <div><label>Web Order Number *</label><input type="text" id="fldWebOrder"></div>
+      <div><label>Truck Number *</label><input type="text" id="fldTruck"></div>
     </div>
   </div>
 
@@ -91,6 +108,15 @@ function showToast(msg,type='success'){
 
 let skuScanner=null, serialScanner=null;
 let skuPhotoBlob=null, serialPhotoBlob=null;
+let addMode='inhand';
+
+function setMode(m){
+  addMode=m;
+  document.getElementById('modeInHandBtn').classList.toggle('active', m==='inhand');
+  document.getElementById('modeOnOrderBtn').classList.toggle('active', m==='onorder');
+  document.getElementById('serialCard').style.display = m==='inhand' ? 'block' : 'none';
+  document.getElementById('orderCard').style.display  = m==='onorder' ? 'block' : 'none';
+}
 
 function captureFrameAsPhoto(regionId){
   return new Promise(function(resolve){
@@ -207,21 +233,30 @@ async function submitInventoryItem(){
   const shellColor=document.getElementById('fldShell').value.trim();
   const cabinetColor=document.getElementById('fldCabinet').value.trim();
   const speaker=document.getElementById('fldSpeaker').value;
-  const serialNumber=document.getElementById('serialInput').value.trim();
   const skuNumber=document.getElementById('skuInput').value.trim();
-  if(!serialNumber){ showToast('Serial number is required','error'); return; }
   if(!make||!model){ showToast('Make and Model are required','error'); return; }
+
+  const fd=new FormData();
+  fd.append('make',make); fd.append('series',series); fd.append('model',model);
+  fd.append('shellColor',shellColor); fd.append('cabinetColor',cabinetColor);
+  fd.append('skuNumber',skuNumber); fd.append('speaker',speaker);
+
+  if(addMode==='onorder'){
+    const webOrderNumber=document.getElementById('fldWebOrder').value.trim();
+    const truckNumber=document.getElementById('fldTruck').value.trim();
+    if(!webOrderNumber||!truckNumber){ showToast('Web Order Number and Truck Number are required','error'); return; }
+    fd.append('webOrderNumber',webOrderNumber); fd.append('truckNumber',truckNumber);
+  }else{
+    const serialNumber=document.getElementById('serialInput').value.trim();
+    if(!serialNumber){ showToast('Serial number is required','error'); return; }
+    fd.append('serialNumber',serialNumber);
+    if(skuPhotoBlob) fd.append('skuPhoto',skuPhotoBlob,'sku-photo.jpg');
+    if(serialPhotoBlob) fd.append('serialPhoto',serialPhotoBlob,'serial-photo.jpg');
+  }
 
   const btn=document.getElementById('submitBtn');
   btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
   try{
-    const fd=new FormData();
-    fd.append('make',make); fd.append('series',series); fd.append('model',model);
-    fd.append('shellColor',shellColor); fd.append('cabinetColor',cabinetColor);
-    fd.append('serialNumber',serialNumber); fd.append('skuNumber',skuNumber);
-    fd.append('speaker',speaker);
-    if(skuPhotoBlob) fd.append('skuPhoto',skuPhotoBlob,'sku-photo.jpg');
-    if(serialPhotoBlob) fd.append('serialPhoto',serialPhotoBlob,'serial-photo.jpg');
     const r=await fetch('/api/inventory-items',{method:'POST',body:fd});
     const j=await r.json();
     if(!r.ok){ showToast(j.error||'Failed to add item','error'); return; }

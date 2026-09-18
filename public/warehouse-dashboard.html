@@ -79,6 +79,22 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="invReceiveModal">
+  <div class="modal-box" style="max-width:420px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-truck-arrow-right" style="color:var(--green)"></i> Mark Received — General Stock</h2>
+      <button onclick="closeInvReceiveModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
+    </div>
+    <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px">Serial Number</label>
+    <input type="text" id="invRcvSerialInput" placeholder="Enter Serial Number" style="width:100%;margin-bottom:12px">
+    <div id="invRcvError" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeInvReceiveModal()">Cancel</button>
+      <button class="btn btn-primary" id="invRcvSaveBtn" onclick="submitInventoryReceive()"><i class="fa-solid fa-check"></i> Confirm Received</button>
+    </div>
+  </div>
+</div>
+
 <script>
 function showToast(msg,type='success'){
   let t=document.getElementById('_toast');
@@ -116,12 +132,16 @@ function renderQueue(){
   }
   grid.innerHTML=filtered.map(function(it){
     const color=[it.shell_color,it.cabinet_color].filter(Boolean).join(' / ');
+    const isInventory=it.type==='inventory';
+    const receiveBtn=isInventory
+      ? '<button class="btn btn-primary btn-sm" onclick="openInventoryReceiveModal('+it.id+')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button>'
+      : '<button class="btn btn-primary btn-sm" onclick="openReceiveModal('+it.id+',\''+escHtml(it.contract_number||'')+'\')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button>';
     return '<div class="queue-card">'
-      +'<div class="qc-name">'+escHtml(it.customer_name||'—')+'</div>'
+      +'<div class="qc-name">'+(isInventory?'<i class="fa-solid fa-box" style="color:var(--text-muted)"></i> General Stock':escHtml(it.customer_name||'—'))+'</div>'
       +'<div class="qc-sub">'+escHtml(it.make||'')+' '+escHtml(it.model||'')+(color?' · '+escHtml(color):'')+'</div>'
       +'<div class="qc-sub">Web Order #: '+escHtml(it.web_order_number||'—')+'</div>'
       +'<div class="truck-pill"><i class="fa-solid fa-truck"></i> '+escHtml(it.truck_number||'—')+'</div>'
-      +'<div style="margin-top:12px"><button class="btn btn-primary btn-sm" onclick="openReceiveModal('+it.id+',\''+escHtml(it.contract_number||'')+'\')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button></div>'
+      +'<div style="margin-top:12px">'+receiveBtn+'</div>'
       +'</div>';
   }).join('');
 }
@@ -234,6 +254,38 @@ async function submitReceive(){
     if(!r.ok){ errEl.textContent=j.error||'Failed'; errEl.style.display='block'; return; }
     showToast('Marked as received','success');
     closeReceiveModal();
+    loadQueue();
+  }catch(e){ errEl.textContent=e.message||'Failed'; errEl.style.display='block'; }
+  finally{ btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-check"></i> Confirm Received'; }
+}
+
+let invReceiveItemId=null;
+function openInventoryReceiveModal(id){
+  invReceiveItemId=id;
+  document.getElementById('invRcvSerialInput').value='';
+  document.getElementById('invRcvError').style.display='none';
+  document.getElementById('invReceiveModal').classList.add('open');
+}
+function closeInvReceiveModal(){
+  document.getElementById('invReceiveModal').classList.remove('open');
+  invReceiveItemId=null;
+}
+document.getElementById('invReceiveModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closeInvReceiveModal(); });
+
+async function submitInventoryReceive(){
+  const serialNumber=document.getElementById('invRcvSerialInput').value.trim();
+  const errEl=document.getElementById('invRcvError');
+  errEl.style.display='none';
+  if(!serialNumber){ errEl.textContent='Serial number is required'; errEl.style.display='block'; return; }
+
+  const btn=document.getElementById('invRcvSaveBtn');
+  btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  try{
+    const r=await fetch('/api/inventory-items/'+invReceiveItemId+'/receive',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({serialNumber})});
+    const j=await r.json();
+    if(!r.ok){ errEl.textContent=j.error||'Failed'; errEl.style.display='block'; return; }
+    showToast('Marked as received','success');
+    closeInvReceiveModal();
     loadQueue();
   }catch(e){ errEl.textContent=e.message||'Failed'; errEl.style.display='block'; }
   finally{ btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-check"></i> Confirm Received'; }

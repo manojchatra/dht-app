@@ -28,10 +28,12 @@
 .photo-thumb{width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer}
 .no-photo{color:var(--text-light);font-size:11px}
 .inv-table td.actions-cell{white-space:nowrap;width:1%}
-.btn-row-save,.btn-row-delete{background:none;border:none;cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px;color:var(--text-muted)}
+.btn-row-save,.btn-row-delete,.btn-row-receive{background:none;border:none;cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px;color:var(--text-muted)}
 .btn-row-save{color:var(--accent)}
 .btn-row-save:hover{background:var(--accent-bg)}
 .btn-row-delete:hover{background:var(--red-bg);color:var(--red)}
+.btn-row-receive{color:var(--green)}
+.btn-row-receive:hover{background:var(--green-bg)}
 tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
 @media(max-width:900px){.inv-table{display:none}}
 .inv-cards{display:none}
@@ -56,7 +58,7 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
 
   <div class="inv-toolbar">
     <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search make, model, serial, SKU…" oninput="renderInventory()"></div>
-    <select id="availFilter" onchange="renderInventory()"><option value="">All availability</option><option value="In-stock">In-stock</option><option value="Hold">Hold</option><option value="Sold">Sold</option></select>
+    <select id="availFilter" onchange="renderInventory()"><option value="">All availability</option><option value="In-stock">In-stock</option><option value="Hold">Hold</option><option value="Sold">Sold</option><option value="Ordered">Ordered</option></select>
     <select id="locFilter" onchange="renderInventory()">
       <option value="">All locations</option>
       <option>EMP Room</option><option>Phoenix Floor</option><option>Tolleson Floor</option>
@@ -70,9 +72,10 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
       <thead><tr>
         <th>Make</th><th>Series</th><th>Model</th><th>Shell</th><th>Cabinet</th>
         <th>Serial Number</th><th>SKU Number</th><th>Availability</th><th>Location</th>
-        <th>Steps</th><th>Cover</th><th>Finance</th><th>Speaker</th><th>Photos</th><th>Actions</th>
+        <th>Steps</th><th>Cover</th><th>Finance</th><th>Speaker</th>
+        <th>Web Order Number</th><th>Truck Number</th><th>Photos</th><th>Actions</th>
       </tr></thead>
-      <tbody id="invTbody"><tr><td colspan="15" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+      <tbody id="invTbody"><tr><td colspan="17" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
     </table>
   </div>
   <div class="inv-cards" id="invCards"></div>
@@ -82,6 +85,22 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
   <div class="modal-box" style="max-width:520px;text-align:center">
     <div style="display:flex;justify-content:flex-end"><button onclick="closePhotoModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button></div>
     <img id="photoModalImg" style="max-width:100%;border-radius:8px">
+  </div>
+</div>
+
+<div class="modal-overlay" id="receiveModal">
+  <div class="modal-box" style="max-width:420px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-truck-arrow-right" style="color:var(--green)"></i> Mark Received</h2>
+      <button onclick="closeReceiveModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
+    </div>
+    <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px">Serial Number</label>
+    <input type="text" id="receiveSerialInput" placeholder="Enter Serial Number" style="width:100%;margin-bottom:12px">
+    <div id="receiveError" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeReceiveModal()">Cancel</button>
+      <button class="btn btn-primary" id="receiveSaveBtn" onclick="submitReceiveModal()"><i class="fa-solid fa-check"></i> Confirm Received</button>
+    </div>
   </div>
 </div>
 
@@ -105,7 +124,7 @@ async function loadInventory(){
     allItems=await r.json();
     renderInventory();
   }catch(e){
-    document.getElementById('invTbody').innerHTML='<tr><td colspan="15" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
+    document.getElementById('invTbody').innerHTML='<tr><td colspan="17" style="text-align:center;color:var(--red);padding:20px">'+escHtml(e.message)+'</td></tr>';
   }
 }
 
@@ -125,7 +144,7 @@ function filterItems(){
 }
 
 function availSelect(it){
-  const opts=['In-stock','Hold','Sold'];
+  const opts=['In-stock','Hold','Sold','Ordered'];
   return '<select onchange="markDirty('+it.id+',\'availability\',this.value)">'+
     opts.map(function(o){return '<option'+(o===it.availability?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
@@ -160,6 +179,9 @@ function photoCell(it){
 function actionsCell(it){
   const dirty = !!pendingChanges[it.id];
   var out='<button type="button" id="save-'+it.id+'" class="btn-row-save" style="display:'+(dirty?'inline-block':'none')+'" onclick="saveRow('+it.id+')" title="Save changes"><i class="fa-solid fa-floppy-disk"></i></button>';
+  if(it.availability==='Ordered'){
+    out+='<button type="button" class="btn-row-receive" onclick="openReceiveModal('+it.id+')" title="Mark Received"><i class="fa-solid fa-truck-arrow-right"></i></button>';
+  }
   if(window._userRole==='admin'){
     out+='<button type="button" class="btn-row-delete" onclick="deleteItem('+it.id+')" title="Delete item"><i class="fa-solid fa-trash"></i></button>';
   }
@@ -171,7 +193,7 @@ function renderInventory(){
   const tbody=document.getElementById('invTbody');
   const cards=document.getElementById('invCards');
   if(!items.length){
-    tbody.innerHTML='<tr><td colspan="15" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
+    tbody.innerHTML='<tr><td colspan="17" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
     cards.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No inventory items found</p></div>';
     return;
   }
@@ -191,6 +213,8 @@ function renderInventory(){
       +'<td>'+textField(it,'cover')+'</td>'
       +'<td>'+financeSelect(it)+'</td>'
       +'<td>'+speakerSelect(it)+'</td>'
+      +'<td>'+escHtml(it.web_order_number||'')+'</td>'
+      +'<td>'+escHtml(it.truck_number||'')+'</td>'
       +'<td>'+photoCell(it)+'</td>'
       +'<td class="actions-cell">'+actionsCell(it)+'</td>'
       +'</tr>';
@@ -210,6 +234,8 @@ function renderInventory(){
       +'<div><label>Cover</label>'+textField(it,'cover')+'</div>'
       +'<div><label>Finance</label>'+financeSelect(it)+'</div>'
       +'<div><label>Speaker</label>'+speakerSelect(it)+'</div>'
+      +(it.web_order_number?'<div><label>Web Order #</label>'+escHtml(it.web_order_number)+'</div>':'')
+      +(it.truck_number?'<div><label>Truck #</label>'+escHtml(it.truck_number)+'</div>':'')
       +'</div>'
       +'<div style="margin-top:10px;text-align:right">'+actionsCell(it)+'</div></div>';
   }).join('');
@@ -269,6 +295,44 @@ async function deleteItem(id){
 function openPhoto(url){ document.getElementById('photoModalImg').src=url; document.getElementById('photoModal').classList.add('open'); }
 function closePhotoModal(){ document.getElementById('photoModal').classList.remove('open'); }
 document.getElementById('photoModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closePhotoModal(); });
+
+let receiveItemId=null;
+function openReceiveModal(id){
+  receiveItemId=id;
+  document.getElementById('receiveSerialInput').value='';
+  document.getElementById('receiveError').style.display='none';
+  document.getElementById('receiveModal').classList.add('open');
+}
+function closeReceiveModal(){
+  document.getElementById('receiveModal').classList.remove('open');
+  receiveItemId=null;
+}
+document.getElementById('receiveModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closeReceiveModal(); });
+
+async function submitReceiveModal(){
+  const serialNumber=document.getElementById('receiveSerialInput').value.trim();
+  const errEl=document.getElementById('receiveError');
+  errEl.style.display='none';
+  if(!serialNumber){ errEl.textContent='Serial number is required'; errEl.style.display='block'; return; }
+
+  const btn=document.getElementById('receiveSaveBtn');
+  btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  try{
+    const r=await fetch('/api/inventory-items/'+receiveItemId+'/receive',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({serialNumber})});
+    const j=await r.json();
+    if(!r.ok){ errEl.textContent=j.error||'Failed'; errEl.style.display='block'; return; }
+    const item=allItems.find(function(it){return it.id===receiveItemId;});
+    if(item){ item.serial_number=serialNumber; item.availability='In-stock'; }
+    closeReceiveModal();
+    if(j.sheetSynced===false){
+      showToast('Marked received, but couldn\'t sync the spreadsheet — check the Web Order Number for typos','warning');
+    }else{
+      showToast('Marked as received','success');
+    }
+    renderInventory();
+  }catch(e){ errEl.textContent=e.message||'Failed'; errEl.style.display='block'; }
+  finally{ btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-check"></i> Confirm Received'; }
+}
 
 // Deferred until sidebar.js's auth check sets window._userRole, so the
 // admin-only delete button in actionsCell() is never computed before it's known
