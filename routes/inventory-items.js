@@ -175,8 +175,11 @@ router.post('/', (req, res) => {
 });
 
 // ── PATCH /:id — update Availability/Location/Steps/Cover/Finance ────────────
+// Admin-only: warehouse can view/add inventory but not edit these fields —
+// same layering as the DELETE route below (outer requireRole allows
+// admin+warehouse in, requireAdmin narrows this specific route further).
 const EDITABLE_FIELDS = ['availability', 'location', 'steps', 'cover', 'finance', 'speaker'];
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', requireAdmin, async (req, res) => {
   try {
     const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
     if (!item) return res.status(404).json({ error: 'Not found' });

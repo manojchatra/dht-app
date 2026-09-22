@@ -87,9 +87,12 @@ async function initSidebar() {
 
   // Delivery role: restrict to delivery pages only (+ /settings, so they can
   // change their own password — the page itself hides every admin-only card).
+  // /acknowledgement (bare, the hub list) and /acknowledgement/:id (a specific
+  // signing page) are both allowed — this used to only allow the trailing-
+  // slash sub-path form, which silently blocked the hub itself.
   if (u.role === 'delivery') {
     const _p = window.location.pathname;
-    if (!_p.startsWith('/calendar') && !_p.startsWith('/delivery/') && !_p.startsWith('/acknowledgement/') && !_p.startsWith('/settings')) {
+    if (!_p.startsWith('/calendar') && !_p.startsWith('/delivery/') && !_p.startsWith('/acknowledgement') && !_p.startsWith('/settings')) {
       window.location.href = '/calendar'; return;
     }
   }

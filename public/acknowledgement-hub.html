@@ -184,7 +184,10 @@ function fmtDate(d) {
 }
 
 async function init() {
-  allContracts = await fetch('/api/contracts').then(r=>r.json()).catch(()=>[]);
+  // Delivery gets a team-scoped, pricing-stripped feed instead of the full
+  // /api/contracts list admin uses — same rule as GET /api/delivery/contract/:id.
+  const isDelivery = window._userRole === 'delivery';
+  allContracts = await fetch(isDelivery ? '/api/delivery/acknowledgements' : '/api/contracts').then(r=>r.json()).catch(()=>[]);
   renderScheduled();
   renderCompleted();
 }
@@ -298,7 +301,10 @@ function openGenModal() {
 function closeGenModal() { document.getElementById('genModal').classList.remove('open'); }
 document.getElementById('genModal').addEventListener('click',function(e){if(e.target===e.currentTarget)closeGenModal();});
 
-init();
+// Deferred until sidebar.js's auth check sets window._userRole, so the
+// delivery-vs-admin branch above is never computed before it's known
+// (same convention as view-contracts.html / status.html / dashboard.html).
+window._onAuthReady = init;
 </script>
 </body>
 </html>

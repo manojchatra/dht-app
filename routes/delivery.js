@@ -12,6 +12,16 @@ const { compressAndGate } = require('../utils/imageUtils');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const db      = require('../db/database');
 
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
+function toUrlPath(absPath) {
+  if (!absPath || typeof absPath !== 'string') return null;
+  try {
+    const rel = path.relative(UPLOADS_DIR, absPath);
+    if (rel.startsWith('..')) return null;
+    return '/uploads/' + rel.replace(/\\/g, '/');
+  } catch(e) { return null; }
+}
+
 // Get email recipients from settings
 function getEmailRecipients() {
   try {
@@ -150,6 +160,39 @@ router.get('/contract/:id', requireDeliveryOrAdmin, (req, res) => {
   } catch(e) {
     console.error('[Delivery contract GET]', e.message);
     res.status(500).json({ error: 'Failed to load contract' });
+  }
+});
+
+// ── GET /api/delivery/acknowledgements — scheduled + completed list ────────
+// For delivery role, scoped to their own team; admin sees everything. Same
+// "strip all pricing" rule as GET /contract/:id above — this only returns
+// the fields acknowledgement-hub.html actually renders.
+router.get('/acknowledgements', requireDeliveryOrAdmin, (req, res) => {
+  try {
+    const scopedToTeam = req.currentUser.role === 'delivery';
+    const rows = db.prepare(`
+      SELECT c.id, c.contract_number, c.store, c.serial_number, c.status,
+        c.delivery_team, c.delivery_date, c.scheduled_datetime, c.scheduled_duration,
+        c.acknowledgement_pdf,
+        COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name,
+        cu.address AS cu_address, cu.city AS cu_city
+      FROM contracts c
+      LEFT JOIN customers cu ON c.customer_id = cu.id
+      WHERE c.status IN ('scheduled','delivered')
+        ${scopedToTeam ? 'AND c.delivery_team = ?' : ''}
+      ORDER BY c.created_at DESC
+    `).all(...(scopedToTeam ? [req.currentUser.team] : []));
+
+    res.json(rows.map(r => ({
+      ...r,
+      address: (r.cu_address || '') + (r.cu_city ? ', ' + r.cu_city : ''),
+      cu_address: undefined, cu_city: undefined,
+      acknowledgement_pdf_url: r.acknowledgement_pdf ? toUrlPath(r.acknowledgement_pdf) : null,
+      acknowledgement_pdf: undefined,
+    })));
+  } catch(e) {
+    console.error('[Delivery acknowledgements list]', e.message);
+    res.status(500).json({ error: 'Failed to load acknowledgements' });
   }
 });
 

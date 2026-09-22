@@ -161,29 +161,39 @@ function filterItems(){
   });
 }
 
+// Availability/Location/Steps/Cover/Finance/Speaker are admin-only to edit —
+// warehouse can view them (and still Add/Mark Received) but not change them.
+// Matches the server: PATCH /api/inventory-items/:id now requires admin.
+function isAdmin(){ return window._userRole==='admin'; }
+
 function availSelect(it){
+  if(!isAdmin()) return '<span>'+escHtml(it.availability||'—')+'</span>';
   const opts=['In-stock','Hold','Sold','Ordered'];
   return '<select onchange="markDirty('+it.id+',\'availability\',this.value)">'+
     opts.map(function(o){return '<option'+(o===it.availability?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
 function locSelect(it){
+  if(!isAdmin()) return '<span>'+escHtml(it.location||'—')+'</span>';
   return '<select onchange="markDirty('+it.id+',\'location\',this.value)">'+
     '<option value=""'+(!it.location?' selected':'')+'>—</option>'+
     LOCATIONS.map(function(o){return '<option'+(o===it.location?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
 function financeSelect(it){
+  if(!isAdmin()) return '<span>'+escHtml(it.finance||'—')+'</span>';
   const opts=['DHT Owned','Bank Owned'];
   return '<select onchange="markDirty('+it.id+',\'finance\',this.value)">'+
     '<option value=""'+(!it.finance?' selected':'')+'>—</option>'+
     opts.map(function(o){return '<option'+(o===it.finance?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
 function speakerSelect(it){
+  if(!isAdmin()) return '<span>'+escHtml(it.speaker||'—')+'</span>';
   const opts=['Yes','No'];
   return '<select onchange="markDirty('+it.id+',\'speaker\',this.value)">'+
     '<option value=""'+(!it.speaker?' selected':'')+'>—</option>'+
     opts.map(function(o){return '<option'+(o===it.speaker?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';
 }
 function textField(it,field){
+  if(!isAdmin()) return '<span>'+escHtml(it[field]||'—')+'</span>';
   // 'change' (not 'blur') so a value that's unchanged on blur doesn't spuriously mark the row dirty.
   return '<input type="text" value="'+escHtml(it[field]||'')+'" onchange="markDirty('+it.id+',\''+field+'\',this.value)">';
 }
@@ -195,7 +205,7 @@ function photoCell(it){
   return out;
 }
 function actionsCell(it){
-  const dirty = !!pendingChanges[it.id];
+  const dirty = isAdmin() && !!pendingChanges[it.id];
   var out='<button type="button" id="save-'+it.id+'" class="btn-row-save" style="display:'+(dirty?'inline-block':'none')+'" onclick="saveRow('+it.id+')" title="Save changes"><i class="fa-solid fa-floppy-disk"></i></button>';
   if(it.availability==='Ordered'){
     out+='<button type="button" class="btn-row-receive" onclick="openReceiveModal('+it.id+')" title="Mark Received"><i class="fa-solid fa-truck-arrow-right"></i></button>';
