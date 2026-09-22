@@ -21,10 +21,17 @@ function writeFile(line) {
 
 /**
  * logActivity(db, { contractId, contractNum, eventType, actor, detail })
- * eventType: CONTRACT_CREATED | CONTRACT_UPDATED | CONTRACT_DELETED |
- *            STATUS_CHANGED   | PAYMENT_RECORDED | SERIAL_ASSIGNED  |
- *            SCHEDULED        | ACK_SUBMITTED    | EMAIL_SENT       |
- *            MARK_RECEIVED    | FAILED_DELIVERY
+ * contractId/contractNum are optional — omit both for non-contract events
+ * (e.g. user management), which are then only ever visible via a direct
+ * query against activity_log or the text log file, since GET /api/activity/
+ * :contractId only ever returns rows for a specific contract.
+ * eventType: CONTRACT_CREATED  | CONTRACT_UPDATED    | CONTRACT_DELETED |
+ *            STATUS_CHANGED    | PAYMENT_RECORDED    | SERIAL_ASSIGNED  |
+ *            SCHEDULED         | ACK_SUBMITTED       | EMAIL_SENT       |
+ *            MARK_RECEIVED     | FAILED_DELIVERY     |
+ *            USER_CREATED      | USER_UPDATED        | USER_ROLE_CHANGED |
+ *            USER_PASSWORD_RESET | USER_ACTIVATED    | USER_DEACTIVATED |
+ *            USER_DELETED      | PASSWORD_CHANGED (self-service)
  */
 function logActivity(db, { contractId, contractNum, eventType, actor, detail }) {
   const ts  = mstNow();

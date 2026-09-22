@@ -8,6 +8,7 @@ const bcrypt  = require('bcryptjs');
 const router  = express.Router();
 const db      = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { logActivity } = require('../utils/activityLogger');
 
 // GET /api/sales/active/list — {id, name} for active salespeople only, no
 // admin gate: any authenticated user creating a contract needs this for the
@@ -75,9 +76,14 @@ router.post('/', (req, res) => {
 
   try {
     const hash = bcrypt.hashSync(password, 10);
+    const cleanUsername = username.trim().toLowerCase();
     const result = db.prepare(
       'INSERT INTO users (username, password_hash, role, name, email) VALUES (?,?,?,?,?)'
-    ).run(username.trim().toLowerCase(), hash, 'sales', name.trim(), email.trim());
+    ).run(cleanUsername, hash, 'sales', name.trim(), email.trim());
+    logActivity(db, {
+      eventType: 'USER_CREATED', actor: req.session.username || 'system',
+      detail: `Created ${cleanUsername} (sales)`
+    });
     res.json({ success: true, userId: result.lastInsertRowid });
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
@@ -90,18 +96,31 @@ router.post('/', (req, res) => {
 // only caller (the Sales profile page) has no need to change it.
 router.patch('/:id', (req, res) => {
   const { name, email, password } = req.body;
-  const user = db.prepare(`SELECT id FROM users WHERE id=? AND role='sales'`).get(req.params.id);
+  const user = db.prepare(`SELECT id, username, name, email FROM users WHERE id=? AND role='sales'`).get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Not found' });
 
   if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
   if (email !== undefined && !email.trim()) return res.status(400).json({ error: 'Email cannot be empty' });
   if (password && password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-  if (name)  db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
-  if (email) db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim(), req.params.id);
+  const actor = req.session.username || 'system';
+  const changes = [];
+
+  if (name) {
+    db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+    if (name.trim() !== user.name) changes.push(`name: "${user.name || ''}" → "${name.trim()}"`);
+  }
+  if (email) {
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim(), req.params.id);
+    if (email.trim() !== user.email) changes.push(`email: "${user.email || ''}" → "${email.trim()}"`);
+  }
   if (password) {
     const hash = bcrypt.hashSync(password, 10);
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.params.id);
+    logActivity(db, { eventType: 'USER_PASSWORD_RESET', actor, detail: `Password reset for ${user.username}` });
+  }
+  if (changes.length) {
+    logActivity(db, { eventType: 'USER_UPDATED', actor, detail: `${user.username}: ${changes.join(', ')}` });
   }
 
   res.json({ success: true });
@@ -111,9 +130,13 @@ router.patch('/:id', (req, res) => {
 router.patch('/:id/active', (req, res) => {
   const { active } = req.body;
   if (active !== 0 && active !== 1) return res.status(400).json({ error: 'active must be 0 or 1' });
-  const user = db.prepare(`SELECT id FROM users WHERE id=? AND role='sales'`).get(req.params.id);
+  const user = db.prepare(`SELECT id, username FROM users WHERE id=? AND role='sales'`).get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Not found' });
   db.prepare('UPDATE users SET active=? WHERE id=?').run(active, req.params.id);
+  logActivity(db, {
+    eventType: active ? 'USER_ACTIVATED' : 'USER_DEACTIVATED',
+    actor: req.session.username || 'system', detail: user.username
+  });
   res.json({ success: true });
 });
 
