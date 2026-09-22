@@ -42,6 +42,7 @@ function createTestApp() {
     updateReceivedSerial:         jest.fn().mockResolvedValue(null),
     deleteInventoryRow:           jest.fn().mockResolvedValue(null),
     updateInventoryItemField:     jest.fn().mockResolvedValue(null),
+    updatePaymentInSheet:         jest.fn().mockResolvedValue(null),
   }));
 
   jest.doMock('../../utils/emailSender', () => ({

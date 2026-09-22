@@ -7,6 +7,8 @@ const { generateReceiptPDF } = require('../utils/receiptGenerator');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyPaymentRecorded } = require('../utils/emailSender');
 
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
+
 // ── Record payment ────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
@@ -60,7 +62,7 @@ router.post('/', async (req, res) => {
       const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(paymentId);
       const pdfBuf  = await generateReceiptPDF({ payment, contract, totalPaid, balance: newBalance });
       const buf     = Buffer.isBuffer(pdfBuf) ? pdfBuf : Buffer.from(pdfBuf);
-      const pdfDir  = path.join(__dirname, '../uploads/contracts', contract.contract_number);
+      const pdfDir  = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
       fs.mkdirSync(pdfDir, { recursive: true });
       receiptPath = path.join(pdfDir, `receipt-${paymentId}.pdf`);
       fs.writeFileSync(receiptPath, buf);
@@ -125,7 +127,7 @@ router.get('/:id/receipt', async (req, res) => {
     const contract = db.prepare('SELECT c.*, cu.name AS customer_name FROM contracts c LEFT JOIN customers cu ON c.customer_id=cu.id WHERE c.id=?').get(payment.contract_id);
 
     // Serve cached receipt if it exists
-    const pdfDir  = path.join(__dirname, '../uploads/contracts', contract.contract_number);
+    const pdfDir  = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
     const pdfPath = path.join(pdfDir, 'receipt-' + payment.id + '.pdf');
     if (fs.existsSync(pdfPath)) {
       const buf = fs.readFileSync(pdfPath);

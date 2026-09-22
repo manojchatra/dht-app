@@ -42,4 +42,12 @@ function contractFormData(overrides = {}) {
   return { ...base, ...overrides };
 }
 
-module.exports = { loginAgent, contractFormData };
+/** Creates a contract via the API and returns the parsed response body ({ contractId, contractNumber, ... }). */
+async function createContract(agent, formDataOverrides = {}) {
+  const formData = contractFormData(formDataOverrides);
+  const res = await agent.post('/api/contracts').send({ data: JSON.stringify(formData) });
+  if (!res.body.success) throw new Error('createContract fixture failed: ' + JSON.stringify(res.body));
+  return res.body;
+}
+
+module.exports = { loginAgent, contractFormData, createContract };
