@@ -19,8 +19,13 @@ router.get('/', requireAdmin, (req, res) => {
     ).all(now);
 
     for (const c of overdue) {
+      // No "AND dismissed=0" here on purpose — this must count a dismissed
+      // notification too, or dismissing does nothing: the very next load
+      // would see the contract is still overdue, find no *undismissed*
+      // notification, and immediately recreate one. Once notified about a
+      // given overdue contract, stay quiet — dismiss is meant to be final.
       const alreadyNotified = db.prepare(
-        "SELECT id FROM notifications WHERE contract_id=? AND event_type='FAILED_DELIVERY' AND dismissed=0"
+        "SELECT id FROM notifications WHERE contract_id=? AND event_type='FAILED_DELIVERY'"
       ).get(c.id);
       if (!alreadyNotified) {
         const cuName = (() => { try { return JSON.parse(c.data||'{}').customer?.name||''; } catch(e){ return ''; } })();

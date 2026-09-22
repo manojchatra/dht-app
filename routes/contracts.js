@@ -249,6 +249,27 @@ router.post('/', uploadFields, async (req, res) => {
     const formData = JSON.parse(req.body.data);
     const { customer, product, payment, costing, details } = formData; // full formData for extraction
 
+    // Truncate in place, before anything downstream reads these — customer/
+    // product are the same object references as formData.customer/.product
+    // (and therefore cleanData.customer/.product below, once destructured),
+    // so this one mutation is what the stored data JSON blob, the customer-
+    // upsert further down, activity log, in-app notifications, and email
+    // notifications all end up seeing. Missing this earlier let an oversized
+    // name straight into notification text (overflowed the dashboard's
+    // notification bar) even after the customers-table column itself got
+    // capped, because most reads (e.g. the contracts list) prefer the name
+    // stored in this JSON blob over the customers table row.
+    if (customer) {
+      customer.name  = truncate(customer.name, MAX_LEN.name);
+      customer.email = truncate(customer.email, MAX_LEN.email);
+    }
+    if (product) {
+      product.make         = truncate(product.make, MAX_LEN.make);
+      product.model        = truncate(product.model, MAX_LEN.model);
+      product.serialNumber = truncate(product.serialNumber, MAX_LEN.serial);
+    }
+    formData.salesman = truncate(formData.salesman, MAX_LEN.salesman);
+
     // 0. Validate costing and payment method requirements
     const payErrors = [];
     if (!(parseFloat(costing?.grandTotal) > 0)) {
