@@ -96,6 +96,17 @@ function initialStatus(productStatus) {
   return productStatus === 'instock' ? 'assigned' : 'tbo';
 }
 
+// Defense-in-depth against oversized free-text input — mirrors the client-side
+// maxlength attributes in create-contract.html, but enforced here too since
+// those are trivially bypassed by posting to this endpoint directly.
+const MAX_LEN = {
+  name: 100, email: 100, phone: 20, address: 150, city: 60,
+  gateCode: 20, heardAbout: 100, make: 50, model: 50, serial: 50, salesman: 100,
+};
+function truncate(s, max) {
+  return (s == null) ? s : String(s).slice(0, max);
+}
+
 // Convert absolute path to web-accessible URL path
 function toUrlPath(absPath) {
   if (!absPath || typeof absPath !== 'string') return null;
@@ -238,8 +249,11 @@ router.post('/', uploadFields, async (req, res) => {
     const formData = JSON.parse(req.body.data);
     const { customer, product, payment, costing, details } = formData; // full formData for extraction
 
-    // 0. Validate payment method requirements
+    // 0. Validate costing and payment method requirements
     const payErrors = [];
+    if (!(parseFloat(costing?.grandTotal) > 0)) {
+      payErrors.push('Grand Total must be a valid amount greater than $0');
+    }
     if (payment?.cheque?.selected) {
       if (!payment.cheque.number) payErrors.push('Cheque number is required');
       if (!(parseFloat(payment.cheque.amount) > 0)) payErrors.push('Cheque amount is required');
@@ -259,27 +273,38 @@ router.post('/', uploadFields, async (req, res) => {
       return res.status(400).json({ error: payErrors[0], errors: payErrors });
     }
 
-    // 1. Upsert customer
+    // 1. Upsert customer — truncated up front so the lookup and the write
+    // below always agree on what actually gets stored.
+    const custName   = truncate(customer.name, MAX_LEN.name);
+    const custEmail  = truncate(customer.email, MAX_LEN.email);
+    const custCell   = truncate(customer.phone?.cell, MAX_LEN.phone);
+    const custHome   = truncate(customer.phone?.home, MAX_LEN.phone);
+    const custWork   = truncate(customer.phone?.work, MAX_LEN.phone);
+    const custAddr   = truncate(customer.address, MAX_LEN.address);
+    const custCity   = truncate(customer.city, MAX_LEN.city);
+    const custGate   = truncate(customer.gateCode, MAX_LEN.gateCode);
+    const custHeard  = truncate(customer.heardAbout, MAX_LEN.heardAbout);
+
     let customerId;
     const existing = db.prepare(
       `SELECT id FROM customers WHERE (email=? AND email!='') OR (name=? AND zip=?)`
-    ).get(customer.email, customer.name, customer.zip);
+    ).get(custEmail, custName, customer.zip);
 
     if (existing) {
       db.prepare(`UPDATE customers SET name=?,email=?,phone_cell=?,phone_home=?,phone_work=?,
         address=?,city=?,state=?,zip=?,gated=?,gate_code=?,heard_about=? WHERE id=?`
-      ).run(customer.name, customer.email, customer.phone?.cell, customer.phone?.home, customer.phone?.work,
-        customer.address, customer.city, customer.state||'AZ', customer.zip,
-        customer.gated?1:0, customer.gateCode, customer.heardAbout, existing.id);
+      ).run(custName, custEmail, custCell, custHome, custWork,
+        custAddr, custCity, customer.state||'AZ', customer.zip,
+        customer.gated?1:0, custGate, custHeard, existing.id);
       customerId = existing.id;
     } else {
       const ins = db.prepare(`INSERT INTO customers
         (name,email,phone_cell,phone_home,phone_work,address,city,state,zip,gated,gate_code,heard_about)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-      ).run(customer.name, customer.email,
-        customer.phone?.cell, customer.phone?.home, customer.phone?.work,
-        customer.address, customer.city, customer.state||'AZ', customer.zip,
-        customer.gated?1:0, customer.gateCode, customer.heardAbout);
+      ).run(custName, custEmail,
+        custCell, custHome, custWork,
+        custAddr, custCity, customer.state||'AZ', customer.zip,
+        customer.gated?1:0, custGate, custHeard);
       customerId = ins.lastInsertRowid;
     }
 
@@ -340,8 +365,8 @@ router.post('/', uploadFields, async (req, res) => {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       contractNumber, customerId,
-      formData.store, formData.date, formData.deliveryDate, formData.salesman, salesmanUserId,
-      product?.status, status, product?.serialNumber, product?.make, product?.model,
+      formData.store, formData.date, formData.deliveryDate, truncate(formData.salesman, MAX_LEN.salesman), salesmanUserId,
+      product?.status, status, truncate(product?.serialNumber, MAX_LEN.serial), truncate(product?.make, MAX_LEN.make), truncate(product?.model, MAX_LEN.model),
       grandTotal, paid, pending,
       JSON.stringify(cleanData),
       contractImagePath, chequeImagePath,

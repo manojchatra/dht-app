@@ -140,21 +140,21 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
   <div class="card">
     <div class="card-header"><i class="fa-solid fa-user"></i>Customer Details</div>
     <div class="grid-2" style="margin-bottom:14px">
-      <div><label class="lbl">Full Name *</label><input type="text" id="custName" placeholder="John Smith"></div>
-      <div><label class="lbl">Email</label><input type="email" id="custEmail" placeholder="name@email.com"></div>
+      <div><label class="lbl">Full Name *</label><input type="text" id="custName" placeholder="John Smith" maxlength="100"></div>
+      <div><label class="lbl">Email</label><input type="email" id="custEmail" placeholder="name@email.com" maxlength="100"></div>
     </div>
     <div class="grid-2" style="margin-bottom:14px">
-      <div><label class="lbl">Address</label><input type="text" id="custAddress" placeholder="545 N Fraser Dr"></div>
+      <div><label class="lbl">Address</label><input type="text" id="custAddress" placeholder="545 N Fraser Dr" maxlength="150"></div>
       <div class="grid-3" style="gap:8px">
-        <div><label class="lbl">City</label><input type="text" id="custCity" placeholder="Mesa"></div>
+        <div><label class="lbl">City</label><input type="text" id="custCity" placeholder="Mesa" maxlength="60"></div>
         <div><label class="lbl">State</label><input type="text" id="custState" value="AZ" maxlength="2"></div>
         <div><label class="lbl">Zip</label><input type="text" id="custZip" placeholder="85203" maxlength="5"></div>
       </div>
     </div>
     <div class="grid-3" style="margin-bottom:14px">
-      <div><label class="lbl">Cell</label><input type="tel" id="custCell" placeholder="(602) 555-1234"></div>
-      <div><label class="lbl">Home</label><input type="tel" id="custHome" placeholder="(602) 555-5678"></div>
-      <div><label class="lbl">Work</label><input type="tel" id="custWork" placeholder="(602) 555-9012"></div>
+      <div><label class="lbl">Cell</label><input type="tel" id="custCell" placeholder="(602) 555-1234" maxlength="20"></div>
+      <div><label class="lbl">Home</label><input type="tel" id="custHome" placeholder="(602) 555-5678" maxlength="20"></div>
+      <div><label class="lbl">Work</label><input type="tel" id="custWork" placeholder="(602) 555-9012" maxlength="20"></div>
     </div>
     <div class="grid-2">
       <div>
@@ -170,7 +170,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
         <div style="display:flex;gap:12px;margin-top:8px;align-items:center;flex-wrap:wrap">
           <label class="cb-item"><input type="radio" name="gated" value="no" checked> No</label>
           <label class="cb-item"><input type="radio" name="gated" value="yes"> Yes</label>
-          <input type="text" id="gateCode" placeholder="Gate code" style="flex:1;min-width:100px;display:none">
+          <input type="text" id="gateCode" placeholder="Gate code" maxlength="20" style="flex:1;min-width:100px;display:none">
         </div>
       </div>
     </div>
@@ -204,41 +204,41 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="grid-4" style="margin-bottom:14px">
       <div class="ac-wrap">
         <label class="lbl">Make</label>
-        <input type="text" id="prodMake" placeholder="HotSpring" autocomplete="off"
+        <input type="text" id="prodMake" placeholder="HotSpring" autocomplete="off" maxlength="50"
                oninput="onMakeInput()" onfocus="showMakeDd()" onblur="hideMakeDd()">
         <div class="ac-dropdown" id="makeDd"></div>
       </div>
       <div><label class="lbl">Series</label>
-        <input type="text" id="prodSeries" placeholder="Highlife" list="seriesDl" autocomplete="off">
+        <input type="text" id="prodSeries" placeholder="Highlife" list="seriesDl" autocomplete="off" maxlength="50">
         <datalist id="seriesDl"></datalist>
       </div>
       <div class="ac-wrap">
         <label class="lbl">Model</label>
-        <input type="text" id="prodModel" placeholder="Sovereign" autocomplete="off"
+        <input type="text" id="prodModel" placeholder="Sovereign" autocomplete="off" maxlength="50"
                oninput="onModelInput()" onfocus="showModelDd()" onblur="hideModelDd()">
         <div class="ac-dropdown" id="modelDd"></div>
       </div>
-      <div><label class="lbl">Year</label><input type="text" id="prodYear" placeholder="2026"></div>
+      <div><label class="lbl">Year</label><input type="text" id="prodYear" placeholder="2026" maxlength="4"></div>
     </div>
     <div style="margin-bottom:14px">
       <label class="lbl">Serial Number</label>
-      <input type="text" id="prodSerial" placeholder="IIN26D1261148" style="max-width:280px">
+      <input type="text" id="prodSerial" placeholder="IIN26D1261148" maxlength="50" style="max-width:280px">
       <p class="helper" id="spaSerialHint">Auto-filled from inventory search, editable</p>
     </div>
     <div style="margin-bottom:14px">
       <label class="lbl">Shell Color</label>
       <div class="chip-group" id="shellChips"></div>
-      <input type="text" id="shellColorOther" class="other-input" placeholder="Specify shell color...">
+      <input type="text" id="shellColorOther" class="other-input" placeholder="Specify shell color..." maxlength="50">
     </div>
     <div style="margin-bottom:14px">
       <label class="lbl">Cabinet Color</label>
       <div class="chip-group" id="cabinetChips"></div>
-      <input type="text" id="cabinetColorOther" class="other-input" placeholder="Specify cabinet color...">
+      <input type="text" id="cabinetColorOther" class="other-input" placeholder="Specify cabinet color..." maxlength="50">
     </div>
     <div style="margin-bottom:14px">
       <label class="lbl">Cover Color</label>
       <div class="chip-group" id="coverChips"></div>
-      <input type="text" id="coverColorOther" class="other-input" placeholder="Specify cover color...">
+      <input type="text" id="coverColorOther" class="other-input" placeholder="Specify cover color..." maxlength="50">
     </div>
     <label class="lbl">Included with Spa</label>
     <div class="cb-row" style="margin-top:8px">
@@ -312,7 +312,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     </div>
     <div>
       <label class="lbl">Electrical Notes</label>
-      <textarea id="elecNotes" rows="2" placeholder="Any electrical notes or conditions..."></textarea>
+      <textarea id="elecNotes" rows="2" placeholder="Any electrical notes or conditions..." maxlength="500"></textarea>
     </div>
   </div>
 
@@ -321,7 +321,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="card-header"><i class="fa-solid fa-note-sticky"></i>Miscellaneous</div>
     <div style="margin-bottom:14px">
       <label class="lbl">Notes</label>
-      <textarea id="miscNotes" rows="2" placeholder="Any additional notes..."></textarea>
+      <textarea id="miscNotes" rows="2" placeholder="Any additional notes..." maxlength="500"></textarea>
     </div>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
       <label class="cb-item"><input type="checkbox" id="miscCleanings"> Monthly Cleanings</label>
@@ -365,7 +365,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
               <label class="cb-item"><input type="checkbox" class="cover-lift" value="CCI" onchange="recalcAll()"> CCI</label>
               <label class="cb-item"><input type="checkbox" class="cover-lift" value="CCII" onchange="recalcAll()"> CCII</label>
               <label class="cb-item"><input type="checkbox" class="cover-lift" value="ProLift" onchange="recalcAll()"> ProLift</label>
-              <input type="text" id="coverLiftOther" placeholder="Other lift..." style="width:100px;margin-left:4px">
+              <input type="text" id="coverLiftOther" placeholder="Other lift..." maxlength="50" style="width:100px;margin-left:4px">
             </div>
           </div>
         </div>
@@ -463,7 +463,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
             <label class="cb-item"><input type="checkbox" class="acc-item" value="Towel Tree"> Towel Tree</label>
             <label class="cb-item"><input type="checkbox" class="acc-item" value="Handrail w/Storage"> Handrail w/Storage</label>
           </div>
-          <input type="text" id="accOther" placeholder="Other accessories..." style="max-width:280px">
+          <input type="text" id="accOther" placeholder="Other accessories..." maxlength="100" style="max-width:280px">
         </div>
       </div>
       <input type="text" id="dtAccPrice" placeholder="$" oninput="recalcAll()">
@@ -499,7 +499,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
           <label class="cb-item"><input type="radio" name="discount" value="no" onchange="onDiscountChange()"> No</label>
         </div>
         <div id="discountReasonRow" style="display:none;margin-top:8px">
-          <textarea id="dtDiscountReason" rows="2" style="width:100%;resize:vertical" placeholder="What sort of discount is this?"></textarea>
+          <textarea id="dtDiscountReason" rows="2" maxlength="300" style="width:100%;resize:vertical" placeholder="What sort of discount is this?"></textarea>
         </div>
       </div>
       <input type="text" id="dtDiscountPrice" placeholder="$" oninput="recalcAll()">
@@ -531,13 +531,13 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="payment-row">
       <input type="checkbox" id="payChequeSel" onchange="recalcDuePrior()">
       <span class="payment-label">Cheque #</span>
-      <input type="text" id="payChequeNum" placeholder="1068" style="max-width:120px">
+      <input type="text" id="payChequeNum" placeholder="1068" maxlength="30" style="max-width:120px">
       <input type="text" id="payChequeAmt" placeholder="Amount $" oninput="recalcDuePrior()">
     </div>
     <div class="payment-row">
       <input type="checkbox" id="payCCSel" onchange="recalcDuePrior()">
       <span class="payment-label">Credit Card</span>
-      <input type="text" id="payCCLastFour" placeholder="Last 4 digits" style="max-width:120px">
+      <input type="text" id="payCCLastFour" placeholder="Last 4 digits" maxlength="4" style="max-width:120px">
       <input type="text" id="payCCAmt" placeholder="Amount $" oninput="recalcDuePrior()">
     </div>
     <div class="payment-row">
@@ -548,7 +548,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="payment-row">
       <input type="checkbox" id="payFinanceSel" onchange="recalcDuePrior()">
       <span class="payment-label">Finance</span>
-      <input type="text" id="payFinancePlan" placeholder="Plan / lender">
+      <input type="text" id="payFinancePlan" placeholder="Plan / lender" maxlength="100">
       <input type="text" id="payFinanceAmt" placeholder="Amount $" oninput="recalcDuePrior()">
     </div>
     <div class="payment-row" style="gap:8px;flex-wrap:wrap">
