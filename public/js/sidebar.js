@@ -123,6 +123,12 @@ async function initSidebar() {
     if (el.tagName === 'BUTTON' || el.tagName === 'A') el.style.display = 'flex';
     else el.style.display = '';
   });
+  // Hide nav items these roles have no route access to — otherwise clicking
+  // one navigates away, briefly renders the destination page, then this
+  // same script's redirect block above (or the destination page's own auth
+  // check) bounces them back, showing as a blank-flash-then-reload.
+  if (u.role === 'warehouse') document.querySelectorAll('.warehouse-hide').forEach(el => { el.style.display = 'none'; });
+  if (u.role === 'delivery')  document.querySelectorAll('.delivery-hide').forEach(el => { el.style.display = 'none'; });
 }
 
 initSidebar();
