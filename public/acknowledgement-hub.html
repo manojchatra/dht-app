@@ -35,6 +35,7 @@
 .date-pick-btn:hover{color:var(--accent)}
 .date-native-hidden{position:absolute;inset:0;opacity:0;pointer-events:none;width:1px;height:1px}
 .slot-pill{display:inline-flex;align-items:center;gap:5px;background:var(--accent-bg);color:var(--accent);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:500;white-space:nowrap}
+.awaiting-pill{display:inline-flex;align-items:center;gap:5px;background:var(--yellow-bg);color:var(--yellow);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:500;white-space:nowrap}
 .gen-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:var(--font)}
 .top-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
 .modal-list-row{padding:12px 14px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border);margin-bottom:8px;transition:all .15s}
@@ -198,6 +199,16 @@ function switchAckTab(tab) {
   document.getElementById('tab-completed').style.display  = tab==='completed'?'':'none';
 }
 
+// Only admin/delivery can actually complete an acknowledgement (backend:
+// GET /api/delivery/contract/:id is gated to those two roles) — sales sees
+// this list too (scoped to their own contracts), but the action itself
+// would dead-end for them, so show a status pill instead of a live button.
+function ackActionHtml(c) {
+  const canStart = window._userRole === 'admin' || window._userRole === 'delivery';
+  if (canStart) return '<button class="btn-plus" title="Start Acknowledgement" onclick="goToDelivery('+c.id+')"><i class="fa-solid fa-plus"></i></button>';
+  return '<span class="awaiting-pill"><i class="fa-solid fa-hourglass-half"></i> Awaiting Acknowledgement</span>';
+}
+
 function renderScheduled() {
   const rows = allContracts.filter(c=>c.status==='scheduled');
   const el = document.getElementById('schedContent');
@@ -214,8 +225,7 @@ function renderScheduled() {
       +'<td style="font-size:12px;color:var(--text-muted)">'+escHtml(c.serial_number||'—')+'</td>'
       +'<td style="font-size:12px;max-width:160px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.address||'—')+'</div></td>'
       +'<td><span class="slot-pill"><i class="fa-solid fa-clock"></i>'+fmtSlot(c.scheduled_datetime,c.scheduled_duration)+'</span></td>'
-      +'<td style="text-align:center">'
-        +'<button class="btn-plus" title="Start Acknowledgement" onclick="goToDelivery('+c.id+')"><i class="fa-solid fa-plus"></i></button></td>'
+      +'<td style="text-align:center">'+ackActionHtml(c)+'</td>'
       +'</tr>'
     ).join('')
     +'</tbody></table></div>';
@@ -223,7 +233,7 @@ function renderScheduled() {
     + rows.map(c=>'<div class="ack-card">'
       +'<div class="ack-card-top">'
         +'<div><div class="ack-card-name">'+escHtml(c.customer_name||'—')+'</div><div class="ack-card-store">'+escHtml(c.store||'')+'</div></div>'
-        +'<button class="btn-plus" title="Start Acknowledgement" onclick="goToDelivery('+c.id+')"><i class="fa-solid fa-plus"></i></button>'
+        +ackActionHtml(c)
       +'</div>'
       +'<div class="ack-card-meta">'+escHtml(c.contract_number||'—')+(c.serial_number?' · S/N: '+escHtml(c.serial_number):'')+'</div>'
       +'<div class="ack-card-address">'+escHtml(c.address||'—')+'</div>'
