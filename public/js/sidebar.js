@@ -136,8 +136,14 @@ async function initSidebar() {
 
   // Set before _onAuthReady() — pages (e.g. delivery-view.html) read this
   // inside their own _onAuthReady to make role-specific UI decisions.
+  // calendar.html specifically needs _userTeam to filter events down to a
+  // delivery user's own team — without it every team-assigned contract was
+  // silently invisible to every delivery user's calendar, always (not just
+  // after a reschedule): the filter check (c.delivery_team === userTeam)
+  // could never match a real team against an undefined _userTeam.
   window._userRole = u.role;
   window._userId = u.userId;
+  window._userTeam = u.team;
 
   // Notify deferred loaders (e.g. calendar waits for auth)
   if (typeof window._onAuthReady === 'function') window._onAuthReady();
