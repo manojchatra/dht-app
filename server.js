@@ -107,4 +107,8 @@ app.get('/settings',  requireAuth, serve('settings.html'));
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 app.use((req, res) => res.status(404).send('Not found'));
 
-app.listen(PORT, '127.0.0.1', () => console.log(`DHT App running on port ${PORT}`));
+if (require.main === module) {
+  app.listen(PORT, '127.0.0.1', () => console.log(`DHT App running on port ${PORT}`));
+}
+
+module.exports = app;

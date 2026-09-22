@@ -3,7 +3,7 @@
 const fs   = require('fs');
 const path = require('path');
 
-const LOG_FILE = path.join(__dirname, '../../data/activity.log');
+const LOG_FILE = process.env.ACTIVITY_LOG_PATH || path.join(__dirname, '../../data/activity.log');
 
 // MST formatter (America/Phoenix — no DST)
 function mstNow() {

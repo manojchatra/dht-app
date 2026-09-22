@@ -34,12 +34,14 @@ function clearAttempts(ip) {
 }
 
 // Clean up old entries every hour to prevent memory growth
+// .unref() so this timer alone doesn't keep the process alive (e.g. in tests,
+// which require() this module without ever calling app.listen()).
 setInterval(() => {
   const now = Date.now();
   for (const [ip, record] of loginAttempts.entries()) {
     if (record.lockedUntil < now && record.count === 0) loginAttempts.delete(ip);
   }
-}, 60 * 60 * 1000);
+}, 60 * 60 * 1000).unref();
 
 // ── POST /auth/login ──────────────────────────────────────────────────────────
 router.post('/login', (req, res) => {

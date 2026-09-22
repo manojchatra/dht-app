@@ -3,7 +3,7 @@ const bcrypt   = require('bcryptjs');
 const path     = require('path');
 const fs       = require('fs');
 
-const DB_PATH  = path.join(__dirname, '../../data/dht-app.db');
+const DB_PATH  = process.env.DB_PATH || path.join(__dirname, '../../data/dht-app.db');
 const DATA_DIR = path.dirname(DB_PATH);
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
