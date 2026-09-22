@@ -803,19 +803,41 @@ router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
 });
 
 // ── Delete contract ───────────────────────────────────────────────────────────
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const row = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    // Remove files
-    [row.contract_image_path, row.cheque_image_path].forEach(p => { if(p && fs.existsSync(p)) fs.unlinkSync(p); });
-    if (row.extra_images) {
-      JSON.parse(row.extra_images).forEach(p => { if(p && fs.existsSync(p)) fs.unlinkSync(p); });
+
+    // Delete the calendar event first (non-fatal) if this contract had one —
+    // otherwise a scheduled delivery stays stuck on the calendar forever.
+    if (row.calendar_event_id) {
+      try { await deleteCalendarEvent(row.calendar_event_id); }
+      catch(e) { console.error('[Calendar delete on contract-delete failed — non-fatal]', e.message); }
     }
+
     db.prepare('DELETE FROM payments WHERE contract_id=?').run(req.params.id);
+    db.prepare('DELETE FROM activity_log WHERE contract_id=?').run(req.params.id);
+    db.prepare('DELETE FROM notifications WHERE contract_id=?').run(req.params.id);
+    // Unlink (not delete) any inventory item tied to this contract — it may
+    // still be real physical stock, and SQLite's foreign-key constraint
+    // would otherwise block the delete below outright.
+    db.prepare('UPDATE inventory SET contract_id=NULL WHERE contract_id=?').run(req.params.id);
+
+    // Remove the whole contract folder rather than tracking individual
+    // fields — it also holds the acknowledgement PDF, cached contract PDF,
+    // payment receipts, delivery/exception photos, and signatures, none of
+    // which the old per-field cleanup here ever touched (and extra_images
+    // entries are {path,label} objects, not plain path strings, so even
+    // those were silently never deleted).
+    const contractFolder = path.join(__dirname, '../uploads/contracts', row.contract_number);
+    if (fs.existsSync(contractFolder)) {
+      fs.rmSync(contractFolder, { recursive: true, force: true });
+    }
+
     db.prepare('DELETE FROM contracts WHERE id=?').run(req.params.id);
     res.json({ success: true });
   } catch (err) {
+    console.error('Delete contract error:', err);
     res.status(500).json({ error: 'Failed to delete contract' });
   }
 });
