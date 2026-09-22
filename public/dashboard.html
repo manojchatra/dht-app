@@ -31,6 +31,10 @@
 .board-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start;margin-bottom:16px}
 .board-grid>*{min-width:0}
 @media(max-width:980px){.board-grid{grid-template-columns:1fr}}
+/* Sales-role view: Showroom/Salesman stats removed (cross-salesperson data
+   they can't see accurately anyway, since /api/contracts is scoped to their
+   own contracts) and Recent Contracts goes full width. */
+#dashBoardGrid.sales-view{grid-template-columns:1fr}
 .side-stack{display:flex;flex-direction:column;gap:16px}
 .table-scroll{overflow-x:auto;max-width:100%}
 .cust-table{width:100%;border-collapse:collapse}
@@ -110,11 +114,11 @@
       <div id="recentContractsBody" class="table-scroll"><div class="empty-hint">Loading…</div></div>
     </div>
     <div class="side-stack">
-      <div class="card" style="margin-bottom:0">
+      <div class="card" style="margin-bottom:0" id="showroomCard">
         <div class="card-header"><i class="fa-solid fa-store"></i> Deliveries by Showroom</div>
         <div class="mini-list" id="showroomBody"><div class="empty-hint">Loading…</div></div>
       </div>
-      <div class="card" style="margin-bottom:0">
+      <div class="card" style="margin-bottom:0" id="salesmanCard">
         <div class="card-header"><i class="fa-solid fa-user-tie"></i> Contracts by Salesman</div>
         <div class="mini-list" id="salesmanBody"><div class="empty-hint">Loading…</div></div>
       </div>
@@ -183,9 +187,15 @@ function toggleActionMenu(e,id){
 <script>
 document.getElementById('dateStr').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 async function loadDash() {
+  // Sales role: /api/contracts is scoped to their own contracts, so the
+  // Showroom/Salesman stats would show everyone else as a misleading zero
+  // rather than the real team-wide numbers — dropped entirely for this role
+  // rather than shown half-accurate. Recent Contracts takes the full row.
+  const isSales = window._userRole === 'sales';
+
   const [contracts, salespeople] = await Promise.all([
     fetch('/api/contracts').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/sales/active/list').then(r=>r.json()).catch(()=>[]),
+    isSales ? Promise.resolve([]) : fetch('/api/sales/active/list').then(r=>r.json()).catch(()=>[]),
   ]);
   const pending = contracts.filter(c=>parseFloat(c.due_prior||0)>0).length;
   const scheduled = contracts.filter(c=>c.status==='scheduled').length;
@@ -197,8 +207,13 @@ async function loadDash() {
     '<div class="dash-card c-pending"><i class="fa-solid fa-triangle-exclamation"></i><div class="dc-num" style="color:var(--red)">' + pending + '</div><div class="dc-label">Payment Pending</div></div>';
 
   renderRecentContracts(contracts);
-  renderShowroomBreakdown(contracts);
-  renderSalesmanBreakdown(contracts, salespeople);
+  document.getElementById('dashBoardGrid').classList.toggle('sales-view', isSales);
+  document.getElementById('showroomCard').style.display = isSales ? 'none' : '';
+  document.getElementById('salesmanCard').style.display = isSales ? 'none' : '';
+  if (!isSales) {
+    renderShowroomBreakdown(contracts);
+    renderSalesmanBreakdown(contracts, salespeople);
+  }
   renderNeedsAttention(contracts);
   document.getElementById('dashBoardGrid').style.display = '';
 }
@@ -276,7 +291,10 @@ function renderNeedsAttention(contracts) {
   ).join('') : '<div class="empty-hint">Nothing needs attention right now.</div>';
 }
 
-loadDash();
+// Deferred until sidebar.js's auth check sets window._userRole, so the
+// sales-view branch above is never computed before the role is known
+// (same convention as view-contracts.html / status.html / inventory-list.html).
+window._onAuthReady = loadDash;
 </script>
 </body>
 </html>
