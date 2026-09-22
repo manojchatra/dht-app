@@ -23,22 +23,28 @@ function requireSalesOrAdmin(req, res, next) {
   next();
 }
 
-const LIST_SQL = `
-  SELECT
-    c.id, c.contract_number, c.make, c.model, c.serial_number,
-    c.delivery_date, c.scheduled_datetime,
-    COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name,
-    COALESCE(cu.phone_cell, cu.phone_home, json_extract(c.data,'$.customer.phone.cell'), '') AS phone,
-    COALESCE(cu.email, json_extract(c.data,'$.customer.email'), '') AS email,
-    COALESCE(cu.address, json_extract(c.data,'$.customer.address'), '') AS address,
-    cu.city AS city,
-    pdf.status AS feedback_status
-  FROM contracts c
-  LEFT JOIN customers cu ON c.customer_id = cu.id
-  LEFT JOIN post_delivery_feedback pdf ON pdf.contract_id = c.id
-  WHERE c.status = 'delivered'
-  ORDER BY c.delivery_date DESC, c.id DESC
-`;
+// scoped=true adds a salesman_user_id filter (one bound param, the caller's
+// user id) — used for the sales-facing /contracts route below. /admin/list
+// stays unscoped, same as before.
+function buildListSql(scoped) {
+  return `
+    SELECT
+      c.id, c.contract_number, c.make, c.model, c.serial_number,
+      c.delivery_date, c.scheduled_datetime, c.salesman_user_id,
+      COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name,
+      COALESCE(cu.phone_cell, cu.phone_home, json_extract(c.data,'$.customer.phone.cell'), '') AS phone,
+      COALESCE(cu.email, json_extract(c.data,'$.customer.email'), '') AS email,
+      COALESCE(cu.address, json_extract(c.data,'$.customer.address'), '') AS address,
+      cu.city AS city,
+      pdf.status AS feedback_status
+    FROM contracts c
+    LEFT JOIN customers cu ON c.customer_id = cu.id
+    LEFT JOIN post_delivery_feedback pdf ON pdf.contract_id = c.id
+    WHERE c.status = 'delivered'
+    ${scoped ? 'AND c.salesman_user_id = ?' : ''}
+    ORDER BY c.delivery_date DESC, c.id DESC
+  `;
+}
 
 function mapListRow(r) {
   return {
@@ -49,9 +55,13 @@ function mapListRow(r) {
 }
 
 // ── GET /contracts — sales+admin delivered list ─────────────────────────────
+// Sales only sees their own contracts (via salesman_user_id) — admin sees all.
 router.get('/contracts', requireSalesOrAdmin, (req, res) => {
   try {
-    const rows = db.prepare(LIST_SQL).all().map(mapListRow);
+    const scoped = req.currentUser.role === 'sales';
+    const rows = db.prepare(buildListSql(scoped))
+      .all(...(scoped ? [req.currentUser.id] : []))
+      .map(mapListRow);
     res.json(rows);
   } catch(e) {
     console.error('[PostDelivery contracts]', e.message);
@@ -70,6 +80,9 @@ router.get('/contract/:id', requireSalesOrAdmin, (req, res) => {
     `).get(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Not found' });
     if (contract.status !== 'delivered') return res.status(404).json({ error: 'Contract is not delivered' });
+    if (req.currentUser.role === 'sales' && contract.salesman_user_id !== req.currentUser.id) {
+      return res.status(403).json({ error: 'Not your contract' });
+    }
 
     const existing = db.prepare('SELECT status FROM post_delivery_feedback WHERE contract_id=?').get(contract.id);
     if (existing && existing.status !== 'pending')
@@ -102,6 +115,9 @@ router.post('/feedback/:contractId', requireSalesOrAdmin, (req, res) => {
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.contractId);
     if (!contract) return res.status(404).json({ error: 'Not found' });
     if (contract.status !== 'delivered') return res.status(400).json({ error: 'Contract is not delivered' });
+    if (req.currentUser.role === 'sales' && contract.salesman_user_id !== req.currentUser.id) {
+      return res.status(403).json({ error: 'Not your contract' });
+    }
 
     const existing = db.prepare('SELECT status FROM post_delivery_feedback WHERE contract_id=?').get(contract.id);
     if (existing && existing.status !== 'pending')
@@ -145,6 +161,12 @@ router.post('/feedback/:contractId', requireSalesOrAdmin, (req, res) => {
 // ── GET /contract-feedback/:contractId — for contract-detail collapsible ───
 router.get('/contract-feedback/:contractId', requireSalesOrAdmin, (req, res) => {
   try {
+    if (req.currentUser.role === 'sales') {
+      const contract = db.prepare('SELECT salesman_user_id FROM contracts WHERE id=?').get(req.params.contractId);
+      if (contract && contract.salesman_user_id !== req.currentUser.id) {
+        return res.status(403).json({ error: 'Not your contract' });
+      }
+    }
     const row = db.prepare('SELECT * FROM post_delivery_feedback WHERE contract_id=?').get(req.params.contractId);
     if (!row) return res.json({ status: 'pending' });
     res.json({ ...row, noData: row.status === 'admin_completed' });
@@ -157,7 +179,7 @@ router.get('/contract-feedback/:contractId', requireSalesOrAdmin, (req, res) => 
 // ── GET /admin/list — admin delivered list with status ─────────────────────
 router.get('/admin/list', requireAdmin, (req, res) => {
   try {
-    const rows = db.prepare(LIST_SQL).all().map(mapListRow);
+    const rows = db.prepare(buildListSql(false)).all().map(mapListRow);
     res.json(rows);
   } catch(e) {
     console.error('[PostDelivery admin list]', e.message);
