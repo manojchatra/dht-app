@@ -290,16 +290,19 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
 
       // Attempt email send if requested (non-fatal — deliver is already saved)
       const sendEmail  = req.body.sendEmail === 'true';
-      const recipients = [];
       let emailError = null;
       if (sendEmail) {
         try {
-          const custEmail = JSON.parse(contract.data||'{}').customer?.email;
-          if (custEmail) recipients.push(custEmail);
-          const settingsRecipients = req.body.extraRecipients
+          // extraRecipients is the full recipient list the sender actually
+          // chose in the checkbox modal (showRecipientModal/confirmSend in
+          // acknowledgement.html already includes the customer in it when
+          // their box is checked) — it must be used as-is, not added to.
+          // This used to also unconditionally push the customer's email
+          // regardless of extraRecipients, so unchecking "Customer" in the
+          // UI never actually excluded them from being emailed.
+          const recipients = (req.body.extraRecipients
             ? JSON.parse(req.body.extraRecipients)
-            : getEmailRecipients();
-          settingsRecipients.forEach(r => { if (r && !recipients.includes(r)) recipients.push(r); });
+            : getEmailRecipients()).filter(Boolean);
           if (recipients.length > 0) {
             await sendAcknowledgementEmail({ contract, pdfPath, recipients });
             console.log('[Email] Acknowledgement sent for', contract.contract_number);
