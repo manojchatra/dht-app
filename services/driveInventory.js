@@ -331,8 +331,12 @@ async function getSkuList(forceRefresh = false) {
 
 // Strips spaces/dashes so formatting differences (not just case) don't cause
 // a false miss — SKUs here are long numeric barcodes (e.g. "141101267100.26").
+// Also strips a trailing decimal suffix (e.g. "141101307100.26" ->
+// "141101307100") — confirmed this is a fixed part of the barcode format,
+// never a meaningful distinction between two different real products in the
+// SKU List, so it's safe to ignore on both sides of the comparison.
 function normalizeSku(s) {
-  return String(s||'').trim().toLowerCase().replace(/[\s-]/g, '');
+  return String(s||'').trim().toLowerCase().replace(/[\s-]/g, '').replace(/\.\d+$/, '');
 }
 
 // Standard iterative Levenshtein distance, no dependency.
