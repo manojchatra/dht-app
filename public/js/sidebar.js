@@ -60,6 +60,25 @@ function markSidebarActive() {
   if (p.startsWith('/settings'))  activateFlat('/settings');
 }
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// A network-level failure (fetch rejects — offline, DNS hiccup, the mobile
+// device reconnecting right as it wakes from a screen lock, etc.) must never
+// be treated the same as a real "not authenticated" response, or a session
+// that's still perfectly valid gets thrown away on a transient blip. Retries
+// a few times before giving up; only an actual response (even one saying
+// "no user") is trusted to mean "not logged in".
+async function fetchAuthMe(attempt = 0) {
+  try {
+    const r = await fetch('/auth/me');
+    return await r.json();
+  } catch (e) {
+    if (attempt >= 3) return 'network-error';
+    await sleep(500 * Math.pow(2, attempt)); // 500ms, 1s, 2s
+    return fetchAuthMe(attempt + 1);
+  }
+}
+
 async function initSidebar() {
   const mount = document.getElementById('sidebar-root');
 
@@ -70,12 +89,21 @@ async function initSidebar() {
   const partialPromise = mount
     ? fetch('/partials/sidebar.html', { cache: 'no-store' }).then(r => r.text()).catch(e => { console.error('[sidebar] failed to load partial', e); return null; })
     : Promise.resolve(null);
-  const authPromise = fetch('/auth/me').then(r => r.json()).catch(() => null);
+  const authPromise = fetchAuthMe();
 
   const [html, u] = await Promise.all([partialPromise, authPromise]);
 
   if (mount && html) mount.outerHTML = html;
   markSidebarActive();
+
+  // Persistent network failure (not a real "you're not logged in" answer) —
+  // don't redirect a genuinely-still-logged-in user off to /login over a
+  // connectivity problem. Leave the page as-is; a manual refresh once the
+  // connection is back will get a real answer.
+  if (u === 'network-error') {
+    console.error('[sidebar] could not reach /auth/me after retries — not redirecting, likely a connectivity issue');
+    return;
+  }
 
   if (!u || !u.username) { window.location.href = '/login'; return; }
 
