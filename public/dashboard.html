@@ -53,6 +53,7 @@
 .loc-row .lr-bar{flex:1;height:6px;border-radius:4px;background:var(--surface2);overflow:hidden}
 .loc-row .lr-bar span{display:block;height:100%;background:linear-gradient(90deg,var(--secondary),var(--accent));border-radius:4px}
 .loc-row .lr-num{font-size:12.5px;font-weight:700;color:var(--text);width:22px;text-align:right}
+#salesmanBody .lr-name{width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .empty-hint{font-size:12.5px;color:var(--text-light);padding:10px 4px}
 .quick-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
 .qa-btn{display:flex;align-items:center;gap:12px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:box-shadow .15s;font-size:14px;font-weight:500}
@@ -112,6 +113,10 @@
       <div class="card" style="margin-bottom:0">
         <div class="card-header"><i class="fa-solid fa-store"></i> Deliveries by Showroom</div>
         <div class="mini-list" id="showroomBody"><div class="empty-hint">Loading…</div></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><i class="fa-solid fa-user-tie"></i> Contracts by Salesman</div>
+        <div class="mini-list" id="salesmanBody"><div class="empty-hint">Loading…</div></div>
       </div>
       <div class="card" style="margin-bottom:0">
         <div class="card-header"><i class="fa-solid fa-triangle-exclamation"></i> Needs Attention</div>
@@ -178,7 +183,10 @@ function toggleActionMenu(e,id){
 <script>
 document.getElementById('dateStr').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 async function loadDash() {
-  const contracts = await fetch('/api/contracts').then(r=>r.json()).catch(()=>[]);
+  const [contracts, salespeople] = await Promise.all([
+    fetch('/api/contracts').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/sales/active/list').then(r=>r.json()).catch(()=>[]),
+  ]);
   const pending = contracts.filter(c=>parseFloat(c.due_prior||0)>0).length;
   const scheduled = contracts.filter(c=>c.status==='scheduled').length;
   const tbo = contracts.filter(c=>c.status==='tbo').length;
@@ -190,6 +198,7 @@ async function loadDash() {
 
   renderRecentContracts(contracts);
   renderShowroomBreakdown(contracts);
+  renderSalesmanBreakdown(contracts, salespeople);
   renderNeedsAttention(contracts);
   document.getElementById('dashBoardGrid').style.display = '';
 }
@@ -226,6 +235,25 @@ function renderShowroomBreakdown(contracts) {
     '<div class="loc-row"><span class="lr-name">' + s + '</span>' +
     '<span class="lr-bar"><span style="width:' + Math.round(counts[s]/max*100) + '%"></span></span>' +
     '<span class="lr-num">' + counts[s] + '</span></div>'
+  ).join('');
+}
+
+function renderSalesmanBreakdown(contracts, salespeople) {
+  const el = document.getElementById('salesmanBody');
+  if (!salespeople.length) { el.innerHTML = '<div class="empty-hint">No active salespeople.</div>'; return; }
+  // Counting by salesman_user_id (not the free-text salesman name) and only
+  // against the active-salespeople list means: a deactivated salesperson
+  // gets no row at all, and a deleted contract is simply absent from the
+  // next /api/contracts fetch — both handled by this being a fresh count
+  // on every load rather than a stored/cached number.
+  const counts = {}; salespeople.forEach(s => counts[s.id] = 0);
+  contracts.forEach(c => { if (c.salesman_user_id && counts.hasOwnProperty(c.salesman_user_id)) counts[c.salesman_user_id]++; });
+  const sorted = [...salespeople].sort((a,b) => counts[b.id]-counts[a.id] || a.name.localeCompare(b.name));
+  const max = Math.max(1, ...sorted.map(s => counts[s.id]));
+  el.innerHTML = sorted.map(s =>
+    '<div class="loc-row"><span class="lr-name" title="' + escHtml(s.name) + '">' + escHtml(s.name) + '</span>' +
+    '<span class="lr-bar"><span style="width:' + Math.round(counts[s.id]/max*100) + '%"></span></span>' +
+    '<span class="lr-num">' + counts[s.id] + '</span></div>'
   ).join('');
 }
 

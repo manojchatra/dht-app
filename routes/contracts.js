@@ -20,10 +20,12 @@ const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
 
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
+
 // ── Multer ────────────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(__dirname, '../uploads/contracts');
+    const dir = path.join(UPLOADS_DIR, 'contracts');
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -98,8 +100,7 @@ function initialStatus(productStatus) {
 function toUrlPath(absPath) {
   if (!absPath || typeof absPath !== 'string') return null;
   try {
-    const uploadsDir = path.join(__dirname, '../uploads');
-    const rel = path.relative(uploadsDir, absPath);
+    const rel = path.relative(UPLOADS_DIR, absPath);
     if (rel.startsWith('..')) return null; // path outside uploads — reject
     return '/uploads/' + rel.replace(/\\/g, '/');
   } catch(e) { return null; }
@@ -115,7 +116,7 @@ router.get('/', (req, res) => {
     const rows = db.prepare(`
       SELECT
         c.id, c.contract_number, c.store, c.date, c.delivery_date,
-        c.salesman, c.product_status, c.status,
+        c.salesman, c.salesman_user_id, c.product_status, c.status,
         c.serial_number, c.make, c.model,
         c.grand_total, c.paid_amount, c.due_prior,
         c.scheduled_datetime, c.scheduled_duration, c.delivery_team, c.acknowledgement_pdf, c.contract_image_path, c.cheque_image_path, c.extra_images, c.created_at,
@@ -295,7 +296,7 @@ router.post('/', uploadFields, async (req, res) => {
     const contractNumber = generateContractNumber(cleanData.store, cleanData.date);
 
     // Create contract folder and move files
-    const contractFolder = path.join(__dirname, '../uploads/contracts', contractNumber);
+    const contractFolder = path.join(UPLOADS_DIR, 'contracts', contractNumber);
     fs.mkdirSync(contractFolder, { recursive: true });
 
     function moveToContract(srcPath, destName) {
@@ -762,7 +763,7 @@ router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
         return res.status(400).json({ error: 'In Stock contracts do not go through Received. Change to Scheduled or Delivered directly.' });
       }
       // Move serial photo to contract folder
-      const contractFolder = path.join(__dirname, '../uploads/contracts', contract.contract_number);
+      const contractFolder = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
       fs.mkdirSync(contractFolder, { recursive: true });
       const ext = path.extname(req.file.originalname) || '.jpg';
       const serialPhotoPath = path.join(contractFolder, 'serial-photo' + ext);
@@ -829,7 +830,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     // which the old per-field cleanup here ever touched (and extra_images
     // entries are {path,label} objects, not plain path strings, so even
     // those were silently never deleted).
-    const contractFolder = path.join(__dirname, '../uploads/contracts', row.contract_number);
+    const contractFolder = path.join(UPLOADS_DIR, 'contracts', row.contract_number);
     if (fs.existsSync(contractFolder)) {
       fs.rmSync(contractFolder, { recursive: true, force: true });
     }
@@ -856,7 +857,7 @@ router.get('/:id/pdf', async (req, res) => {
     const pdfFilename = safeName + '-' + row.contract_number + '.pdf';
 
     // Serve cached PDF if it exists
-    const pdfDir  = path.join(__dirname, '../uploads/contracts', row.contract_number);
+    const pdfDir  = path.join(UPLOADS_DIR, 'contracts', row.contract_number);
     const pdfPath = path.join(pdfDir, 'contract.pdf');
     if (fs.existsSync(pdfPath)) {
       const buf = fs.readFileSync(pdfPath);
@@ -893,7 +894,7 @@ router.post('/:id/images', (req, res) => {
     if (!label) return res.status(400).json({ error: 'Image label is required' });
 
     // Move to contract folder
-    const contractFolder = path.join(__dirname, '../uploads/contracts', contract.contract_number);
+    const contractFolder = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
     fs.mkdirSync(contractFolder, { recursive: true });
     const existing = contract.extra_images ? JSON.parse(contract.extra_images) : [];
     const safe     = label.replace(/[^a-zA-Z0-9 -]/g,'').trim().replace(/\s+/g,'-').slice(0,30) || 'image';
