@@ -86,7 +86,13 @@
       <button onclick="closeInvReceiveModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
     </div>
     <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px">Serial Number</label>
-    <input type="text" id="invRcvSerialInput" placeholder="Enter Serial Number" style="width:100%;margin-bottom:12px">
+    <div class="scan-row">
+      <button class="btn btn-secondary btn-sm" id="invRcvSerialScanBtn" onclick="startInvRcvSerialScan()"><i class="fa-solid fa-camera"></i> Scan</button>
+      <button class="btn btn-secondary btn-sm" id="invRcvSerialStopBtn" onclick="stopInvRcvSerialScan()" style="display:none">Stop</button>
+      <img class="scan-thumb" id="invRcvSerialThumb" style="display:none">
+    </div>
+    <div id="invRcvSerialScannerRegion" class="scan-region"></div>
+    <input type="text" id="invRcvSerialInput" placeholder="Or enter Serial Number manually" style="width:100%;margin-bottom:12px">
     <div id="invRcvError" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeInvReceiveModal()">Cancel</button>
@@ -107,6 +113,7 @@ let queueItems=[];
 let rcvSerialScanner=null, rcvSkuScanner=null;
 let rcvSerialPhotoBlob=null, rcvSkuPhotoBlob=null;
 let rcvContractId=null;
+let invRcvSerialScanner=null, invRcvSerialPhotoBlob=null;
 
 async function loadQueue(){
   try{
@@ -263,14 +270,46 @@ let invReceiveItemId=null;
 function openInventoryReceiveModal(id){
   invReceiveItemId=id;
   document.getElementById('invRcvSerialInput').value='';
+  document.getElementById('invRcvSerialThumb').style.display='none';
   document.getElementById('invRcvError').style.display='none';
+  invRcvSerialPhotoBlob=null;
   document.getElementById('invReceiveModal').classList.add('open');
 }
 function closeInvReceiveModal(){
   document.getElementById('invReceiveModal').classList.remove('open');
+  stopInvRcvSerialScan();
   invReceiveItemId=null;
 }
 document.getElementById('invReceiveModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closeInvReceiveModal(); });
+
+function startInvRcvSerialScan(){
+  document.getElementById('invRcvSerialScannerRegion').style.display='block';
+  document.getElementById('invRcvSerialScanBtn').style.display='none';
+  document.getElementById('invRcvSerialStopBtn').style.display='inline-flex';
+  invRcvSerialScanner=new Html5Qrcode('invRcvSerialScannerRegion');
+  invRcvSerialScanner.start(
+    {facingMode:'environment'}, {fps:10, qrbox:{width:240,height:150}},
+    function(decodedText){
+      document.getElementById('invRcvSerialInput').value=decodedText;
+      captureFrameAsPhoto('invRcvSerialScannerRegion').then(function(blob){
+        if(blob){ invRcvSerialPhotoBlob=blob; var img=document.getElementById('invRcvSerialThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
+      });
+      stopInvRcvSerialScan();
+    },
+    function(){}
+  ).catch(function(err){
+    showToast('Camera error: '+err,'error');
+    document.getElementById('invRcvSerialScanBtn').style.display='inline-flex';
+    document.getElementById('invRcvSerialStopBtn').style.display='none';
+    document.getElementById('invRcvSerialScannerRegion').style.display='none';
+  });
+}
+function stopInvRcvSerialScan(){
+  document.getElementById('invRcvSerialScanBtn').style.display='inline-flex';
+  document.getElementById('invRcvSerialStopBtn').style.display='none';
+  document.getElementById('invRcvSerialScannerRegion').style.display='none';
+  if(invRcvSerialScanner){ invRcvSerialScanner.stop().then(function(){invRcvSerialScanner.clear();}).catch(function(){}); invRcvSerialScanner=null; }
+}
 
 async function submitInventoryReceive(){
   const serialNumber=document.getElementById('invRcvSerialInput').value.trim();
@@ -281,7 +320,10 @@ async function submitInventoryReceive(){
   const btn=document.getElementById('invRcvSaveBtn');
   btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
   try{
-    const r=await fetch('/api/inventory-items/'+invReceiveItemId+'/receive',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({serialNumber})});
+    const fd=new FormData();
+    fd.append('serialNumber',serialNumber);
+    if(invRcvSerialPhotoBlob) fd.append('serialPhoto',invRcvSerialPhotoBlob,'serial-photo.jpg');
+    const r=await fetch('/api/inventory-items/'+invReceiveItemId+'/receive',{method:'PATCH',body:fd});
     const j=await r.json();
     if(!r.ok){ errEl.textContent=j.error||'Failed'; errEl.style.display='block'; return; }
     showToast('Marked as received','success');
@@ -295,6 +337,7 @@ window._onAuthReady = loadQueue;
 window.addEventListener('beforeunload', function(){
   if(rcvSerialScanner) rcvSerialScanner.stop().catch(function(){});
   if(rcvSkuScanner) rcvSkuScanner.stop().catch(function(){});
+  if(invRcvSerialScanner) invRcvSerialScanner.stop().catch(function(){});
 });
 </script>
 </body>

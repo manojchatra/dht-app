@@ -219,35 +219,45 @@ router.patch('/:id', requireAdmin, async (req, res) => {
 });
 
 // ── PATCH /:id/receive — mark an "Ordered" item received: sets the real ────
-// Serial Number and flips availability to 'In-stock'. No photos required —
-// unlike the contract-linked warehouse receive flow, this is general stock,
-// not tied to a customer delivery.
-router.patch('/:id/receive', async (req, res) => {
-  try {
-    const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    if (item.availability !== 'Ordered') {
-      return res.status(400).json({ error: 'Only Ordered items can be marked received here.' });
+// Serial Number and flips availability to 'In-stock'. A serial photo scan is
+// optional here (manual entry alone is still enough) — unlike the
+// contract-linked warehouse receive flow, which requires both scans.
+router.patch('/:id/receive', (req, res) => {
+  uploadPhotos(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
+    try {
+      const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
+      if (!item) return res.status(404).json({ error: 'Not found' });
+      if (item.availability !== 'Ordered') {
+        return res.status(400).json({ error: 'Only Ordered items can be marked received here.' });
+      }
+
+      const serialNumber = (req.body.serialNumber || '').trim();
+      if (!serialNumber) return res.status(400).json({ error: 'Serial number is required' });
+
+      const existing = db.prepare('SELECT id FROM inventory WHERE serial_number = ? AND id != ?').get(serialNumber, req.params.id);
+      if (existing) return res.status(409).json({ error: 'An item with this serial number is already in inventory.' });
+
+      const serialFile = req.files?.serialPhoto?.[0] || null;
+      const serialPhotoPath = serialFile ? await finalizeInventoryPhoto(serialFile, serialNumber, 'serial-photo') : null;
+
+      db.prepare(`
+        UPDATE inventory
+        SET serial_number=?, availability='In-stock',
+            serial_photo_path=COALESCE(?, serial_photo_path), updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+      `).run(serialNumber, serialPhotoPath, req.params.id);
+
+      let sheetSynced = true;
+      try { sheetSynced = await markInventoryItemReceivedInSheet(item.web_order_number, serialNumber); }
+      catch(e) { console.error('[Drive mark inventory received failed — non-fatal]', e.message); sheetSynced = false; }
+
+      res.json({ success: true, sheetSynced });
+    } catch (err) {
+      console.error('Mark inventory item received error:', err);
+      res.status(500).json({ error: 'Failed to mark item received' });
     }
-
-    const serialNumber = (req.body.serialNumber || '').trim();
-    if (!serialNumber) return res.status(400).json({ error: 'Serial number is required' });
-
-    const existing = db.prepare('SELECT id FROM inventory WHERE serial_number = ? AND id != ?').get(serialNumber, req.params.id);
-    if (existing) return res.status(409).json({ error: 'An item with this serial number is already in inventory.' });
-
-    db.prepare(`UPDATE inventory SET serial_number=?, availability='In-stock', updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(serialNumber, req.params.id);
-
-    let sheetSynced = true;
-    try { sheetSynced = await markInventoryItemReceivedInSheet(item.web_order_number, serialNumber); }
-    catch(e) { console.error('[Drive mark inventory received failed — non-fatal]', e.message); sheetSynced = false; }
-
-    res.json({ success: true, sheetSynced });
-  } catch (err) {
-    console.error('Mark inventory item received error:', err);
-    res.status(500).json({ error: 'Failed to mark item received' });
-  }
+  });
 });
 
 // ── DELETE /:id — admin-only; blocked if the item is Sold / linked to a contract ─
