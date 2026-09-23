@@ -114,6 +114,42 @@
   </div>
 </main>
 
+<div class="modal-overlay" id="editUserModal">
+  <div class="modal-box" style="max-width:400px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-pen" style="color:var(--accent)"></i> Edit User</h2>
+      <button onclick="closeEditUserModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">×</button>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Name</label>
+      <input type="text" id="editUserName" style="width:100%" autocomplete="off">
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Email</label>
+      <input type="email" id="editUserEmail" style="width:100%" autocomplete="off">
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Role</label>
+      <select id="editUserRole" style="width:100%" onchange="onRoleChange(this.value,'editUserTeam')">
+        <option value="admin">Admin</option>
+        <option value="delivery">Delivery</option>
+        <option value="warehouse">Warehouse</option>
+      </select>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Team</label>
+      <select id="editUserTeam" style="width:100%">
+        <option value="team_a">JV Spa Movers</option>
+        <option value="team_b">Clear Choice Movers</option>
+      </select>
+    </div>
+    <div id="editUserError" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeEditUserModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditUser()"><i class="fa-solid fa-check"></i> Save</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="resetPwModal">
   <div class="modal-box" style="max-width:400px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -260,12 +296,14 @@ async function changePassword() {
   } catch(e) { showToast(e.message||'Failed','error'); }
 }
 
+let usersCache = [];
 async function loadUsers() {
   try {
     const r = await fetch('/api/users');
     if (!r.ok) throw new Error('Users API: ' + r.status);
     const users = await r.json();
     if (!Array.isArray(users)) throw new Error('Unexpected response: ' + JSON.stringify(users).slice(0,100));
+    usersCache = users;
     const tbody = document.getElementById('usersTbody');
     const roleLabel = u => u.role==='admin'?'Admin':u.role==='delivery'?('Delivery — '+(u.team==='team_a'?'JV Spa Movers':'Clear Choice Movers')):u.role==='warehouse'?'Warehouse':'Sales';
     tbody.innerHTML = users.map(u =>
@@ -275,6 +313,7 @@ async function loadUsers() {
       '<td><span class="role-chip role-' + u.role + '">' + roleLabel(u) + '</span></td>' +
       '<td style="color:var(--text-muted)">' + new Date(u.created_at).toLocaleDateString() + '</td>' +
       '<td style="display:flex;gap:6px">' +
+        '<button class="btn btn-secondary btn-sm" data-action="edituser" data-id="' + u.id + '"><i class="fa-solid fa-pen"></i> Edit</button>' +
         '<button class="btn btn-secondary btn-sm" data-action="resetpw" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-key"></i> Reset PW</button>' +
         '<button class="btn btn-danger btn-sm" data-action="deleteuser" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-trash"></i></button>' +
       '</td></tr>'
@@ -287,6 +326,7 @@ async function loadUsers() {
         '<div class="user-card-created">' + escHtml(u.username) + (u.email?' &middot; '+escHtml(u.email):'') + '</div>' +
         '<div class="user-card-created">Created ' + new Date(u.created_at).toLocaleDateString() + '</div>' +
         '<div class="user-card-actions">' +
+          '<button class="btn btn-secondary btn-sm" data-action="edituser" data-id="' + u.id + '"><i class="fa-solid fa-pen"></i> Edit</button>' +
           '<button class="btn btn-secondary btn-sm" data-action="resetpw" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-key"></i> Reset PW</button>' +
           '<button class="btn btn-danger btn-sm" data-action="deleteuser" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '"><i class="fa-solid fa-trash"></i></button>' +
         '</div></div>'
@@ -303,6 +343,7 @@ function delegateActions(e) {
   const action = btn.dataset.action;
   const id     = parseInt(btn.dataset.id);
   const name   = btn.dataset.name;
+  if (action === 'edituser')   editUser(id);
   if (action === 'resetpw')    resetPw(id, name);
   if (action === 'deleteuser') deleteUser(id, name);
 }
@@ -327,6 +368,40 @@ async function addUser() {
     loadUsers();
   } catch(e) { showToast(e.message||'Failed','error'); }
 }
+let _editUserId = null;
+function editUser(id) {
+  const u = usersCache.find(x => x.id === id);
+  if (!u) return;
+  _editUserId = id;
+  document.getElementById('editUserName').value = u.name || '';
+  document.getElementById('editUserEmail').value = u.email || '';
+  document.getElementById('editUserRole').value = u.role;
+  onRoleChange(u.role, 'editUserTeam');
+  document.getElementById('editUserTeam').value = u.team || 'team_a';
+  document.getElementById('editUserError').style.display = 'none';
+  document.getElementById('editUserModal').classList.add('open');
+}
+function closeEditUserModal(){
+  document.getElementById('editUserModal').classList.remove('open');
+  _editUserId = null;
+}
+async function submitEditUser() {
+  const name = document.getElementById('editUserName').value.trim();
+  const email = document.getElementById('editUserEmail').value.trim();
+  const role = document.getElementById('editUserRole').value;
+  const team = role === 'delivery' ? document.getElementById('editUserTeam').value : undefined;
+  const errEl = document.getElementById('editUserError');
+  errEl.style.display = 'none';
+  if (!name || !email) { errEl.textContent = 'Name and email required'; errEl.style.display = 'block'; return; }
+  try {
+    const r = await fetch('/api/users/'+_editUserId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,role,team})});
+    if (!r.ok) throw new Error((await r.json()).error);
+    closeEditUserModal();
+    showToast('User updated','success');
+    loadUsers();
+  } catch(e) { errEl.textContent = e.message||'Failed'; errEl.style.display = 'block'; }
+}
+
 let _resetPwId = null;
 function resetPw(id,name) {
   _resetPwId = id;

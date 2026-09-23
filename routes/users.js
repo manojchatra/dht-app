@@ -62,9 +62,9 @@ router.post('/', (req, res) => {
   }
 });
 
-// PATCH /api/users/:id — update password, role, name, or email
+// PATCH /api/users/:id — update password, role, team, name, or email
 router.patch('/:id', (req, res) => {
-  const { password, role, name, email } = req.body;
+  const { password, role, team, name, email } = req.body;
   const id = parseInt(req.params.id);
 
   // Prevent admin from demoting themselves
@@ -72,7 +72,7 @@ router.patch('/:id', (req, res) => {
     return res.status(400).json({ error: 'Cannot change your own role' });
   }
 
-  const before = db.prepare('SELECT username, role, name, email FROM users WHERE id = ?').get(id);
+  const before = db.prepare('SELECT username, role, team, name, email FROM users WHERE id = ?').get(id);
   const actor  = req.session.username || 'system';
   const changes = [];
 
@@ -84,6 +84,10 @@ router.patch('/:id', (req, res) => {
   if (role && ['admin', 'delivery', 'warehouse'].includes(role)) {
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
     if (before && role !== before.role) logActivity(db, { eventType: 'USER_ROLE_CHANGED', actor, detail: `${before.username}: ${before.role} → ${role}` });
+  }
+  if (team && ['team_a', 'team_b'].includes(team)) {
+    db.prepare('UPDATE users SET team = ? WHERE id = ?').run(team, id);
+    if (before && team !== before.team) changes.push(`team: "${before.team || ''}" → "${team}"`);
   }
   if (name) {
     db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), id);
