@@ -14,7 +14,8 @@ const {
   revertToAssigned, updateTBOSerial, moveToOrderPlaced,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
-  updateReceivedSerial, deleteInventoryRow, updateInventoryItemField
+  updateReceivedSerial, deleteInventoryRow, updateInventoryItemField,
+  deleteContractRowFromSheet
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
@@ -84,12 +85,16 @@ function summariseAccessories(acc = {}) {
   return items.join(', ');
 }
 
+// Sums every selected payment method's amount — a contract can have more than
+// one selected at once (e.g. cheque + cash), so this must add them together
+// rather than returning on the first match.
 function extractPaid(payment = {}) {
-  if (payment.cheque?.selected)     return payment.cheque.amount   || '';
-  if (payment.cash?.selected)       return payment.cash.amount     || '';
-  if (payment.creditCard?.selected) return 'CC';
-  if (payment.finance?.selected)    return payment.finance.amount  || '';
-  return '';
+  let total = 0;
+  if (payment.cheque?.selected)     total += parseFloat(payment.cheque.amount)     || 0;
+  if (payment.cash?.selected)       total += parseFloat(payment.cash.amount)       || 0;
+  if (payment.creditCard?.selected) total += parseFloat(payment.creditCard.amount) || 0;
+  if (payment.finance?.selected)    total += parseFloat(payment.finance.amount)    || 0;
+  return total;
 }
 
 function initialStatus(productStatus) {
@@ -412,10 +417,13 @@ router.post('/', uploadFields, async (req, res) => {
         totalSeeded += pm.amount;
       }
     }
-    // Update balance = grand_total - total_seeded
+    // Correct paid_amount/due_prior to the actual seeded total — the earlier
+    // extractPaid()/duePriorToDelivery values used for the initial insert are
+    // just a pre-insert estimate (contractId didn't exist yet to seed
+    // payments against); this is the authoritative figure.
     const grandTotalNum = parseFloat(costing?.grandTotal||0);
     const dueBalance    = Math.max(0, grandTotalNum - totalSeeded);
-    db.prepare('UPDATE contracts SET due_prior=? WHERE id=?').run(String(dueBalance), contractId);
+    db.prepare('UPDATE contracts SET paid_amount=?,due_prior=? WHERE id=?').run(String(totalSeeded), String(dueBalance), contractId);
 
     // 6. Auto-deliver if delivery date is in the past
     // Compare as plain YYYY-MM-DD strings (lexicographic order == chronological order for ISO dates) —
@@ -438,7 +446,7 @@ router.post('/', uploadFields, async (req, res) => {
       customerName: customer.name || '',
       address: customer.address + (customer.city ? ', ' + customer.city : ''),
       zip: customer.zip || '',
-      cover, steps, waterCare, accessories, paid, pending,
+      cover, steps, waterCare, accessories, paid: totalSeeded, pending: dueBalance,
     };
     try {
       if (isAutoDeliver) {
@@ -547,8 +555,11 @@ function buildDriveData(contract, customer, formData) {
     steps:          de.steps ? de.steps.type || '' : '',
     waterCare:      de.waterCareSystem ? de.waterCareSystem.type || '' : '',
     accessories:    de.accessories ? [...(de.accessories.items||[]), de.accessories.other||''].filter(Boolean).join(', ') : '',
-    paid:           totalPaid || '',
-    pending:        pendingAmt || '',
+    // Always a real number, never blank — 0 is a meaningful value (fully
+    // paid) and writing '' for it made a synced $0 indistinguishable from a
+    // sync that never ran.
+    paid:           totalPaid,
+    pending:        pendingAmt,
     webOrderNumber: contract.web_order_number || '',
     truckNumber:    contract.truck_number || '',
   };
@@ -861,6 +872,12 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       try { await deleteCalendarEvent(row.calendar_event_id); }
       catch(e) { console.error('[Calendar delete on contract-delete failed — non-fatal]', e.message); }
     }
+
+    // Remove the contract's row from whichever Sheet tab it currently lives
+    // in (non-fatal) — otherwise a deleted contract leaves a permanent
+    // orphaned row behind that nothing else ever cleans up.
+    try { await deleteContractRowFromSheet(row.contract_number); }
+    catch(e) { console.error('[Drive row delete on contract-delete failed — non-fatal]', e.message); }
 
     db.prepare('DELETE FROM payments WHERE contract_id=?').run(req.params.id);
     db.prepare('DELETE FROM activity_log WHERE contract_id=?').run(req.params.id);

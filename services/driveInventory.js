@@ -513,11 +513,15 @@ async function updateToScheduled(contractNumber, scheduledDatetime, contractData
     return;
   }
 
-  // Already in Assigned — update status and schedule datetime
+  // Already in Assigned — update status, schedule datetime, and Paid/Pending
+  // (kept in sync here too, not just by updatePaymentInSheet, so this tab
+  // never drifts even if a per-payment sync attempt failed earlier).
   const assignedRow = await findRowByContractId(sheets, 'Assigned', contractNumber);
   if (assignedRow > 0) {
-    await updateCell(sheets, 'Assigned', assignedRow, 19, 'Scheduled');       // Status col
-    await updateCell(sheets, 'Assigned', assignedRow, 20, scheduledDatetime); // Schedule col
+    await updateCell(sheets, 'Assigned', assignedRow, 17, contractData.paid);    // Paid col
+    await updateCell(sheets, 'Assigned', assignedRow, 18, contractData.pending); // Pending col
+    await updateCell(sheets, 'Assigned', assignedRow, 19, 'Scheduled');          // Status col
+    await updateCell(sheets, 'Assigned', assignedRow, 20, scheduledDatetime);    // Schedule col
     console.log('[Drive] Updated Assigned → Scheduled:', contractNumber);
   } else {
     console.warn('[Drive] Contract not found for scheduling:', contractNumber);
@@ -680,6 +684,26 @@ async function updatePaymentInSheet(contractNumber, paid, pending) {
   return false;
 }
 
+// Remove a contract's row from whichever tab(s) it currently lives in — used
+// when a contract is deleted in the app, so it doesn't leave a permanent
+// orphaned row behind. Loops per tab (not just one delete) in case more than
+// one row somehow matches, so it always leaves the tab clean.
+const ALL_CONTRACT_TABS = ['TBO','Assigned','Order Placed','Delivered','Cancelled','Received'];
+async function deleteContractRowFromSheet(contractNumber) {
+  const sheets = getSheets();
+  let deletedAny = false;
+  for (const tabName of ALL_CONTRACT_TABS) {
+    let rowIndex = await findRowByContractId(sheets, tabName, contractNumber);
+    while (rowIndex > 0) {
+      await deleteRow(sheets, tabName, rowIndex);
+      console.log('[Drive] Deleted row from', tabName, ':', contractNumber);
+      deletedAny = true;
+      rowIndex = await findRowByContractId(sheets, tabName, contractNumber);
+    }
+  }
+  return deletedAny;
+}
+
 // Diagnostic helper: read back whatever is currently in the Paid/Pending cells
 // for a contract, wherever its row lives. Used by scripts/verify-payment-sync.js.
 async function readPaymentFromSheet(contractNumber) {
@@ -713,4 +737,5 @@ module.exports = {
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, updatePaymentInSheet, readPaymentFromSheet,
+  deleteContractRowFromSheet,
 };

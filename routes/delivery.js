@@ -32,6 +32,7 @@ function getEmailRecipients() {
 const { generateAcknowledgementPDF } = require('../utils/acknowledgementPDF');
 const { sendAcknowledgementEmail, smtpConfigured } = require('../utils/emailSender');
 const { moveToDelivered } = require('../services/driveInventory');
+const { buildDriveData } = require('./contracts');
 
 // Auth middleware — delivery or admin
 function requireDeliveryOrAdmin(req, res, next) {
@@ -55,44 +56,6 @@ const storage = multer.diskStorage({
 const uploadAck = multer({ storage, limits:{ fileSize: 5*1024*1024 } });
 
 // Helper to build drive data
-function buildDriveData(contract, customer) {
-  const d = JSON.parse(contract.data || '{}');
-  const de = d.details || {};
-  const pa = d.payment || {};
-  const cu = d.customer || {};
-  function sumCover(cover) {
-    if (!cover) return '';
-    const parts = [];
-    if (cover.coverType&&cover.coverType.length) parts.push(cover.coverType.join('/'));
-    if (cover.brand) parts.push(cover.brand);
-    return parts.join(', ');
-  }
-  function extractPaidLocal(payment) {
-    if (!payment) return '';
-    if (payment.cheque && payment.cheque.selected) return payment.cheque.amount || '';
-    if (payment.cash && payment.cash.selected) return payment.cash.amount || '';
-    if (payment.creditCard && payment.creditCard.selected) return 'CC';
-    if (payment.finance && payment.finance.selected) return payment.finance.amount || '';
-    return '';
-  }
-  return {
-    contractNumber: contract.contract_number,
-    contractDate:   contract.date||'',
-    make: contract.make||'', model: contract.model||'',
-    year: d.product?.year||'', shellColor: d.product?.shellColor||'', cabinetColor: d.product?.cabinetColor||'',
-    serialNumber: contract.serial_number||'',
-    salesman: contract.salesman||'',
-    customerName: customer?.name||cu.name||'',
-    address: customer?.address||(cu.address||'')+(cu.city?', '+cu.city:''),
-    zip: customer?.zip||cu.zip||'',
-    cover: sumCover(de.cover), steps: de.steps?.type||'',
-    waterCare: de.waterCareSystem?.type||'',
-    accessories: de.accessories ? [...(de.accessories.items||[]), de.accessories.other||''].filter(Boolean).join(', ') : '',
-    paid: extractPaidLocal(pa),
-    pending: pa.duePriorToDelivery || '',
-  };
-}
-
 // ── GET /api/delivery-contract/:id — stripped view ─────────────────────────
 router.get('/contract/:id', requireDeliveryOrAdmin, (req, res) => {
   try {
