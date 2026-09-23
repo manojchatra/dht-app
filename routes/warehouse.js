@@ -15,7 +15,7 @@ const router  = express.Router();
 const db      = require('../db/database');
 const { compressAndGate } = require('../utils/imageUtils');
 const { requireRole } = require('../middleware/auth');
-const { moveToReceived } = require('../services/driveInventory');
+const { moveToReceived, appendInventoryItem, inventoryItemExistsInSheet } = require('../services/driveInventory');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyReceived } = require('../utils/emailSender');
 const { buildDriveData } = require('./contracts');
@@ -127,33 +127,51 @@ router.post('/:id/receive', (req, res) => {
       db.prepare('UPDATE contracts SET status=?,serial_number=?,data=?,extra_images=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run('received', serial, JSON.stringify(data), JSON.stringify(filteredImages), req.params.id);
 
-      // Create or link the inventory row for this physical unit.
+      // Create or link the inventory row for this physical unit — carries the
+      // contract's Web Order Number/Truck Number over too, same as the
+      // general "Add to Inventory" flow already does for Ordered stock.
       const product = data.product || {};
       const invExisting = db.prepare('SELECT id FROM inventory WHERE serial_number=?').get(serial);
       if (invExisting) {
-        db.prepare(`UPDATE inventory SET contract_id=?,availability=?,sku_number=?,sku_photo_path=?,serial_photo_path=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-          .run(req.params.id, 'Sold', sku, skuPhotoPath, serialPhotoPath, invExisting.id);
+        db.prepare(`UPDATE inventory SET contract_id=?,availability=?,sku_number=?,sku_photo_path=?,serial_photo_path=?,web_order_number=?,truck_number=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+          .run(req.params.id, 'Sold', sku, skuPhotoPath, serialPhotoPath, contract.web_order_number || '', contract.truck_number || '', invExisting.id);
       } else {
         db.prepare(`
           INSERT INTO inventory
             (make, model, shell_color, cabinet_color, serial_number, sku_number,
-             availability, sku_photo_path, serial_photo_path, contract_id, added_by)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             availability, sku_photo_path, serial_photo_path, contract_id, added_by,
+             web_order_number, truck_number)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         `).run(
           contract.make || product.make || '', contract.model || product.model || '',
           product.shellColor || '', product.cabinetColor || '',
           serial, sku, 'Sold', skuPhotoPath, serialPhotoPath, req.params.id,
-          req.session.username || 'system'
+          req.session.username || 'system',
+          contract.web_order_number || '', contract.truck_number || ''
         );
       }
 
-      // Google Sheets (non-fatal): move the contract's row to Received.
+      // Google Sheets (non-fatal): move the contract's row to Received, and
+      // add this unit to the "Inventory Items" tab too (skipped by this flow
+      // before — that's why an editable field like Finance couldn't find it
+      // there afterward, since it looks the item up by Serial Number).
       try {
         const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(contract.customer_id);
         const driveData = buildDriveData(contract, customer, null);
         driveData.serialNumber = serial;
         const photoUrl = 'https://app.deserthottubsaz.com' + (toUrlPath(serialPhotoPath) || '');
         await moveToReceived(contract.contract_number, actualDate, photoUrl, driveData);
+
+        const alreadyInSheet = await inventoryItemExistsInSheet(serial);
+        if (!alreadyInSheet) {
+          await appendInventoryItem({
+            serialNumber: serial, skuNumber: sku,
+            make: contract.make || product.make || '', model: contract.model || product.model || '',
+            shellColor: product.shellColor || '', cabinetColor: product.cabinetColor || '',
+            availability: 'Sold', addedDate: actualDate,
+            webOrderNumber: contract.web_order_number || '', truckNumber: contract.truck_number || '',
+          });
+        }
       } catch(e) { console.error('[Drive warehouse-received failed — non-fatal]', e.message); }
 
       logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'MARK_RECEIVED',
