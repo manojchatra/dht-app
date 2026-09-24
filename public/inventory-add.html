@@ -11,12 +11,14 @@
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/theme.css">
 <script src="/js/util.js"></script>
-<script src="/js/html5-qrcode.min.js"></script>
+<script src="/js/barcode-detector.polyfill.js"></script>
+<script src="/js/barcode-scanner.js"></script>
 <style>
 .scan-region{width:100%;max-width:420px;border-radius:10px;overflow:hidden;background:#000;display:none;margin-bottom:10px}
 .scan-region video{width:100%;display:block}
 .scan-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .scan-thumb{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
+.scan-clear-btn{background:none;border:none;color:var(--red);font-size:20px;line-height:1;cursor:pointer;padding:0 4px}
 .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:600px){.field-grid{grid-template-columns:1fr}}
 .field-grid label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500}
@@ -46,6 +48,7 @@
       <button class="btn btn-secondary" id="skuScanBtn" onclick="startSkuScan()"><i class="fa-solid fa-camera"></i> Start SKU Scan</button>
       <button class="btn btn-secondary" id="skuStopBtn" onclick="stopSkuScan()" style="display:none">Stop</button>
       <img class="scan-thumb" id="skuThumb" style="display:none">
+      <button class="scan-clear-btn" id="skuClearBtn" onclick="clearSkuScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
     <div id="skuScannerRegion" class="scan-region"></div>
     <div class="scan-row">
@@ -62,6 +65,7 @@
       <button class="btn btn-secondary" id="serialScanBtn" onclick="startSerialScan()"><i class="fa-solid fa-camera"></i> Start Serial Scan</button>
       <button class="btn btn-secondary" id="serialStopBtn" onclick="stopSerialScan()" style="display:none">Stop</button>
       <img class="scan-thumb" id="serialThumb" style="display:none">
+      <button class="scan-clear-btn" id="serialClearBtn" onclick="clearSerialScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
     <div id="serialScannerRegion" class="scan-region"></div>
     <div class="scan-row">
@@ -118,17 +122,6 @@ function setMode(m){
   document.getElementById('orderCard').style.display  = m==='onorder' ? 'block' : 'none';
 }
 
-function captureFrameAsPhoto(regionId){
-  return new Promise(function(resolve){
-    var video=document.querySelector('#'+regionId+' video');
-    if(!video){resolve(null);return;}
-    var canvas=document.createElement('canvas');
-    canvas.width=video.videoWidth||640; canvas.height=video.videoHeight||480;
-    canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
-    canvas.toBlob(function(blob){resolve(blob);},'image/jpeg',0.85);
-  });
-}
-
 async function lookupSku(sku){
   if(!sku){return;}
   document.getElementById('skuResolvedBadge').style.display='none';
@@ -166,23 +159,19 @@ function acceptSkuSuggestion(sku){
 }
 
 function startSkuScan(){
+  stopSerialScan(); // only one scanner open at a time
   document.getElementById('skuScannerRegion').style.display='block';
   document.getElementById('skuScanBtn').style.display='none';
   document.getElementById('skuStopBtn').style.display='inline-flex';
-  skuScanner=new Html5Qrcode('skuScannerRegion');
-  skuScanner.start(
-    {facingMode:'environment'},
-    {fps:10, qrbox:{width:260,height:160}},
-    function(decodedText){
-      document.getElementById('skuInput').value=decodedText;
-      captureFrameAsPhoto('skuScannerRegion').then(function(blob){
-        if(blob){ skuPhotoBlob=blob; var img=document.getElementById('skuThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
-      });
-      stopSkuScan();
-      lookupSku(decodedText);
-    },
-    function(){ /* per-frame decode miss — ignore */ }
-  ).catch(function(err){
+  skuScanner=new BarcodeScanner('skuScannerRegion');
+  skuScanner.start(function(decodedText,photoBlob){
+    document.getElementById('skuInput').value=decodedText;
+    skuPhotoBlob=photoBlob;
+    var img=document.getElementById('skuThumb'); img.src=URL.createObjectURL(photoBlob); img.style.display='inline-block';
+    document.getElementById('skuClearBtn').style.display='inline-block';
+    stopSkuScan();
+    lookupSku(decodedText);
+  }).catch(function(err){
     showToast('Camera error: '+err,'error');
     document.getElementById('skuScanBtn').style.display='inline-flex';
     document.getElementById('skuStopBtn').style.display='none';
@@ -193,26 +182,33 @@ function stopSkuScan(){
   document.getElementById('skuScanBtn').style.display='inline-flex';
   document.getElementById('skuStopBtn').style.display='none';
   document.getElementById('skuScannerRegion').style.display='none';
-  if(skuScanner){ skuScanner.stop().then(function(){skuScanner.clear();}).catch(function(){}); skuScanner=null; }
+  if(skuScanner){ skuScanner.stop(); skuScanner=null; }
+}
+function clearSkuScan(){
+  document.getElementById('skuInput').value='';
+  document.getElementById('skuThumb').style.display='none';
+  document.getElementById('skuClearBtn').style.display='none';
+  skuPhotoBlob=null;
+  // Full reset — also wipe everything the SKU lookup auto-filled, so the form
+  // never shows product details from a scan that no longer exists.
+  ['fldMake','fldSeries','fldModel','fldShell','fldCabinet','fldSpeaker'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('skuResolvedBadge').style.display='none';
+  hideSkuSuggestion();
 }
 
 function startSerialScan(){
+  stopSkuScan(); // only one scanner open at a time
   document.getElementById('serialScannerRegion').style.display='block';
   document.getElementById('serialScanBtn').style.display='none';
   document.getElementById('serialStopBtn').style.display='inline-flex';
-  serialScanner=new Html5Qrcode('serialScannerRegion');
-  serialScanner.start(
-    {facingMode:'environment'},
-    {fps:10, qrbox:{width:260,height:160}},
-    function(decodedText){
-      document.getElementById('serialInput').value=decodedText;
-      captureFrameAsPhoto('serialScannerRegion').then(function(blob){
-        if(blob){ serialPhotoBlob=blob; var img=document.getElementById('serialThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
-      });
-      stopSerialScan();
-    },
-    function(){ /* per-frame decode miss — ignore */ }
-  ).catch(function(err){
+  serialScanner=new BarcodeScanner('serialScannerRegion');
+  serialScanner.start(function(decodedText,photoBlob){
+    document.getElementById('serialInput').value=decodedText;
+    serialPhotoBlob=photoBlob;
+    var img=document.getElementById('serialThumb'); img.src=URL.createObjectURL(photoBlob); img.style.display='inline-block';
+    document.getElementById('serialClearBtn').style.display='inline-block';
+    stopSerialScan();
+  }).catch(function(err){
     showToast('Camera error: '+err,'error');
     document.getElementById('serialScanBtn').style.display='inline-flex';
     document.getElementById('serialStopBtn').style.display='none';
@@ -223,7 +219,13 @@ function stopSerialScan(){
   document.getElementById('serialScanBtn').style.display='inline-flex';
   document.getElementById('serialStopBtn').style.display='none';
   document.getElementById('serialScannerRegion').style.display='none';
-  if(serialScanner){ serialScanner.stop().then(function(){serialScanner.clear();}).catch(function(){}); serialScanner=null; }
+  if(serialScanner){ serialScanner.stop(); serialScanner=null; }
+}
+function clearSerialScan(){
+  document.getElementById('serialInput').value='';
+  document.getElementById('serialThumb').style.display='none';
+  document.getElementById('serialClearBtn').style.display='none';
+  serialPhotoBlob=null;
 }
 
 async function submitInventoryItem(){
@@ -267,8 +269,8 @@ async function submitInventoryItem(){
 }
 
 window.addEventListener('beforeunload', function(){
-  if(skuScanner) skuScanner.stop().catch(function(){});
-  if(serialScanner) serialScanner.stop().catch(function(){});
+  if(skuScanner) skuScanner.stop();
+  if(serialScanner) serialScanner.stop();
 });
 </script>
 </body>

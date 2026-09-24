@@ -11,7 +11,8 @@
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/theme.css">
 <script src="/js/util.js"></script>
-<script src="/js/html5-qrcode.min.js"></script>
+<script src="/js/barcode-detector.polyfill.js"></script>
+<script src="/js/barcode-scanner.js"></script>
 <style>
 .add-inv-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent);color:#fff;border-radius:12px;padding:18px 22px;margin-bottom:20px}
 .add-inv-banner div{font-size:15px;font-weight:600}
@@ -28,6 +29,7 @@
 .scan-region video{width:100%;display:block}
 .scan-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .scan-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
+.scan-clear-btn{background:none;border:none;color:var(--red);font-size:20px;line-height:1;cursor:pointer;padding:0 4px}
 </style>
 </head>
 <body>
@@ -58,6 +60,7 @@
       <button class="btn btn-secondary btn-sm" id="rcvSerialScanBtn" onclick="startRcvSerialScan()"><i class="fa-solid fa-camera"></i> Scan</button>
       <button class="btn btn-secondary btn-sm" id="rcvSerialStopBtn" onclick="stopRcvSerialScan()" style="display:none">Stop</button>
       <img class="scan-thumb" id="rcvSerialThumb" style="display:none">
+      <button class="scan-clear-btn" id="rcvSerialClearBtn" onclick="clearRcvSerialScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
     <div id="rcvSerialScannerRegion" class="scan-region"></div>
     <input type="text" id="rcvSerialInput" placeholder="Or enter Serial Number manually" style="width:100%;margin-bottom:16px">
@@ -67,6 +70,7 @@
       <button class="btn btn-secondary btn-sm" id="rcvSkuScanBtn" onclick="startRcvSkuScan()"><i class="fa-solid fa-camera"></i> Scan</button>
       <button class="btn btn-secondary btn-sm" id="rcvSkuStopBtn" onclick="stopRcvSkuScan()" style="display:none">Stop</button>
       <img class="scan-thumb" id="rcvSkuThumb" style="display:none">
+      <button class="scan-clear-btn" id="rcvSkuClearBtn" onclick="clearRcvSkuScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
     <div id="rcvSkuScannerRegion" class="scan-region"></div>
     <input type="text" id="rcvSkuInput" placeholder="Or enter SKU manually" style="width:100%;margin-bottom:16px">
@@ -90,6 +94,7 @@
       <button class="btn btn-secondary btn-sm" id="invRcvSerialScanBtn" onclick="startInvRcvSerialScan()"><i class="fa-solid fa-camera"></i> Scan</button>
       <button class="btn btn-secondary btn-sm" id="invRcvSerialStopBtn" onclick="stopInvRcvSerialScan()" style="display:none">Stop</button>
       <img class="scan-thumb" id="invRcvSerialThumb" style="display:none">
+      <button class="scan-clear-btn" id="invRcvSerialClearBtn" onclick="clearInvRcvSerialScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
     <div id="invRcvSerialScannerRegion" class="scan-region"></div>
     <input type="text" id="invRcvSerialInput" placeholder="Or enter Serial Number manually" style="width:100%;margin-bottom:12px">
@@ -153,17 +158,6 @@ function renderQueue(){
   }).join('');
 }
 
-function captureFrameAsPhoto(regionId){
-  return new Promise(function(resolve){
-    var video=document.querySelector('#'+regionId+' video');
-    if(!video){resolve(null);return;}
-    var canvas=document.createElement('canvas');
-    canvas.width=video.videoWidth||640; canvas.height=video.videoHeight||480;
-    canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
-    canvas.toBlob(function(blob){resolve(blob);},'image/jpeg',0.85);
-  });
-}
-
 function openReceiveModal(id,contractNum){
   rcvContractId=id;
   document.getElementById('rcvContractNum').textContent=contractNum;
@@ -171,6 +165,8 @@ function openReceiveModal(id,contractNum){
   document.getElementById('rcvSkuInput').value='';
   document.getElementById('rcvSerialThumb').style.display='none';
   document.getElementById('rcvSkuThumb').style.display='none';
+  document.getElementById('rcvSerialClearBtn').style.display='none';
+  document.getElementById('rcvSkuClearBtn').style.display='none';
   document.getElementById('rcvError').style.display='none';
   rcvSerialPhotoBlob=null; rcvSkuPhotoBlob=null;
   document.getElementById('receiveModal').classList.add('open');
@@ -183,21 +179,18 @@ function closeReceiveModal(){
 document.getElementById('receiveModal').addEventListener('click',function(e){ if(e.target===e.currentTarget) closeReceiveModal(); });
 
 function startRcvSerialScan(){
+  stopRcvSkuScan(); // only one scanner open at a time
   document.getElementById('rcvSerialScannerRegion').style.display='block';
   document.getElementById('rcvSerialScanBtn').style.display='none';
   document.getElementById('rcvSerialStopBtn').style.display='inline-flex';
-  rcvSerialScanner=new Html5Qrcode('rcvSerialScannerRegion');
-  rcvSerialScanner.start(
-    {facingMode:'environment'}, {fps:10, qrbox:{width:240,height:150}},
-    function(decodedText){
-      document.getElementById('rcvSerialInput').value=decodedText;
-      captureFrameAsPhoto('rcvSerialScannerRegion').then(function(blob){
-        if(blob){ rcvSerialPhotoBlob=blob; var img=document.getElementById('rcvSerialThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
-      });
-      stopRcvSerialScan();
-    },
-    function(){}
-  ).catch(function(err){
+  rcvSerialScanner=new BarcodeScanner('rcvSerialScannerRegion');
+  rcvSerialScanner.start(function(decodedText,photoBlob){
+    document.getElementById('rcvSerialInput').value=decodedText;
+    rcvSerialPhotoBlob=photoBlob;
+    var img=document.getElementById('rcvSerialThumb'); img.src=URL.createObjectURL(photoBlob); img.style.display='inline-block';
+    document.getElementById('rcvSerialClearBtn').style.display='inline-block';
+    stopRcvSerialScan();
+  }).catch(function(err){
     showToast('Camera error: '+err,'error');
     document.getElementById('rcvSerialScanBtn').style.display='inline-flex';
     document.getElementById('rcvSerialStopBtn').style.display='none';
@@ -208,24 +201,27 @@ function stopRcvSerialScan(){
   document.getElementById('rcvSerialScanBtn').style.display='inline-flex';
   document.getElementById('rcvSerialStopBtn').style.display='none';
   document.getElementById('rcvSerialScannerRegion').style.display='none';
-  if(rcvSerialScanner){ rcvSerialScanner.stop().then(function(){rcvSerialScanner.clear();}).catch(function(){}); rcvSerialScanner=null; }
+  if(rcvSerialScanner){ rcvSerialScanner.stop(); rcvSerialScanner=null; }
+}
+function clearRcvSerialScan(){
+  document.getElementById('rcvSerialInput').value='';
+  document.getElementById('rcvSerialThumb').style.display='none';
+  document.getElementById('rcvSerialClearBtn').style.display='none';
+  rcvSerialPhotoBlob=null;
 }
 function startRcvSkuScan(){
+  stopRcvSerialScan(); // only one scanner open at a time
   document.getElementById('rcvSkuScannerRegion').style.display='block';
   document.getElementById('rcvSkuScanBtn').style.display='none';
   document.getElementById('rcvSkuStopBtn').style.display='inline-flex';
-  rcvSkuScanner=new Html5Qrcode('rcvSkuScannerRegion');
-  rcvSkuScanner.start(
-    {facingMode:'environment'}, {fps:10, qrbox:{width:240,height:150}},
-    function(decodedText){
-      document.getElementById('rcvSkuInput').value=decodedText;
-      captureFrameAsPhoto('rcvSkuScannerRegion').then(function(blob){
-        if(blob){ rcvSkuPhotoBlob=blob; var img=document.getElementById('rcvSkuThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
-      });
-      stopRcvSkuScan();
-    },
-    function(){}
-  ).catch(function(err){
+  rcvSkuScanner=new BarcodeScanner('rcvSkuScannerRegion');
+  rcvSkuScanner.start(function(decodedText,photoBlob){
+    document.getElementById('rcvSkuInput').value=decodedText;
+    rcvSkuPhotoBlob=photoBlob;
+    var img=document.getElementById('rcvSkuThumb'); img.src=URL.createObjectURL(photoBlob); img.style.display='inline-block';
+    document.getElementById('rcvSkuClearBtn').style.display='inline-block';
+    stopRcvSkuScan();
+  }).catch(function(err){
     showToast('Camera error: '+err,'error');
     document.getElementById('rcvSkuScanBtn').style.display='inline-flex';
     document.getElementById('rcvSkuStopBtn').style.display='none';
@@ -236,7 +232,13 @@ function stopRcvSkuScan(){
   document.getElementById('rcvSkuScanBtn').style.display='inline-flex';
   document.getElementById('rcvSkuStopBtn').style.display='none';
   document.getElementById('rcvSkuScannerRegion').style.display='none';
-  if(rcvSkuScanner){ rcvSkuScanner.stop().then(function(){rcvSkuScanner.clear();}).catch(function(){}); rcvSkuScanner=null; }
+  if(rcvSkuScanner){ rcvSkuScanner.stop(); rcvSkuScanner=null; }
+}
+function clearRcvSkuScan(){
+  document.getElementById('rcvSkuInput').value='';
+  document.getElementById('rcvSkuThumb').style.display='none';
+  document.getElementById('rcvSkuClearBtn').style.display='none';
+  rcvSkuPhotoBlob=null;
 }
 
 async function submitReceive(){
@@ -271,6 +273,7 @@ function openInventoryReceiveModal(id){
   invReceiveItemId=id;
   document.getElementById('invRcvSerialInput').value='';
   document.getElementById('invRcvSerialThumb').style.display='none';
+  document.getElementById('invRcvSerialClearBtn').style.display='none';
   document.getElementById('invRcvError').style.display='none';
   invRcvSerialPhotoBlob=null;
   document.getElementById('invReceiveModal').classList.add('open');
@@ -286,18 +289,14 @@ function startInvRcvSerialScan(){
   document.getElementById('invRcvSerialScannerRegion').style.display='block';
   document.getElementById('invRcvSerialScanBtn').style.display='none';
   document.getElementById('invRcvSerialStopBtn').style.display='inline-flex';
-  invRcvSerialScanner=new Html5Qrcode('invRcvSerialScannerRegion');
-  invRcvSerialScanner.start(
-    {facingMode:'environment'}, {fps:10, qrbox:{width:240,height:150}},
-    function(decodedText){
-      document.getElementById('invRcvSerialInput').value=decodedText;
-      captureFrameAsPhoto('invRcvSerialScannerRegion').then(function(blob){
-        if(blob){ invRcvSerialPhotoBlob=blob; var img=document.getElementById('invRcvSerialThumb'); img.src=URL.createObjectURL(blob); img.style.display='inline-block'; }
-      });
-      stopInvRcvSerialScan();
-    },
-    function(){}
-  ).catch(function(err){
+  invRcvSerialScanner=new BarcodeScanner('invRcvSerialScannerRegion');
+  invRcvSerialScanner.start(function(decodedText,photoBlob){
+    document.getElementById('invRcvSerialInput').value=decodedText;
+    invRcvSerialPhotoBlob=photoBlob;
+    var img=document.getElementById('invRcvSerialThumb'); img.src=URL.createObjectURL(photoBlob); img.style.display='inline-block';
+    document.getElementById('invRcvSerialClearBtn').style.display='inline-block';
+    stopInvRcvSerialScan();
+  }).catch(function(err){
     showToast('Camera error: '+err,'error');
     document.getElementById('invRcvSerialScanBtn').style.display='inline-flex';
     document.getElementById('invRcvSerialStopBtn').style.display='none';
@@ -308,7 +307,13 @@ function stopInvRcvSerialScan(){
   document.getElementById('invRcvSerialScanBtn').style.display='inline-flex';
   document.getElementById('invRcvSerialStopBtn').style.display='none';
   document.getElementById('invRcvSerialScannerRegion').style.display='none';
-  if(invRcvSerialScanner){ invRcvSerialScanner.stop().then(function(){invRcvSerialScanner.clear();}).catch(function(){}); invRcvSerialScanner=null; }
+  if(invRcvSerialScanner){ invRcvSerialScanner.stop(); invRcvSerialScanner=null; }
+}
+function clearInvRcvSerialScan(){
+  document.getElementById('invRcvSerialInput').value='';
+  document.getElementById('invRcvSerialThumb').style.display='none';
+  document.getElementById('invRcvSerialClearBtn').style.display='none';
+  invRcvSerialPhotoBlob=null;
 }
 
 async function submitInventoryReceive(){
@@ -335,9 +340,9 @@ async function submitInventoryReceive(){
 
 window._onAuthReady = loadQueue;
 window.addEventListener('beforeunload', function(){
-  if(rcvSerialScanner) rcvSerialScanner.stop().catch(function(){});
-  if(rcvSkuScanner) rcvSkuScanner.stop().catch(function(){});
-  if(invRcvSerialScanner) invRcvSerialScanner.stop().catch(function(){});
+  if(rcvSerialScanner) rcvSerialScanner.stop();
+  if(rcvSkuScanner) rcvSkuScanner.stop();
+  if(invRcvSerialScanner) invRcvSerialScanner.stop();
 });
 </script>
 </body>
