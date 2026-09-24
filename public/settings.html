@@ -75,6 +75,14 @@
     </div>
   </div>
 
+  <!-- Google review links (admin only) -->
+  <div class="card admin-only" style="display:none">
+    <div class="card-header"><i class="fa-brands fa-google"></i>Google Review Links <span style="font-size:11px;background:var(--accent-bg);color:var(--accent);padding:2px 8px;border-radius:10px;margin-left:8px">Admin Only</span></div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">About a day after a delivery, the customer is emailed a request to leave a Google review, linking to the store the contract was written at. Leave a store blank to send nothing for it.</p>
+    <div id="reviewUrlsContainer"></div>
+    <button class="btn btn-primary" style="margin-top:14px" onclick="saveReviewUrls()"><i class="fa-solid fa-floppy-disk"></i> Save Review Links</button>
+  </div>
+
   <!-- Email recipients (admin only) -->
   <div class="card admin-only" style="display:none">
     <div class="card-header"><i class="fa-solid fa-envelope"></i>Email Recipients <span style="font-size:11px;background:var(--accent-bg);color:var(--accent);padding:2px 8px;border-radius:10px;margin-left:8px">Admin Only</span></div>
@@ -206,7 +214,7 @@ function toggleActionMenu(e,id){
 </script>
 <script>
 const STORES = ['Phoenix','Goodyear','Chandler','Surprise','Tolleson'];
-let taxRates = {}, emailRecipients = [];
+let taxRates = {}, emailRecipients = [], reviewUrls = {};
 
 async function loadSettings() {
   try {
@@ -218,6 +226,10 @@ async function loadSettings() {
     if (!er.ok) throw new Error('Email API: ' + er.status);
     emailRecipients = await er.json();
     renderEmails();
+    const ru = await fetch('/api/settings/review-urls');
+    if (!ru.ok) throw new Error('Review links API: ' + ru.status);
+    reviewUrls = await ru.json();
+    renderReviewUrls();
   } catch(e) {
     const el = document.getElementById('taxRatesContainer');
     if (el) el.innerHTML = '<p style="color:var(--red);font-size:13px">Error: ' + e.message + '</p>';
@@ -247,6 +259,29 @@ async function saveTaxRates() {
     taxRates = rates;
     showToast('Tax rates saved', 'success');
   } catch(e) { showToast('Failed to save tax rates', 'error'); }
+}
+
+function renderReviewUrls() {
+  const el = document.getElementById('reviewUrlsContainer');
+  if (!el) return;
+  el.innerHTML = STORES.map(s =>
+    '<div style="margin-bottom:10px">' +
+    '<label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px"><i class="fa-solid fa-store" style="color:var(--accent);margin-right:6px"></i>' + s + '</label>' +
+    '<input type="text" inputmode="url" id="review-' + s + '" value="' + escHtml(reviewUrls[s]||'') + '" placeholder="https://g.page/r/…/review" style="width:100%">' +
+    '</div>'
+  ).join('');
+}
+
+async function saveReviewUrls() {
+  const urls = {};
+  STORES.forEach(s => { urls[s] = document.getElementById('review-'+s).value.trim(); });
+  try {
+    const r = await fetch('/api/settings/review-urls', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(urls)});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Failed');
+    reviewUrls = urls;
+    showToast('Review links saved', 'success');
+  } catch(e) { showToast(e.message || 'Failed to save review links', 'error'); }
 }
 
 function renderEmails() {

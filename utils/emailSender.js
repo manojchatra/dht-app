@@ -155,8 +155,9 @@ async function notifyReceived({ contract, customerName }) {
   await sendEmail({ to, subject, text });
 }
 
-// E — every payment recorded → admin, with the receipt PDF attached
-async function notifyPaymentRecorded({ contract, customerName, amount, method, totalPaid, balance, receiptPath }) {
+// E — every payment recorded → admin, with the receipt PDF attached (and the
+// photo of the cheque, when one was attached to a cheque payment)
+async function notifyPaymentRecorded({ contract, customerName, amount, method, totalPaid, balance, receiptPath, chequeImagePath }) {
   const to = getAdminRecipients();
   const subject = `Payment Recorded — ${contract.contract_number} — ${customerName || ''}`;
   const text = [
@@ -167,9 +168,9 @@ async function notifyPaymentRecorded({ contract, customerName, amount, method, t
     `Total Paid: $${Math.round(totalPaid).toLocaleString()}`,
     `Remaining Balance: $${Math.round(balance).toLocaleString()}`,
   ].join('\n') + footer;
-  const attachments = (receiptPath && fs.existsSync(receiptPath))
-    ? [{ filename: path.basename(receiptPath), path: receiptPath }]
-    : [];
+  const attachments = [receiptPath, chequeImagePath]
+    .filter(p => p && fs.existsSync(p))
+    .map(p => ({ filename: path.basename(p), path: p }));
   await sendEmail({ to, subject, text, attachments });
 }
 
@@ -187,9 +188,37 @@ async function notifyDelivered({ contract, customerName }) {
   await sendEmail({ to, subject, text });
 }
 
+// Per-store Google review links, managed in Settings > Google Review Links.
+// Returns '' when the store has no link configured.
+function getStoreReviewUrl(store) {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key='review_urls'").get();
+    const urls = row ? JSON.parse(row.value || '{}') : {};
+    return (urls[store] || '').trim();
+  } catch (e) { return ''; }
+}
+
+// G — sent to the CUSTOMER some time after delivery, asking for a Google review
+async function sendReviewRequestEmail({ customerEmail, customerName, reviewUrl }) {
+  const firstName = (customerName || '').trim().split(/\s+/)[0];
+  const subject = 'How was your Desert Hot Tubs experience?';
+  const text = [
+    firstName ? `Hi ${firstName},` : 'Hello,',
+    '',
+    'Thank you for choosing Desert Hot Tubs. We hope you are enjoying your new spa!',
+    '',
+    'If you have a minute, we would really appreciate a quick Google review. It helps other families find us and means a lot to our team:',
+    '',
+    reviewUrl,
+    '',
+    'Thank you again for your business.',
+  ].join('\n') + footer;
+  await sendEmail({ to: [customerEmail], subject, text });
+}
+
 module.exports = {
   sendAcknowledgementEmail, smtpConfigured, sendEmail,
-  getAdminRecipients, getSalesmanEmail,
+  getAdminRecipients, getSalesmanEmail, getStoreReviewUrl,
   notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived,
-  notifyPaymentRecorded, notifyDelivered,
+  notifyPaymentRecorded, notifyDelivered, sendReviewRequestEmail,
 };

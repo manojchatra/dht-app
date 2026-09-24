@@ -20,6 +20,7 @@ const {
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
+const { queueReviewEmail } = require('../utils/reviewEmail');
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
 
@@ -187,7 +188,8 @@ router.get('/:id', (req, res) => {
       return res.status(403).json({ error: 'Forbidden — not your contract' });
     }
 
-    const payments = db.prepare('SELECT * FROM payments WHERE contract_id=? ORDER BY date,created_at').all(req.params.id);
+    const payments = db.prepare('SELECT * FROM payments WHERE contract_id=? ORDER BY date,created_at').all(req.params.id)
+      .map(p => ({ ...p, cheque_image_url: toUrlPath(p.cheque_image_path) }));
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
 
     const extraRaw = row.extra_images ? JSON.parse(row.extra_images) : [];
@@ -740,6 +742,8 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         actor: _actor, detail: `${contract.status} → delivered` });
       addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'DELIVERED',
         color: 'green', message: `${_cnum} — ${_cuname} marked delivered` });
+      try { queueReviewEmail(req.params.id); }
+      catch (e) { console.error('[Review email queue failed — non-fatal]', e.message); }
       try {
         const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
         await notifyDelivered({ contract: freshContract, customerName: _cuname });

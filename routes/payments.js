@@ -1,35 +1,79 @@
 const express = require('express');
 const path    = require('path');
 const fs      = require('fs');
+const multer  = require('multer');
 const router  = express.Router();
 const db      = require('../db/database');
+const { compressAndGate } = require('../utils/imageUtils');
 const { generateReceiptPDF } = require('../utils/receiptGenerator');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyPaymentRecorded } = require('../utils/emailSender');
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
 
+// Optional photo of the cheque, sent as multipart alongside the payment fields.
+// Plain JSON requests (no photo) pass straight through multer untouched.
+const chequeUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(UPLOADS_DIR, 'payment-tmp');
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + (path.extname(file.originalname) || '.jpg')),
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+}).single('chequePhoto');
+
+function withChequePhoto(req, res, next) {
+  chequeUpload(req, res, (err) => {
+    if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
+    next();
+  });
+}
+
 // ── Record payment ────────────────────────────────────────────────────────────
-router.post('/', async (req, res) => {
+router.post('/', withChequePhoto, async (req, res) => {
+  // The upload lands in a temp folder before validation runs, so every early
+  // exit has to throw it away.
+  const discardUpload = () => { if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) { /* already gone */ } } };
   try {
     const { contractId, amount, method, chequeNumber, date, notes } = req.body;
     if (!contractId || !amount || !method) {
+      discardUpload();
       return res.status(400).json({ error: 'contractId, amount and method are required' });
     }
 
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) {
+      discardUpload();
       return res.status(400).json({ error: 'Amount must be a positive number' });
     }
 
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
-    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (!contract) { discardUpload(); return res.status(404).json({ error: 'Contract not found' }); }
 
     const totalPaidBefore = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t;
     const grandTotalCheck = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
     const balanceBefore   = Math.max(0, grandTotalCheck - totalPaidBefore);
     if (amt > balanceBefore + 0.01) {
+      discardUpload();
       return res.status(400).json({ error: `Amount exceeds remaining balance of $${balanceBefore.toFixed(2)}` });
+    }
+
+    // Compress the cheque photo up front, so an oversized/unreadable one is
+    // rejected before the payment is recorded rather than after. A photo sent
+    // with a non-cheque method is simply ignored.
+    let chequeTmpPath = null;
+    if (req.file) {
+      if (method !== 'cheque') {
+        discardUpload();
+      } else {
+        const comp = await compressAndGate(req.file.path);
+        if (comp.error || !comp.path) return res.status(400).json({ error: comp.error || 'Could not process the cheque photo' });
+        chequeTmpPath = comp.path;
+      }
     }
 
     // Insert payment
@@ -55,6 +99,21 @@ router.post('/', async (req, res) => {
 
     const paymentId = ins.lastInsertRowid;
 
+    // File the cheque photo next to the receipt as cheque-<paymentId>.jpg (non-fatal)
+    let chequeImagePath = null;
+    if (chequeTmpPath) {
+      try {
+        const photoDir = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
+        fs.mkdirSync(photoDir, { recursive: true });
+        chequeImagePath = path.join(photoDir, `cheque-${paymentId}.jpg`);
+        fs.renameSync(chequeTmpPath, chequeImagePath);
+        db.prepare('UPDATE payments SET cheque_image_path=? WHERE id=?').run(chequeImagePath, paymentId);
+      } catch (e) {
+        console.error('[Cheque photo save failed — non-fatal]', e.message);
+        chequeImagePath = null;
+      }
+    }
+
     // Save receipt PDF to contract folder (non-fatal)
     let receiptPath = null;
     try {
@@ -73,7 +132,7 @@ router.post('/', async (req, res) => {
       const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
       await notifyPaymentRecorded({
         contract, customerName: custName, amount: amt, method,
-        totalPaid, balance: newBalance, receiptPath
+        totalPaid, balance: newBalance, receiptPath, chequeImagePath
       });
     } catch (e) { console.error('[Email notify PAYMENT_RECORDED failed — non-fatal]', e.message); }
 
@@ -101,6 +160,7 @@ router.post('/', async (req, res) => {
       fullyPaid:  newBalance <= 0,
     });
   } catch (err) {
+    discardUpload();
     console.error('Payment error:', err);
     res.status(500).json({ error: 'Failed to record payment' });
   }

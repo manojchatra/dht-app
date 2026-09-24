@@ -243,6 +243,26 @@ if (!inventoryCols.includes('truck_number')) {
   db.exec('ALTER TABLE inventory ADD COLUMN truck_number TEXT');
   console.log('[DB] inventory.truck_number column added');
 }
+const paymentCols = db.prepare('PRAGMA table_info(payments)').all().map(c=>c.name);
+if (!paymentCols.includes('cheque_image_path')) {
+  db.exec('ALTER TABLE payments ADD COLUMN cheque_image_path TEXT');
+  console.log('[DB] payments.cheque_image_path column added');
+}
+// Google-review email queue. A contract is only ever emailed if delivery
+// stamped review_email_due_at — contracts auto-delivered at creation
+// (historical entries) never get one, so they can't email anyone.
+if (!existingCols.includes('review_email_due_at')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN review_email_due_at TEXT');
+  console.log('[DB] contracts.review_email_due_at column added');
+}
+if (!existingCols.includes('review_email_sent_at')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN review_email_sent_at TEXT');
+  console.log('[DB] contracts.review_email_sent_at column added');
+}
+if (!existingCols.includes('review_email_attempts')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN review_email_attempts INTEGER DEFAULT 0');
+  console.log('[DB] contracts.review_email_attempts column added');
+}
 
 // ── Activity log ─────────────────────────────────────────────────────────────
 db.exec(`CREATE TABLE IF NOT EXISTS activity_log (

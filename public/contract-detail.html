@@ -115,7 +115,10 @@
     </div>
     <div class="pay-form-row"><label>Method</label>
       <select id="payMethod" onchange="updateBal()"><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="credit_card">Credit Card</option><option value="finance">Finance</option></select></div>
-    <div class="pay-form-row" id="chequeRow" style="display:none"><label>Cheque #</label><input type="text" id="payChequeNum"></div>
+    <div class="pay-form-row" id="chequeRow" style="display:none"><label>Cheque #</label><input type="text" id="payChequeNum">
+      <label style="margin-top:10px">Photo of cheque <span style="font-weight:400;color:var(--text-muted)">(optional — emailed to admin with the receipt)</span></label>
+      <input type="file" id="payChequePhoto" accept="image/*">
+    </div>
     <div class="pay-form-row"><label>Amount ($)</label><input type="number" id="payAmount" step="0.01" oninput="updateBal()"></div>
     <div class="pay-form-row"><label>Date</label>
       <div class="date-input-wrap">
@@ -317,6 +320,13 @@ function renderDetail(c) {
   const allImgsWithLabel = [
     c.contract_image_url ? {url:c.contract_image_url,label:'Contract'} : null,
     c.cheque_image_url   ? {url:c.cheque_image_url,  label:'Cheque'}   : null,
+    // Photos attached to individual cheque payments — captioned with the
+    // payment's note (e.g. "Final Payment"); the label goes into the page
+    // unescaped below, so the free-text note is escaped here.
+    ...(c.payments||[]).filter(p=>p.cheque_image_url).map(p=>({
+      url:p.cheque_image_url,
+      label:escHtml(((p.notes||'').trim()) || ('Cheque' + (p.cheque_number ? ' #' + p.cheque_number : ''))),
+    })),
     ...(c.extra_images_data||[]),
   ].filter(Boolean);
   const allImgs = allImgsWithLabel.map(i=>i.url);
@@ -337,7 +347,8 @@ function renderDetail(c) {
       '<td style="font-weight:600;color:var(--green)">$' + parseFloat(p.amount).toFixed(2) + '</td>' +
       '<td style="color:var(--text-muted)">' + escHtml(p.notes||'\u2014') + '</td>' +
       '<td style="color:var(--text-muted)">' + escHtml(p.recorded_by||'\u2014') + '</td>' +
-      '<td><a href="/api/payments/' + p.id + '/receipt" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i></a></td>' +
+      '<td style="white-space:nowrap"><a href="/api/payments/' + p.id + '/receipt" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i></a>' +
+        (p.cheque_image_url ? ' <a href="' + escHtml(p.cheque_image_url) + '" class="btn btn-secondary btn-sm" target="_blank" rel="noopener" title="Cheque photo"><i class="fa-solid fa-image"></i></a>' : '') + '</td>' +
       '</tr>'
     ).join('');
     paymentsSection = '<div class="detail-section"><h3><i class="fa-solid fa-clock-rotate-left"></i> Payment History</h3>' +
@@ -348,6 +359,7 @@ function renderDetail(c) {
         '<div class="pay-card-top"><span class="pay-card-method">'+(METHOD_LABELS[p.method]||p.method)+'</span><span class="pay-card-amt">$'+parseFloat(p.amount).toFixed(2)+'</span></div>'+
         '<div class="pay-card-meta">'+(p.date||'—')+(p.notes?' &middot; '+escHtml(p.notes):'')+(p.recorded_by?' &middot; '+escHtml(p.recorded_by):'')+'</div>'+
         '<a href="/api/payments/'+p.id+'/receipt" download style="font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px;display:inline-block"><i class=\'fa-solid fa-download\'></i> Receipt</a>'+
+        (p.cheque_image_url ? ' <a href="'+escHtml(p.cheque_image_url)+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;margin:8px 0 0 12px;display:inline-block"><i class=\'fa-solid fa-image\'></i> Cheque photo</a>' : '')+
         '</div>'
       );}).join('') +
       '</div>';
@@ -567,6 +579,8 @@ function openPaymentModal() {
   syncTextFromDate('payDate','payDateText');
   document.getElementById('payNotes').value = '';
   document.getElementById('payMethod').value = 'cash';
+  document.getElementById('payChequeNum').value = '';
+  document.getElementById('payChequePhoto').value = '';
   document.getElementById('chequeRow').style.display = 'none';
   updateBal();
   document.getElementById('paymentModal').classList.add('open');
@@ -589,11 +603,19 @@ async function submitPayment() {
   if (amount > currentBalance + 0.01) { showToast('Amount exceeds remaining balance of $' + currentBalance.toFixed(2), 'error'); return; }
   btn.disabled = true;
   try {
-    const r = await fetch('/api/payments', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
-      contractId, amount, method:document.getElementById('payMethod').value,
-      chequeNumber:document.getElementById('payChequeNum').value,
-      date:document.getElementById('payDate').value, notes:document.getElementById('payNotes').value,
-    })});
+    // Multipart (not JSON) so an optional cheque photo can ride along. The
+    // Content-Type header must be left for the browser to set, boundary included.
+    const method = document.getElementById('payMethod').value;
+    const fd = new FormData();
+    fd.append('contractId', contractId);
+    fd.append('amount', amount);
+    fd.append('method', method);
+    fd.append('chequeNumber', document.getElementById('payChequeNum').value);
+    fd.append('date', document.getElementById('payDate').value);
+    fd.append('notes', document.getElementById('payNotes').value);
+    const photo = document.getElementById('payChequePhoto').files[0];
+    if (method === 'cheque' && photo) fd.append('chequePhoto', photo);
+    const r = await fetch('/api/payments', {method:'POST', body:fd});
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
     closePaymentModal(); currentBalance = j.newBalance;
     showToast('Payment recorded' + (j.fullyPaid ? ' — Fully Paid!' : ''), 'success');

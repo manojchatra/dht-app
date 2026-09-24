@@ -30,9 +30,10 @@ function getEmailRecipients() {
   } catch(e) { return []; }
 }
 const { generateAcknowledgementPDF } = require('../utils/acknowledgementPDF');
-const { sendAcknowledgementEmail, smtpConfigured } = require('../utils/emailSender');
+const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered } = require('../utils/emailSender');
 const { moveToDelivered } = require('../services/driveInventory');
 const { buildDriveData } = require('./contracts');
+const { queueReviewEmail } = require('../utils/reviewEmail');
 
 // Auth middleware — delivery or admin
 function requireDeliveryOrAdmin(req, res, next) {
@@ -278,6 +279,18 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
 
       logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'ACK_SUBMITTED', actor: req.session.username||req.session.team||'delivery', detail: emailError ? 'Acknowledgement saved, email failed: '+emailError : 'Acknowledgement submitted' });
       addNotification(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'DELIVERED', color: 'green', message: contract.contract_number+' — marked delivered via acknowledgement' });
+      try { queueReviewEmail(req.params.id); }
+      catch (e) { console.error('[Review email queue failed — non-fatal]', e.message); }
+      // Tell the salesperson to start their 48-hour follow-up — the admin status
+      // route already does this on delivery, but this path never did. Skipped when
+      // the contract was already delivered, since an acknowledgement can be re-submitted.
+      if (contract.status !== 'delivered') {
+        try {
+          const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+          const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
+          await notifyDelivered({ contract: freshContract, customerName: custName });
+        } catch (e) { console.error('[Email notify DELIVERED failed — non-fatal]', e.message); }
+      }
       res.json(emailError ? { success: true, pdfName, emailError } : { success: true, pdfName });
     } catch(e) {
       console.error('[Acknowledgement POST]', e.message, e.stack);

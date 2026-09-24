@@ -37,4 +37,24 @@ router.put('/email-recipients', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// GET /api/settings/review-urls — per-store Google review links
+router.get('/review-urls', (req, res) => {
+  res.json(getSetting('review_urls') || {});
+});
+
+// PUT /api/settings/review-urls (admin only) — body: { Phoenix: 'https://...', ... }
+router.put('/review-urls', requireAdmin, (req, res) => {
+  const urls = req.body;
+  if (!urls || typeof urls !== 'object' || Array.isArray(urls)) return res.status(400).json({ error: 'Invalid data' });
+  const clean = {};
+  for (const [store, raw] of Object.entries(urls)) {
+    const url = String(raw || '').trim();
+    if (!url) continue; // blank = no link for that store
+    if (!/^https?:\/\/\S+$/i.test(url)) return res.status(400).json({ error: `${store}: link must start with http:// or https://` });
+    clean[store] = url;
+  }
+  setSetting('review_urls', clean);
+  res.json({ success: true });
+});
+
 module.exports = router;

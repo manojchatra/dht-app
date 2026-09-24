@@ -53,6 +53,8 @@ function createTestApp() {
     notifyDelivered:           jest.fn().mockResolvedValue(null),
     sendAcknowledgementEmail:  jest.fn().mockResolvedValue(null),
     sendEmail:                 jest.fn().mockResolvedValue(null),
+    sendReviewRequestEmail:    jest.fn().mockResolvedValue(null),
+    getStoreReviewUrl:         jest.fn().mockReturnValue('https://g.page/r/test/review'),
   }));
 
   const app = require('../../server');
