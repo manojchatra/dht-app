@@ -17,7 +17,8 @@ Full-stack internal web application for Desert Hot Tubs (DHT), a multi-location 
 ```
 Contabo VPS (Ubuntu 24) — IP: 164.68.120.23
 ├── nginx (SSL termination, proxy for /delivery/, /acknowledgement)
-├── PM2 — dht-app (port 3001), passdown-proxy (port 3000)
+├── PM2 (root user)  — dht-app (port 3001, cluster mode, 1 instance)
+├── PM2 (DHT user)   — passdown-proxy (port 3000) — separate PM2, not in root's `pm2 list`
 ├── Exim4 (port 25 — local relay fallback)
 ├── /home/DHT/dht-app/
 │   ├── routes/         contracts, customers, payments, auth, users, sales,
@@ -47,7 +48,16 @@ Contabo VPS (Ubuntu 24) — IP: 164.68.120.23
 - `location /uploads/` → `alias` directly to `/home/DHT/dht-app/uploads/` (nginx serves these, not Node)
 - Every proxied block sets `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` — required for the login rate-limiter (real client IP) and secure session cookies (real protocol); see Key Technical Learnings.
 
-**Deploying:** pages are edited in the repo's `public/` and uploaded to `public_html/` — no restart needed. Anything under `routes/`, `services/`, `utils/`, `db/`, `server.js` needs `pm2 restart dht-app` (logs everyone out — sessions are in-memory).
+**Deploying:** pages are edited in the repo's `public/` and uploaded to `public_html/` — no restart needed. Anything under `routes/`, `services/`, `utils/`, `db/`, `server.js` needs `pm2 restart dht-app` as root (logs everyone out — sessions are in-memory).
+
+**Two PM2s on the server:** each Linux user has its own PM2, and `pm2 list` only shows the current user's apps.
+
+| App | Manage with | Notes |
+|---|---|---|
+| dht-app | `pm2 list` / `pm2 restart dht-app` (as root) | Global PM2 (7.0.3) is on root's `$PATH` |
+| passdown-proxy | `sudo -u DHT pm2 list` / `sudo -u DHT pm2 restart <name>` | DHT user's PM2 (7.0.1). A version-mismatch warning is harmless; `pm2 update` for this user restarts Passdown. |
+
+After `pm2 update` or any change to the app list, run `pm2 save` for that user so apps come back after a reboot. In `ss -ltnp`, both ports show as owned by `PM2 … God` (cluster mode) — not by `node`.
 
 ---
 

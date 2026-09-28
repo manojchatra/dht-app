@@ -79,6 +79,7 @@ The app runs under PM2 on port 3001, behind nginx (Hestia-managed) which termina
 ```bash
 pm2 start ecosystem.config.js   # first deploy
 pm2 restart dht-app             # after a server.js/routes change (drops active sessions — MemoryStore)
+pm2 save                        # after any change to the app list, so it survives a reboot
 ```
 
 Static HTML page edits (files under `public/`, deployed to `.../public_html/`) take effect immediately — no restart needed.
@@ -97,7 +98,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ## Known Limitations
 
 - **Sessions are in-memory** (`express-session` `MemoryStore`) — any `pm2 restart` logs out all active users. A persistent (SQLite-backed) session store is planned; see "On The Horizon" in the project summary.
-- PM2 is not on the default `$PATH` on the VPS; use the full path or `passdown-proxy`'s local binary: `/home/DHT/passdown-proxy/node_modules/.bin/pm2`.
+- **Two PM2s on the VPS:** `dht-app` runs under **root's** PM2 (use plain `pm2` as root — the global install is on `$PATH`). The Passdown app (`passdown-proxy`, port 3000) runs under the **DHT user's** separate PM2, so it never appears in root's `pm2 list` — use `sudo -u DHT pm2 list`. Don't mix in `passdown-proxy/node_modules/.bin/pm2` (an older 7.0.1 copy): running `pm2 update` with a different copy than the running daemon causes the "In-memory PM2 is out-of-date" warning.
 
 ## License
 
