@@ -23,12 +23,17 @@ For full feature documentation, workflows, and cumulative technical learnings, s
 ├── server.js              Entry point — routes, auth, static page serving
 ├── db/database.js         SQLite connection + schema
 ├── middleware/auth.js     Session-based auth (requireAuth, requireAdmin, etc.)
-├── routes/                contracts, payments, auth, users, delivery,
-│                          settings-api, notifications, inventory
-├── services/               driveInventory.js, googleCalendar.js
+├── routes/                contracts, customers, payments, auth, users, sales,
+│                          delivery, post-delivery, warehouse, inventory,
+│                          inventory-items, settings-api, notifications
+├── services/               driveInventory.js (Google Sheets), googleCalendar.js,
+│                          customers.js (phones, customer IDs, matching)
 ├── utils/                  pdfGenerator, acknowledgementPDF, receiptGenerator,
-│                          emailSender, imageUtils, activityLogger
+│                          emailSender, reviewEmail, imageUtils, activityLogger
+├── scripts/                backups, one-off migrations (see project summary)
+├── tests/                  Jest + Supertest (npm test)
 ├── public/                 Source HTML pages (login, dashboard, contracts, etc.)
+│   ├── partials/sidebar.html + js/sidebar.js   Shared sidebar + auth check
 │   └── js/util.js          Shared escHtml() — escape any user-entered string before innerHTML
 ├── ecosystem.config.js    PM2 process config
 └── nginx.ssl.conf_proxy   nginx reverse-proxy snippet for the Node app

@@ -43,6 +43,9 @@ function createTestApp() {
     deleteInventoryRow:           jest.fn().mockResolvedValue(null),
     updateInventoryItemField:     jest.fn().mockResolvedValue(null),
     updatePaymentInSheet:         jest.fn().mockResolvedValue(null),
+    deleteContractRowFromSheet:   jest.fn().mockResolvedValue(null),
+    upsertCustomerRecordRow:      jest.fn().mockResolvedValue(null),
+    deleteCustomerRecordRow:      jest.fn().mockResolvedValue(null),
   }));
 
   jest.doMock('../../utils/emailSender', () => ({

@@ -44,6 +44,7 @@ app.use('/partials', express.static(path.join(__dirname, 'public/partials')));
 
 // DB init
 require('./db/database');
+require('./services/customers').assignMissingCustomerNumbers();
 
 const { requireAuth } = require('./middleware/auth');
 
@@ -62,6 +63,7 @@ app.use('/api/payments',     requireAuth, require('./routes/payments'));
 app.use('/api/settings',     requireAuth, require('./routes/settings-api'));
 app.use('/api/delivery',     requireAuth, require('./routes/delivery'));
 app.use('/api/post-delivery', requireAuth, require('./routes/post-delivery'));
+app.use('/api/customers',    requireAuth, require('./routes/customers'));
 app.get('/api/activity/:contractId', requireAuth, (req,res) => {
   const db = require('./db/database');
   try {

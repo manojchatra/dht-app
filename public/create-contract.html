@@ -10,6 +10,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/theme.css">
+<script src="/js/util.js"></script>
 <style>
 .sidebar{visibility:visible}
 body{visibility:visible}
@@ -90,7 +91,11 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
   .chip.store-chip{text-align:left}
 }
 @media(max-width:900px) and (min-width:701px){.grid-4{grid-template-columns:1fr 1fr}}
-</style>
+.cust-linked{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--accent-bg);color:var(--accent);border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:13px}
+.cust-match{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.cust-match .cm-name{font-weight:600;font-size:14px}
+.cust-match .cm-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+.cust-match .cm-tag{font-size:10.5px;font-weight:600;border-radius:10px;padding:2px 8px;margin-left:6px;background:var(--green-bg);color:var(--green)}</style>
 </head>
 <body>
 <div id="sidebar-root"></div>
@@ -139,6 +144,10 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
   <!-- 2. Customer -->
   <div class="card">
     <div class="card-header"><i class="fa-solid fa-user"></i>Customer Details</div>
+    <div class="cust-linked" id="custLinkedBanner" style="display:none">
+      <span><i class="fa-solid fa-link"></i> Linked to existing customer <strong id="custLinkedLabel"></strong></span>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="unlinkCustomer()">Unlink</button>
+    </div>
     <div class="grid-2" style="margin-bottom:14px">
       <div><label class="lbl">Full Name *</label><input type="text" id="custName" placeholder="John Smith" maxlength="100"></div>
       <div><label class="lbl">Email</label><input type="email" id="custEmail" placeholder="name@email.com" maxlength="100"></div>
@@ -151,11 +160,12 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
         <div><label class="lbl">Zip</label><input type="text" id="custZip" placeholder="85203" maxlength="5"></div>
       </div>
     </div>
-    <div class="grid-3" style="margin-bottom:14px">
-      <div><label class="lbl">Cell</label><input type="tel" id="custCell" placeholder="(602) 555-1234" maxlength="20"></div>
-      <div><label class="lbl">Home</label><input type="tel" id="custHome" placeholder="(602) 555-5678" maxlength="20"></div>
-      <div><label class="lbl">Work</label><input type="tel" id="custWork" placeholder="(602) 555-9012" maxlength="20"></div>
+    <div class="grid-3" style="margin-bottom:4px">
+      <div><label class="lbl">Cell</label><input type="tel" inputmode="numeric" id="custCell" placeholder="602-555-1234" autocomplete="off" oninput="formatPhoneInput(this)"></div>
+      <div><label class="lbl">Home</label><input type="tel" inputmode="numeric" id="custHome" placeholder="602-555-5678" autocomplete="off" oninput="formatPhoneInput(this)"></div>
+      <div><label class="lbl">Work</label><input type="tel" inputmode="numeric" id="custWork" placeholder="602-555-9012" autocomplete="off" oninput="formatPhoneInput(this)"></div>
     </div>
+    <p style="font-size:11px;color:var(--text-muted);margin:0 0 14px">At least one phone number is required (10 digits).</p>
     <div class="grid-2">
       <div>
         <label class="lbl">How did you hear about us?</label>
@@ -618,6 +628,18 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
   </div>
 </main>
 
+<!-- Existing Customer Modal -->
+<div class="modal-overlay" id="custMatchModal">
+  <div class="modal-box" style="max-width:520px">
+    <h2 style="font-size:16px;font-weight:600;margin-bottom:6px"><i class="fa-solid fa-user-check" style="color:var(--accent)"></i> Existing customer found</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">This customer may already be on file. Link this contract to them?</p>
+    <div id="custMatchList"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="declineCustomerMatches()">No, this is a new customer</button>
+    </div>
+  </div>
+</div>
+
 <!-- Inventory Modal -->
 <div class="modal-overlay" id="invModal">
   <div class="inv-modal">
@@ -991,6 +1013,114 @@ function selectUnit(row){
 
 document.getElementById('invModal').addEventListener('click',function(e){if(e.target===e.currentTarget)closeInvModal()});
 
+// ── Phone numbers: digits only, auto-dashed as 602-112-2111 ──────────────────
+function phoneDigits(s){
+  var d=String(s||'').replace(/\D/g,'');
+  if(d.length===11&&d[0]==='1') d=d.slice(1); // pasted +1 country code
+  return d.slice(0,10);
+}
+function formatPhoneInput(el){
+  var d=phoneDigits(el.value);
+  el.value=d.length>6?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.length>3?d.slice(0,3)+'-'+d.slice(3):d;
+}
+
+// ── "Existing customer?" popup ───────────────────────────────────────────────
+// Looks the customer up once a full phone number or email is entered (never
+// by name alone — the name only confirms a phone/email match). Staff pick
+// "Use this customer" (the contract links to that customer record) or "No,
+// this is a new customer" (those matches aren't offered again for this form).
+// Runs once more on Preview & Save as a safety net.
+var linkedCustomer=null, dismissedCustomerIds={}, lastMatchQuery='', resumePreviewAfterMatch=false;
+var shownMatches=[];
+
+function customerMatchQuery(){
+  var params=[];
+  ['custCell','custHome','custWork'].forEach(function(id){
+    var d=phoneDigits(document.getElementById(id).value);
+    if(d.length===10) params.push('phone='+d);
+  });
+  var email=document.getElementById('custEmail').value.trim();
+  if(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) params.push('email='+encodeURIComponent(email));
+  if(!params.length) return ''; // nothing to search on yet
+  var name=document.getElementById('custName').value.trim();
+  if(name) params.push('name='+encodeURIComponent(name));
+  return params.join('&');
+}
+
+// Resolves true if the popup was shown (caller should wait for a choice).
+async function checkCustomerMatches(force){
+  if(linkedCustomer) return false;
+  var q=customerMatchQuery();
+  if(!q||(!force&&q===lastMatchQuery)) return false;
+  lastMatchQuery=q;
+  try{
+    var r=await fetch('/api/customers/search?'+q);
+    if(!r.ok) return false;
+    var matches=((await r.json()).matches||[]).filter(function(m){return !dismissedCustomerIds[m.id];});
+    if(!matches.length) return false;
+    showCustomerMatches(matches);
+    return true;
+  }catch(e){ return false; }
+}
+
+function maskEmail(e){
+  if(!e) return '';
+  var p=e.split('@'); return p[0].slice(0,1)+'•••@'+(p[1]||'');
+}
+function fmtMonthYear(iso){
+  if(!iso) return '';
+  var d=new Date(iso+'T00:00:00');
+  return isNaN(d)?'':d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+}
+function showCustomerMatches(matches){
+  shownMatches=matches;
+  document.getElementById('custMatchList').innerHTML=matches.map(function(m,i){
+    var phone=m.phone.cell||m.phone.home||m.phone.work||'';
+    var tag='<span class="cm-tag">Same '+m.matchedOn.join(' & ')+'</span>';
+    var last=m.lastContract?' · last '+escHtml(fmtMonthYear(m.lastContract.date))+(m.lastContract.store?' ('+escHtml(m.lastContract.store)+')':''):'';
+    return '<div class="cust-match"><div>'
+      +'<div class="cm-name">'+escHtml(m.customerNumber||'')+' · '+escHtml(m.name)+tag+'</div>'
+      +'<div class="cm-sub">'+[escHtml(phone),escHtml(maskEmail(m.email))].filter(Boolean).join(' · ')+'</div>'
+      +'<div class="cm-sub">'+m.contractCount+' previous contract'+(m.contractCount===1?'':'s')+last+'</div>'
+      +'</div><button type="button" class="btn btn-primary btn-sm" onclick="useCustomerMatch('+i+')"><i class="fa-solid fa-check"></i> Use this customer</button></div>';
+  }).join('');
+  document.getElementById('custMatchModal').classList.add('open');
+}
+function closeCustomerMatches(){
+  document.getElementById('custMatchModal').classList.remove('open');
+  if(resumePreviewAfterMatch){ resumePreviewAfterMatch=false; goToPreview(); }
+}
+function useCustomerMatch(i){
+  var m=shownMatches[i]; if(!m) return;
+  linkedCustomer=m;
+  function set(id,v){var el=document.getElementById(id); if(el&&v!=null) el.value=v;}
+  set('custName',m.name); set('custEmail',m.email);
+  set('custCell',m.phone.cell); set('custHome',m.phone.home); set('custWork',m.phone.work);
+  set('custAddress',m.address); set('custCity',m.city); set('custState',m.state||'AZ'); set('custZip',m.zip);
+  if(m.heardAbout) set('custHeard',m.heardAbout);
+  var gatedEl=document.querySelector('[name=gated][value="'+(m.gated?'yes':'no')+'"]');
+  if(gatedEl){ gatedEl.checked=true; gatedEl.dispatchEvent(new Event('change',{bubbles:true})); }
+  set('gateCode',m.gateCode);
+  document.getElementById('custLinkedLabel').textContent=(m.customerNumber||'')+' · '+m.name;
+  document.getElementById('custLinkedBanner').style.display='flex';
+  closeCustomerMatches();
+}
+function declineCustomerMatches(){
+  shownMatches.forEach(function(m){ dismissedCustomerIds[m.id]=true; });
+  closeCustomerMatches();
+}
+// Unlink only undoes the link — it doesn't mean "different person". If the
+// details still match, Preview & Save asks again, so a duplicate customer can
+// only be created by deliberately choosing "No, this is a new customer".
+function unlinkCustomer(){
+  linkedCustomer=null;
+  lastMatchQuery='';
+  document.getElementById('custLinkedBanner').style.display='none';
+}
+['custCell','custHome','custWork','custEmail'].forEach(function(id){
+  document.getElementById(id).addEventListener('blur',function(){ checkCustomerMatches(false); });
+});
+
 // ── Collect form data ─────────────────────────────────────────────────────────
 function collectData(){
   function v(id){var el=document.getElementById(id);return el?(el.value||'').trim():'';}
@@ -1011,6 +1141,7 @@ function collectData(){
       heardAbout:v('custHeard'),
       gated:document.querySelector('[name=gated]:checked')&&document.querySelector('[name=gated]:checked').value==='yes',
       gateCode:v('gateCode'),
+      existingCustomerId:linkedCustomer?linkedCustomer.id:null,
     },
     product:{
       status:selectedStatus,floorModel:v('floorModel'),
@@ -1062,6 +1193,10 @@ async function goToPreview(){
   var data=collectData();
   if(!data.store){showToast('Please select a store location','error');return;}
   if(!data.customer.name){showToast('Customer name is required','error');return;}
+  var ph=data.customer.phone, phoneLabels={cell:'Cell',home:'Home',work:'Work'}, badPhone=null;
+  Object.keys(phoneLabels).forEach(function(k){ var n=phoneDigits(ph[k]).length; if(!badPhone&&n>0&&n!==10) badPhone=phoneLabels[k]; });
+  if(badPhone){showToast(badPhone+' phone must be 10 digits (e.g. 602-112-2111)','error');return;}
+  if(!ph.cell&&!ph.home&&!ph.work){showToast('At least one phone number (Cell, Home or Work) is required','error');return;}
   if(!data.salesmanUserId){showToast('Salesman is required','error');return;}
   if(!data.service.inTownDelivery && !data.service.outOfTownDelivery){showToast('Please select In-Town or Out-of-Town Delivery','error');return;}
   if(data.service.crane && !data.service.craneFee){showToast('Please enter a Crane fee','error');return;}
@@ -1083,6 +1218,10 @@ async function goToPreview(){
     if(!pm.finance.plan){showToast('Finance lender/plan name is required','error');return;}
     if(!(parseFloat(pm.finance.amount)>0)){showToast('Finance amount is required','error');return;}
   }
+
+  // Safety net: an existing-customer match nobody answered yet. Preview
+  // resumes automatically once staff pick an option in the popup.
+  if(!linkedCustomer && await checkCustomerMatches(true)){ resumePreviewAfterMatch=true; return; }
 
   // Past delivery date + unpaid balance warning
   if(data.deliveryDate){

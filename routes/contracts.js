@@ -21,6 +21,10 @@ const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
 const { queueReviewEmail } = require('../utils/reviewEmail');
+const {
+  normalizeContractPhones, nextCustomerNumber,
+  syncCustomerRecord, syncCustomerRecordsForCustomer, removeCustomerRecord, deleteCustomerIfOrphan,
+} = require('../services/customers');
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
 
@@ -113,6 +117,38 @@ function truncate(s, max) {
   return (s == null) ? s : String(s).slice(0, max);
 }
 
+// ── Inventory release / re-claim ──────────────────────────────────────────────
+// A physical unit linked to a contract (picked in-stock at creation, or
+// received by the warehouse for it) is marked Sold. When that contract is
+// cancelled or deleted before delivery the spa is still on hand, so it must go
+// back to In-stock — otherwise it silently vanishes from the in-stock picker.
+// Returns the serial numbers released.
+async function releaseInventoryForContract(contractId) {
+  const units = db.prepare('SELECT id, serial_number FROM inventory WHERE contract_id=?').all(contractId);
+  for (const u of units) {
+    db.prepare(`UPDATE inventory SET availability='In-stock', contract_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(u.id);
+    if (u.serial_number) {
+      try { await updateInventoryItemField(u.serial_number, 'availability', 'In-stock'); }
+      catch (e) { console.error('[Drive inventory release failed — non-fatal]', e.message); }
+    }
+  }
+  return units.map(u => u.serial_number).filter(Boolean);
+}
+
+// Reverting a cancellation re-links the contract's unit only if it's still
+// free — it may have been sold to someone else in the meantime. Returns
+// { reclaimed: bool, serial } so the caller can log the outcome.
+async function reclaimInventoryForContract(contract) {
+  const serial = contract.serial_number;
+  if (!serial) return { reclaimed: false, serial: null };
+  const unit = db.prepare('SELECT id, availability, contract_id FROM inventory WHERE serial_number=?').get(serial);
+  if (!unit || unit.availability !== 'In-stock' || unit.contract_id) return { reclaimed: false, serial };
+  db.prepare(`UPDATE inventory SET availability='Sold', contract_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(contract.id, unit.id);
+  try { await updateInventoryItemField(serial, 'availability', 'Sold'); }
+  catch (e) { console.error('[Drive inventory re-claim failed — non-fatal]', e.message); }
+  return { reclaimed: true, serial };
+}
+
 // Convert absolute path to web-accessible URL path
 function toUrlPath(absPath) {
   if (!absPath || typeof absPath !== 'string') return null;
@@ -140,13 +176,16 @@ router.get('/', (req, res) => {
         c.web_order_number, c.truck_number,
         json_extract(c.data,'$.product.shellColor')   AS shell_color,
         json_extract(c.data,'$.product.cabinetColor') AS cabinet_color,
-        COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name,
+        -- Name/phone/email from the customer record; address from this
+        -- contract's own delivery address.
+        cu.customer_number,
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name,
         cu.email      AS customer_email,
-        cu.zip        AS customer_zip,
-        cu.phone_cell AS customer_phone,
-        cu.address    AS customer_address,
-        cu.address    AS address,
-        cu.city       AS city,
+        COALESCE(json_extract(c.data,'$.customer.zip'), cu.zip) AS customer_zip,
+        COALESCE(NULLIF(cu.phone_cell,''), NULLIF(cu.phone_home,''), NULLIF(cu.phone_work,'')) AS customer_phone,
+        COALESCE(json_extract(c.data,'$.customer.address'), cu.address) AS customer_address,
+        COALESCE(json_extract(c.data,'$.customer.address'), cu.address) AS address,
+        COALESCE(json_extract(c.data,'$.customer.city'), cu.city) AS city,
         inv.finance   AS linked_finance
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
@@ -176,7 +215,8 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const row = db.prepare(`
-      SELECT c.*, cu.name AS customer_name, cu.address AS customer_address,
+      SELECT c.*, cu.customer_number, cu.name AS customer_name,
+        COALESCE(json_extract(c.data,'$.customer.address'), cu.address) AS customer_address,
         inv.finance AS linked_finance
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
@@ -301,36 +341,51 @@ router.post('/', uploadFields, async (req, res) => {
       return res.status(400).json({ error: payErrors[0], errors: payErrors });
     }
 
-    // 1. Upsert customer — truncated up front so the lookup and the write
-    // below always agree on what actually gets stored.
+    // Phones: 10 digits, stored as 602-112-2111, at least one required.
+    // Written back onto `customer` so the stored snapshot is formatted too.
+    const { phone: cleanPhone, error: phoneError } = normalizeContractPhones(customer?.phone);
+    if (phoneError) return res.status(400).json({ error: phoneError });
+    customer.phone = cleanPhone;
+
+    // 1. Customer — linked only to the customer staff confirmed in the
+    // "Existing customer?" popup (existingCustomerId); otherwise always a new
+    // customer. No guessing by email/name: that silently merged different
+    // people who shared an email into one record.
     const custName   = truncate(customer.name, MAX_LEN.name);
     const custEmail  = truncate(customer.email, MAX_LEN.email);
-    const custCell   = truncate(customer.phone?.cell, MAX_LEN.phone);
-    const custHome   = truncate(customer.phone?.home, MAX_LEN.phone);
-    const custWork   = truncate(customer.phone?.work, MAX_LEN.phone);
     const custAddr   = truncate(customer.address, MAX_LEN.address);
     const custCity   = truncate(customer.city, MAX_LEN.city);
     const custGate   = truncate(customer.gateCode, MAX_LEN.gateCode);
     const custHeard  = truncate(customer.heardAbout, MAX_LEN.heardAbout);
+    const linkId     = parseInt(customer.existingCustomerId, 10) || null;
+    delete customer.existingCustomerId; // not part of the signed snapshot
 
     let customerId;
-    const existing = db.prepare(
-      `SELECT id FROM customers WHERE (email=? AND email!='') OR (name=? AND zip=?)`
-    ).get(custEmail, custName, customer.zip);
+    let customerChanges = [];
+    const existing = linkId ? db.prepare('SELECT * FROM customers WHERE id=?').get(linkId) : null;
 
     if (existing) {
-      db.prepare(`UPDATE customers SET name=?,email=?,phone_cell=?,phone_home=?,phone_work=?,
+      // Contact details follow the latest contract; the name on the customer
+      // record is never overwritten from a contract form.
+      const next = {
+        email: custEmail || '', phone_cell: cleanPhone.cell, phone_home: cleanPhone.home, phone_work: cleanPhone.work,
+        address: custAddr || '', city: custCity || '', state: customer.state || 'AZ', zip: customer.zip || '',
+        gated: customer.gated ? 1 : 0, gate_code: custGate || '', heard_about: custHeard || existing.heard_about || '',
+      };
+      customerChanges = Object.keys(next)
+        .filter(k => String(existing[k] ?? '') !== String(next[k] ?? ''))
+        .map(k => `${k}: "${existing[k] ?? ''}" → "${next[k]}"`);
+      db.prepare(`UPDATE customers SET email=?,phone_cell=?,phone_home=?,phone_work=?,
         address=?,city=?,state=?,zip=?,gated=?,gate_code=?,heard_about=? WHERE id=?`
-      ).run(custName, custEmail, custCell, custHome, custWork,
-        custAddr, custCity, customer.state||'AZ', customer.zip,
-        customer.gated?1:0, custGate, custHeard, existing.id);
+      ).run(next.email, next.phone_cell, next.phone_home, next.phone_work,
+        next.address, next.city, next.state, next.zip, next.gated, next.gate_code, next.heard_about, existing.id);
       customerId = existing.id;
     } else {
       const ins = db.prepare(`INSERT INTO customers
-        (name,email,phone_cell,phone_home,phone_work,address,city,state,zip,gated,gate_code,heard_about)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-      ).run(custName, custEmail,
-        custCell, custHome, custWork,
+        (customer_number,name,email,phone_cell,phone_home,phone_work,address,city,state,zip,gated,gate_code,heard_about)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).run(nextCustomerNumber(), custName, custEmail,
+        cleanPhone.cell, cleanPhone.home, cleanPhone.work,
         custAddr, custCity, customer.state||'AZ', customer.zip,
         customer.gated?1:0, custGate, custHeard);
       customerId = ins.lastInsertRowid;
@@ -501,6 +556,18 @@ router.post('/', uploadFields, async (req, res) => {
         ? `${customer.name||''}, $${Math.round(cleanData.costing?.grandTotal||0)} (${cleanData.store||''})`
         : `Contract updated`
     });
+    if (existing) {
+      logActivity(db, {
+        contractId, contractNum: cnum, eventType: 'CUSTOMER_LINKED', actor,
+        detail: `Existing customer ${existing.customer_number || '#' + existing.id} (${existing.name})` +
+          (customerChanges.length ? ' — updated ' + customerChanges.join('; ') : ''),
+      });
+    }
+
+    // Customer Record sheet tab: this contract's row, plus every other row of
+    // a linked customer whose phone may just have changed.
+    if (existing && customerChanges.length) await syncCustomerRecordsForCustomer(customerId);
+    else await syncCustomerRecord(contractId);
     if (isNew) {
       addNotification(db, {
         contractId, contractNum: cnum,
@@ -550,9 +617,11 @@ function buildDriveData(contract, customer, formData) {
     cabinetColor:   d.product ? d.product.cabinetColor || '' : '',
     serialNumber:   contract.serial_number || '',
     salesman:       contract.salesman || '',
-    customerName:   customer ? customer.name : (cu.name || ''),
-    address:        customer ? (customer.address||'') + (customer.city ? ', '+customer.city : '') : (cu.address||''),
-    zip:            customer ? customer.zip || '' : cu.zip || '',
+    // Name from the customer record; address = this contract's delivery address.
+    customerName:   (customer && customer.name) || cu.name || '',
+    address:        cu.address ? cu.address + (cu.city ? ', '+cu.city : '')
+                               : customer ? (customer.address||'') + (customer.city ? ', '+customer.city : '') : '',
+    zip:            cu.zip || (customer ? customer.zip || '' : ''),
     cover:          sumCover(de.cover),
     steps:          de.steps ? de.steps.type || '' : '',
     waterCare:      de.waterCareSystem ? de.waterCareSystem.type || '' : '',
@@ -669,6 +738,11 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     } else if (status === 'cancelled') {
       db.prepare('UPDATE contracts SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run(status, req.params.id);
+      const released = await releaseInventoryForContract(contract.id);
+      if (released.length) {
+        logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'INVENTORY_RELEASED',
+          actor: req.session.username || 'system', detail: `Returned to In-stock: ${released.join(', ')}` });
+      }
     } else if (status === 'order_placed') {
       db.prepare('UPDATE contracts SET status=?,web_order_number=?,truck_number=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run(status, req.body.webOrderNumber.trim(), req.body.truckNumber.trim(), req.params.id);
@@ -676,6 +750,15 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
       // assigned — revert from cancelled
       db.prepare('UPDATE contracts SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run(status, req.params.id);
+      if (contract.status === 'cancelled') {
+        const { reclaimed, serial } = await reclaimInventoryForContract(contract);
+        if (serial) {
+          logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'INVENTORY_RECLAIM',
+            actor: req.session.username || 'system',
+            detail: reclaimed ? `Unit ${serial} re-linked and marked Sold`
+                              : `Unit ${serial} is no longer available — assign a new serial` });
+        }
+      }
     }
 
     // Google Sheets operations (non-fatal)
@@ -725,6 +808,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         await moveToOrderPlaced(contract.contract_number, req.body.webOrderNumber.trim(), req.body.truckNumber.trim(), driveData);
       }
     } catch(e) { console.error('[Drive status update failed]', e.message, e.stack); }
+    await syncCustomerRecord(req.params.id);
 
     // Activity log + notifications
     const _actor  = req.session.username || 'system';
@@ -802,6 +886,7 @@ router.patch('/:id/serial', requireAdmin, async (req, res) => {
     try {
       await updateTBOSerial(contract.contract_number, serialNumber.trim());
     } catch(e) { console.error('[Drive serial update failed]', e.message, e.stack); }
+    await syncCustomerRecord(req.params.id);
 
     res.json({ success: true });
   } catch(err) {
@@ -851,6 +936,7 @@ router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
         const photoUrl = 'https://app.deserthottubsaz.com' + (toUrlPath(finalPhotoPath)||'');
         await moveToReceived(contract.contract_number, actualDate, photoUrl, driveData);
       } catch(e) { console.error('[Drive received failed]', e.message, e.stack); }
+      await syncCustomerRecord(req.params.id);
       try {
         const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
         const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
@@ -882,13 +968,16 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     // orphaned row behind that nothing else ever cleans up.
     try { await deleteContractRowFromSheet(row.contract_number); }
     catch(e) { console.error('[Drive row delete on contract-delete failed — non-fatal]', e.message); }
+    await removeCustomerRecord(row.contract_number);
 
     db.prepare('DELETE FROM payments WHERE contract_id=?').run(req.params.id);
     db.prepare('DELETE FROM activity_log WHERE contract_id=?').run(req.params.id);
     db.prepare('DELETE FROM notifications WHERE contract_id=?').run(req.params.id);
     // Unlink (not delete) any inventory item tied to this contract — it may
     // still be real physical stock, and SQLite's foreign-key constraint
-    // would otherwise block the delete below outright.
+    // would otherwise block the delete below outright. Undelivered units go
+    // back to In-stock; a delivered unit is at the customer's, so it stays Sold.
+    if (row.status !== 'delivered') await releaseInventoryForContract(row.id);
     db.prepare('UPDATE inventory SET contract_id=NULL WHERE contract_id=?').run(req.params.id);
 
     // Remove the whole contract folder rather than tracking individual
@@ -903,7 +992,9 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     }
 
     db.prepare('DELETE FROM contracts WHERE id=?').run(req.params.id);
-    res.json({ success: true });
+    // Deleting is for mistakes — a customer left with no contracts goes too.
+    const customerDeleted = deleteCustomerIfOrphan(row.customer_id);
+    res.json({ success: true, customerDeleted });
   } catch (err) {
     console.error('Delete contract error:', err);
     res.status(500).json({ error: 'Failed to delete contract' });

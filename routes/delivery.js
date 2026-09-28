@@ -11,6 +11,7 @@ const router  = express.Router();
 const { compressAndGate } = require('../utils/imageUtils');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const db      = require('../db/database');
+const { syncCustomerRecord } = require('../services/customers');
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
 function toUrlPath(absPath) {
@@ -61,8 +62,8 @@ const uploadAck = multer({ storage, limits:{ fileSize: 5*1024*1024 } });
 router.get('/contract/:id', requireDeliveryOrAdmin, (req, res) => {
   try {
     const contract = db.prepare(`
-      SELECT c.*, cu.name AS customer_name, cu.address, cu.city, cu.zip,
-             cu.phone_cell, cu.phone_home, cu.gate_code
+      SELECT c.*, cu.name AS customer_name, cu.email AS customer_email, cu.address, cu.city, cu.zip,
+             cu.phone_cell, cu.phone_home, cu.phone_work, cu.gate_code
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.id=?
@@ -93,13 +94,15 @@ router.get('/contract/:id', requireDeliveryOrAdmin, (req, res) => {
       date:            contract.date,
       delivery_date:   contract.delivery_date,
       // Customer (no pricing)
-      customer_name:   JSON.parse(contract.data||'{}').customer?.name || contract.customer_name || '',
-      address:         (contract.address || cu.address || '') + (contract.city ? ', '+contract.city : cu.city ? ', '+cu.city : ''),
-      zip:             contract.zip || cu.zip || '',
-      phone:           contract.phone_cell || contract.phone_home || cu.phone?.cell || cu.phone?.home || '',
-      email:           cu.email || '',
+      // Name/phone from the customer record; address/gate from this
+      // contract's own delivery address (a customer may own spas at two homes).
+      customer_name:   contract.customer_name || cu.name || '',
+      address:         (cu.address || contract.address || '') + ((cu.city || contract.city) ? ', ' + (cu.city || contract.city) : ''),
+      zip:             cu.zip || contract.zip || '',
+      phone:           contract.phone_cell || contract.phone_home || contract.phone_work || cu.phone?.cell || cu.phone?.home || cu.phone?.work || '',
+      email:           contract.customer_email || cu.email || '',
       gated:           cu.gated,
-      gate_code:       contract.gate_code || cu.gateCode || '',
+      gate_code:       cu.gateCode || contract.gate_code || '',
       // Product
       make:            contract.make || pr.make || '',
       model:           contract.model || pr.model || '',
@@ -138,8 +141,9 @@ router.get('/acknowledgements', requireDeliveryOrAdmin, (req, res) => {
       SELECT c.id, c.contract_number, c.store, c.serial_number, c.status,
         c.delivery_team, c.delivery_date, c.scheduled_datetime, c.scheduled_duration,
         c.acknowledgement_pdf,
-        COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name,
-        cu.address AS cu_address, cu.city AS cu_city
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name,
+        COALESCE(json_extract(c.data,'$.customer.address'), cu.address) AS cu_address,
+        COALESCE(json_extract(c.data,'$.customer.city'), cu.city) AS cu_city
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.status IN ('scheduled','delivered')
@@ -251,6 +255,7 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
         driveData.serialNumber = contract.serial_number || '';
         await moveToDelivered(contract.contract_number, today, driveData);
       } catch(e) { console.error('[Drive ack delivery failed]', e.message); }
+      await syncCustomerRecord(contract.id);
 
       // Attempt email send if requested (non-fatal — deliver is already saved)
       const sendEmail  = req.body.sendEmail === 'true';

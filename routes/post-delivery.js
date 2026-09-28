@@ -31,11 +31,11 @@ function buildListSql(scoped) {
     SELECT
       c.id, c.contract_number, c.make, c.model, c.serial_number,
       c.delivery_date, c.scheduled_datetime, c.salesman_user_id,
-      COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name,
-      COALESCE(cu.phone_cell, cu.phone_home, json_extract(c.data,'$.customer.phone.cell'), '') AS phone,
+      COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name,
+      COALESCE(NULLIF(cu.phone_cell,''), NULLIF(cu.phone_home,''), NULLIF(cu.phone_work,''), json_extract(c.data,'$.customer.phone.cell'), '') AS phone,
       COALESCE(cu.email, json_extract(c.data,'$.customer.email'), '') AS email,
-      COALESCE(cu.address, json_extract(c.data,'$.customer.address'), '') AS address,
-      cu.city AS city,
+      COALESCE(json_extract(c.data,'$.customer.address'), cu.address, '') AS address,
+      COALESCE(json_extract(c.data,'$.customer.city'), cu.city) AS city,
       pdf.status AS feedback_status
     FROM contracts c
     LEFT JOIN customers cu ON c.customer_id = cu.id
@@ -73,7 +73,7 @@ router.get('/contracts', requireSalesOrAdmin, (req, res) => {
 router.get('/contract/:id', requireSalesOrAdmin, (req, res) => {
   try {
     const contract = db.prepare(`
-      SELECT c.*, cu.name AS cu_name, cu.email AS cu_email, cu.phone_cell, cu.phone_home, cu.address AS cu_address, cu.city AS cu_city
+      SELECT c.*, cu.name AS cu_name, cu.email AS cu_email, cu.phone_cell, cu.phone_home, cu.phone_work, cu.address AS cu_address, cu.city AS cu_city
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.id=?
@@ -95,8 +95,8 @@ router.get('/contract/:id', requireSalesOrAdmin, (req, res) => {
       id: contract.id,
       contract_number: contract.contract_number,
       customer_name: contract.cu_name || cu.name || '',
-      address: [contract.cu_address || cu.address || '', contract.cu_city || cu.city || ''].filter(Boolean).join(', '),
-      phone: contract.phone_cell || contract.phone_home || cu.phone?.cell || cu.phone?.home || '',
+      address: [cu.address || contract.cu_address || '', cu.city || contract.cu_city || ''].filter(Boolean).join(', '),
+      phone: contract.phone_cell || contract.phone_home || contract.phone_work || cu.phone?.cell || cu.phone?.home || '',
       email: contract.cu_email || cu.email || '',
       make: contract.make || '',
       model: contract.model || '',

@@ -475,6 +475,51 @@ async function deleteInventoryItem(serialNumber) {
   return true;
 }
 
+// ── Customer Record (one row per contract, rows never move between tabs) ──────
+// Keyed by Contract Number (column B). Upsert = update in place if the row is
+// there, else append — so a row deleted by hand in the Sheet is re-added the
+// next time anything about that contract changes.
+const CUSTOMER_RECORD_TAB = 'Customer Record';
+const CUSTOMER_RECORD_HEADERS = [
+  'Customer ID','Contract Number','Name','Phone','Address','City',
+  'Brand','Model','Serial Number','Delivery Date','Salesman','Status'
+];
+const CUSTOMER_RECORD_CONTRACT_COL = 2;
+
+function buildCustomerRecordRow(d) {
+  return [
+    d.customerNumber||'', d.contractNumber||'', d.name||'', d.phone||'', d.address||'', d.city||'',
+    d.brand||'', d.model||'', d.serialNumber||'', d.deliveryDate||'', d.salesman||'', d.status||'',
+  ];
+}
+
+async function upsertCustomerRecordRow(d) {
+  const sheets = getSheets();
+  await ensureTab(sheets, CUSTOMER_RECORD_TAB, CUSTOMER_RECORD_HEADERS);
+  const row = buildCustomerRecordRow(d);
+  const rowIndex = await findRowByColumnValue(sheets, CUSTOMER_RECORD_TAB, CUSTOMER_RECORD_CONTRACT_COL, d.contractNumber);
+  if (rowIndex > 0) {
+    const lastCol = String.fromCharCode(64 + CUSTOMER_RECORD_HEADERS.length);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${CUSTOMER_RECORD_TAB}!A${rowIndex}:${lastCol}${rowIndex}`,
+      valueInputOption: 'RAW',
+      requestBody: { values:[row] }
+    });
+  } else {
+    await appendRow(sheets, CUSTOMER_RECORD_TAB, CUSTOMER_RECORD_HEADERS, row);
+  }
+}
+
+async function deleteCustomerRecordRow(contractNumber) {
+  const sheets = getSheets();
+  let rowIndex = await findRowByColumnValue(sheets, CUSTOMER_RECORD_TAB, CUSTOMER_RECORD_CONTRACT_COL, contractNumber);
+  while (rowIndex > 0) {
+    await deleteRow(sheets, CUSTOMER_RECORD_TAB, rowIndex);
+    rowIndex = await findRowByColumnValue(sheets, CUSTOMER_RECORD_TAB, CUSTOMER_RECORD_CONTRACT_COL, contractNumber);
+  }
+}
+
 // ── Write on contract save ────────────────────────────────────────────────────
 async function writeToAssigned(d) {
   const sheets = getSheets();
@@ -738,4 +783,5 @@ module.exports = {
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, updatePaymentInSheet, readPaymentFromSheet,
   deleteContractRowFromSheet,
+  upsertCustomerRecordRow, deleteCustomerRecordRow,
 };

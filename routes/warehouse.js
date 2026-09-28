@@ -19,6 +19,7 @@ const { moveToReceived, appendInventoryItem, inventoryItemExistsInSheet } = requ
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyReceived } = require('../utils/emailSender');
 const { buildDriveData } = require('./contracts');
+const { syncCustomerRecord } = require('../services/customers');
 
 router.use(requireRole(['admin', 'warehouse']));
 
@@ -72,7 +73,7 @@ router.get('/queue', (req, res) => {
       SELECT c.id, c.contract_number, c.make, c.model, c.web_order_number, c.truck_number,
         json_extract(c.data,'$.product.shellColor')   AS shell_color,
         json_extract(c.data,'$.product.cabinetColor') AS cabinet_color,
-        COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.status = 'order_placed'
@@ -173,6 +174,7 @@ router.post('/:id/receive', (req, res) => {
           });
         }
       } catch(e) { console.error('[Drive warehouse-received failed — non-fatal]', e.message); }
+      await syncCustomerRecord(req.params.id);
 
       logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'MARK_RECEIVED',
         actor: req.session.username || 'warehouse', detail: 'order_placed → received (warehouse)' });

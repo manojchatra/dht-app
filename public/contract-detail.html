@@ -441,8 +441,10 @@ function renderDetail(c) {
     '</div>' +
 
     '<div class="detail-section"><h3><i class="fa-solid fa-user"></i> Customer Details</h3><div class="info-grid">' +
+      (c.customer_number ? pKV('Customer ID', c.customer_number) : '') +
       pKV('Name', cu.name) + pKV('Email', cu.email) +
       pKV('Cell', cu.phone && cu.phone.cell) + pKV('Home', cu.phone && cu.phone.home) +
+      (cu.phone && cu.phone.work ? pKV('Work', cu.phone.work) : '') +
       pKV('Address', (cu.address||'')) + pKV('City / State / Zip', [cu.city, cu.state||'AZ', cu.zip].filter(Boolean).join(', ')) +
       pKV('How Heard', cu.heardAbout) +
       pKV('Gated', cu.gated ? 'Yes' : 'No') + (cu.gated && cu.gateCode ? pKV('Gate Code', cu.gateCode) : '') +

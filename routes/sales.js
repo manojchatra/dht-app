@@ -54,7 +54,7 @@ router.get('/:id', (req, res) => {
 
     const contracts = db.prepare(`
       SELECT c.id, c.contract_number, c.status, c.date, c.grand_total,
-        COALESCE(json_extract(c.data,'$.customer.name'), cu.name, '') AS customer_name
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.salesman_user_id = ?

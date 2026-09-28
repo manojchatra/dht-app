@@ -264,6 +264,17 @@ if (!existingCols.includes('review_email_attempts')) {
   console.log('[DB] contracts.review_email_attempts column added');
 }
 
+// Customer number (DHT-C00001) — allocated from settings.customer_sequence so a
+// number is never reused, even after its customer is deleted. Numbering of
+// existing customers happens in services/customers.js at startup.
+const customerCols = db.prepare('PRAGMA table_info(customers)').all().map(c=>c.name);
+if (!customerCols.includes('customer_number')) {
+  db.exec('ALTER TABLE customers ADD COLUMN customer_number TEXT');
+  console.log('[DB] customers.customer_number column added');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_number ON customers(customer_number)');
+db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES ('customer_sequence','0')").run();
+
 // ── Activity log ─────────────────────────────────────────────────────────────
 db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
