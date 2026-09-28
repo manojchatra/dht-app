@@ -2,11 +2,20 @@
 // highlights the current section, and runs the auth check every page needs
 // (was previously duplicated inline across ~14 pages).
 
+// Accordion: only one group open at a time — opening one collapses any other,
+// so the sidebar never grows tall enough to need its own scrollbar.
 function toggleNav(id) {
   const sub = document.getElementById('sub-' + id);
   const btn = document.getElementById('nav-' + id);
   const isOpen = sub.classList.toggle('open');
   btn.classList.toggle('nav-open', isOpen);
+  if (!isOpen) return;
+  document.querySelectorAll('.nav-sub.open').forEach(other => {
+    if (other === sub) return;
+    other.classList.remove('open');
+    const otherBtn = document.getElementById(other.id.replace(/^sub-/, 'nav-'));
+    if (otherBtn) otherBtn.classList.remove('nav-open');
+  });
 }
 
 function openMobileSidebar() {

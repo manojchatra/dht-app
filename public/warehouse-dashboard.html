@@ -59,6 +59,7 @@
     <div class="scan-row">
       <button class="btn btn-secondary btn-sm" id="rcvSerialScanBtn" onclick="startRcvSerialScan()"><i class="fa-solid fa-camera"></i> Scan</button>
       <button class="btn btn-secondary btn-sm" id="rcvSerialStopBtn" onclick="stopRcvSerialScan()" style="display:none">Stop</button>
+      <label class="btn btn-secondary btn-sm" onclick="stopRcvSerialScan()"><i class="fa-solid fa-image"></i> Take Photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="attachPhoto(this,'rcvSerialThumb','rcvSerialClearBtn',function(f){rcvSerialPhotoBlob=f})"></label>
       <img class="scan-thumb" id="rcvSerialThumb" style="display:none">
       <button class="scan-clear-btn" id="rcvSerialClearBtn" onclick="clearRcvSerialScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
@@ -69,6 +70,7 @@
     <div class="scan-row">
       <button class="btn btn-secondary btn-sm" id="rcvSkuScanBtn" onclick="startRcvSkuScan()"><i class="fa-solid fa-camera"></i> Scan</button>
       <button class="btn btn-secondary btn-sm" id="rcvSkuStopBtn" onclick="stopRcvSkuScan()" style="display:none">Stop</button>
+      <label class="btn btn-secondary btn-sm" onclick="stopRcvSkuScan()"><i class="fa-solid fa-image"></i> Take Photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="attachPhoto(this,'rcvSkuThumb','rcvSkuClearBtn',function(f){rcvSkuPhotoBlob=f})"></label>
       <img class="scan-thumb" id="rcvSkuThumb" style="display:none">
       <button class="scan-clear-btn" id="rcvSkuClearBtn" onclick="clearRcvSkuScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
@@ -93,6 +95,7 @@
     <div class="scan-row">
       <button class="btn btn-secondary btn-sm" id="invRcvSerialScanBtn" onclick="startInvRcvSerialScan()"><i class="fa-solid fa-camera"></i> Scan</button>
       <button class="btn btn-secondary btn-sm" id="invRcvSerialStopBtn" onclick="stopInvRcvSerialScan()" style="display:none">Stop</button>
+      <label class="btn btn-secondary btn-sm" onclick="stopInvRcvSerialScan()"><i class="fa-solid fa-image"></i> Take Photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="attachPhoto(this,'invRcvSerialThumb','invRcvSerialClearBtn',function(f){invRcvSerialPhotoBlob=f})"></label>
       <img class="scan-thumb" id="invRcvSerialThumb" style="display:none">
       <button class="scan-clear-btn" id="invRcvSerialClearBtn" onclick="clearInvRcvSerialScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
@@ -119,6 +122,18 @@ let rcvSerialScanner=null, rcvSkuScanner=null;
 let rcvSerialPhotoBlob=null, rcvSkuPhotoBlob=null;
 let rcvContractId=null;
 let invRcvSerialScanner=null, invRcvSerialPhotoBlob=null;
+
+// "Take Photo" fallback for labels the scanner can't read: the photo is taken
+// with the phone's own camera and the serial/SKU is typed in by hand. Fills
+// the same photo slot a successful scan would, so submit logic is unchanged.
+function attachPhoto(input,thumbId,clearBtnId,setPhoto){
+  const file=input.files&&input.files[0];
+  input.value=''; // allow re-taking (same file name would otherwise not fire onchange)
+  if(!file) return;
+  setPhoto(file);
+  const img=document.getElementById(thumbId); img.src=URL.createObjectURL(file); img.style.display='inline-block';
+  document.getElementById(clearBtnId).style.display='inline-block';
+}
 
 async function loadQueue(){
   try{
@@ -247,8 +262,8 @@ async function submitReceive(){
   const errEl=document.getElementById('rcvError');
   errEl.style.display='none';
   if(!serialNumber){ errEl.textContent='Serial number is required'; errEl.style.display='block'; return; }
-  if(!rcvSerialPhotoBlob){ errEl.textContent='Serial number photo is required — scan it above'; errEl.style.display='block'; return; }
-  if(!rcvSkuPhotoBlob){ errEl.textContent='SKU barcode photo is required — scan it above'; errEl.style.display='block'; return; }
+  if(!rcvSerialPhotoBlob){ errEl.textContent='Serial number photo is required — scan it or tap Take Photo above'; errEl.style.display='block'; return; }
+  if(!rcvSkuPhotoBlob){ errEl.textContent='SKU barcode photo is required — scan it or tap Take Photo above'; errEl.style.display='block'; return; }
 
   const btn=document.getElementById('rcvSaveBtn');
   btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';

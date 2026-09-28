@@ -47,6 +47,7 @@
     <div class="scan-row">
       <button class="btn btn-secondary" id="skuScanBtn" onclick="startSkuScan()"><i class="fa-solid fa-camera"></i> Start SKU Scan</button>
       <button class="btn btn-secondary" id="skuStopBtn" onclick="stopSkuScan()" style="display:none">Stop</button>
+      <label class="btn btn-secondary" onclick="stopSkuScan()"><i class="fa-solid fa-image"></i> Take Photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="attachPhoto(this,'skuThumb','skuClearBtn',function(f){skuPhotoBlob=f})"></label>
       <img class="scan-thumb" id="skuThumb" style="display:none">
       <button class="scan-clear-btn" id="skuClearBtn" onclick="clearSkuScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
@@ -64,6 +65,7 @@
     <div class="scan-row">
       <button class="btn btn-secondary" id="serialScanBtn" onclick="startSerialScan()"><i class="fa-solid fa-camera"></i> Start Serial Scan</button>
       <button class="btn btn-secondary" id="serialStopBtn" onclick="stopSerialScan()" style="display:none">Stop</button>
+      <label class="btn btn-secondary" onclick="stopSerialScan()"><i class="fa-solid fa-image"></i> Take Photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="attachPhoto(this,'serialThumb','serialClearBtn',function(f){serialPhotoBlob=f})"></label>
       <img class="scan-thumb" id="serialThumb" style="display:none">
       <button class="scan-clear-btn" id="serialClearBtn" onclick="clearSerialScan()" style="display:none" title="Clear scan">&times;</button>
     </div>
@@ -113,6 +115,18 @@ function showToast(msg,type='success'){
 let skuScanner=null, serialScanner=null;
 let skuPhotoBlob=null, serialPhotoBlob=null;
 let addMode='inhand';
+
+// "Take Photo" fallback for labels the scanner can't read: the photo is taken
+// with the phone's own camera and the SKU/serial is typed in by hand. Fills
+// the same photo slot a successful scan would, so submit logic is unchanged.
+function attachPhoto(input,thumbId,clearBtnId,setPhoto){
+  const file=input.files&&input.files[0];
+  input.value=''; // allow re-taking (same file name would otherwise not fire onchange)
+  if(!file) return;
+  setPhoto(file);
+  const img=document.getElementById(thumbId); img.src=URL.createObjectURL(file); img.style.display='inline-block';
+  document.getElementById(clearBtnId).style.display='inline-block';
+}
 
 function setMode(m){
   addMode=m;

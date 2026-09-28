@@ -19,6 +19,7 @@
 .filter-bar input,.filter-bar select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:13px;font-family:var(--font);outline:none}
 .filter-bar select{flex:1;min-width:150px}
 .filter-bar input:focus,.filter-bar select:focus{border-color:var(--secondary);box-shadow:0 0 0 3px var(--secondary-bg)}
+.filter-bar .clear-filters-btn{flex:0 0 auto;white-space:nowrap}
 
 .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px}
@@ -84,9 +85,13 @@
   <div class="stats-row" id="statsRow"></div>
   <div class="filter-bar">
     <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search customer, serial, make…" oninput="filterCards()"></div>
-    <select id="storeFilter" onchange="filterCards()"><option value="">All stores</option><option>Phoenix</option><option>Goodyear</option><option>Chandler</option><option>Surprise</option><option>Tolleson</option></select>
+    <select id="storeFilter" onchange="filterCards()"><option value="">All regions</option><option>Phoenix</option><option>Goodyear</option><option>Chandler</option><option>Surprise</option><option>Tolleson</option></select>
     <select id="statusFilter" onchange="filterCards()"><option value="">All statuses</option><option value="assigned">Assigned</option><option value="tbo">To Be Ordered</option><option value="order_placed">Order Placed</option><option value="received">Received</option><option value="scheduled">Scheduled</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select>
     <select id="payFilter" onchange="filterCards()"><option value="">All payments</option><option value="pending">Pending</option><option value="paid">Fully Paid</option></select>
+    <select id="yearFilter" onchange="filterCards()"><option value="">All years</option></select>
+    <select id="brandFilter" onchange="filterCards()"><option value="">All brands</option></select>
+    <select id="salesmanFilter" onchange="filterCards()"><option value="">All salesmen</option></select>
+    <button type="button" class="btn btn-secondary btn-sm clear-filters-btn" id="clearFiltersBtn" onclick="clearFilters()" style="display:none"><i class="fa-solid fa-xmark"></i> Clear filters</button>
   </div>
   <div class="contracts-grid" id="contractsGrid">
     <div class="empty-state" style="grid-column:1/-1"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div>
@@ -260,12 +265,55 @@ let allContracts=[],paymentContractId=null,currentBalance=0;
 const BADGE={assigned:'badge-assigned',tbo:'badge-tbo',order_placed:'badge-tbo',received:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
 const STATUS_LABEL={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
 
+// URL query param -> filter control id. Filters are mirrored into the URL so a
+// filtered view can be bookmarked/shared and survives a page refresh.
+const FILTER_PARAMS={q:'searchInput',region:'storeFilter',status:'statusFilter',pay:'payFilter',year:'yearFilter',brand:'brandFilter',salesman:'salesmanFilter'};
+let filtersRestored=false;
+
 async function loadContracts(){
   try{
     allContracts=await fetch('/api/contracts').then(r=>r.json());
-    renderStats(allContracts);renderCards(allContracts);
-    document.getElementById('totalCount').textContent=allContracts.length+' total';
+    populateFilterOptions();
+    if(!filtersRestored){restoreFiltersFromUrl();filtersRestored=true;}
+    filterCards();
   }catch(e){document.getElementById('contractsGrid').innerHTML='<p style="color:var(--red);text-align:center;padding:40px">Failed to load</p>';}
+}
+
+function contractYear(c){return String(c.date||c.created_at||'').slice(0,4);}
+
+// Year/Brand/Salesman options come from the contracts themselves, so a new
+// brand or salesman shows up without a code change. Keeps the current
+// selection if it still exists after a reload (e.g. after recording a payment).
+function fillSelect(id,values){
+  const sel=document.getElementById(id);
+  const keep=sel.value;
+  sel.length=1;
+  values.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});
+  sel.value=values.includes(keep)?keep:'';
+}
+function uniqueSorted(values){return [...new Set(values.map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));}
+function populateFilterOptions(){
+  fillSelect('yearFilter',uniqueSorted(allContracts.map(contractYear)).reverse());
+  fillSelect('brandFilter',uniqueSorted(allContracts.map(c=>c.make)));
+  fillSelect('salesmanFilter',uniqueSorted(allContracts.map(c=>c.salesman)));
+  // Sales users only ever get their own contracts back, so this filter is meaningless for them.
+  document.getElementById('salesmanFilter').style.display=window._userRole==='sales'?'none':'';
+}
+
+function restoreFiltersFromUrl(){
+  const params=new URLSearchParams(location.search);
+  Object.entries(FILTER_PARAMS).forEach(([key,id])=>{if(params.has(key))document.getElementById(id).value=params.get(key);});
+}
+function syncFiltersToUrl(){
+  const params=new URLSearchParams();
+  Object.entries(FILTER_PARAMS).forEach(([key,id])=>{const v=document.getElementById(id).value.trim();if(v)params.set(key,v);});
+  const qs=params.toString();
+  history.replaceState(null,'',location.pathname+(qs?'?'+qs:''));
+  document.getElementById('clearFiltersBtn').style.display=qs?'':'none';
+}
+function clearFilters(){
+  Object.values(FILTER_PARAMS).forEach(id=>{document.getElementById(id).value='';});
+  filterCards();
 }
 
 function renderStats(c){
@@ -273,7 +321,7 @@ function renderStats(c){
   const scheduled=c.filter(x=>x.status==='scheduled').length;
   const tbo=c.filter(x=>x.status==='tbo').length;
   document.getElementById('statsRow').innerHTML=`
-    <div class="stat-card"><div class="stat-num" style="color:var(--accent)">${c.length}</div><div class="stat-label">Total Contracts</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:var(--accent)">${c.length}</div><div class="stat-label">Contracts</div></div>
     <div class="stat-card"><div class="stat-num" style="color:#553c9a">${scheduled}</div><div class="stat-label">Scheduled</div></div>
     <div class="stat-card"><div class="stat-num" style="color:var(--yellow)">${tbo}</div><div class="stat-label">To Be Ordered</div></div>
     <div class="stat-card"><div class="stat-num" style="color:var(--red)">${pending}</div><div class="stat-label">Payment Pending</div></div>`;
@@ -284,6 +332,9 @@ function filterCards(){
   const store=document.getElementById('storeFilter').value;
   const status=document.getElementById('statusFilter').value;
   const pay=document.getElementById('payFilter').value;
+  const year=document.getElementById('yearFilter').value;
+  const brand=document.getElementById('brandFilter').value;
+  const salesman=document.getElementById('salesmanFilter').value;
   const filtered=allContracts.filter(c=>{
     const hay=[c.customer_name,c.serial_number,c.make,c.model,c.contract_number,c.salesman].join(' ').toLowerCase();
     if(q&&!hay.includes(q))return false;
@@ -291,10 +342,17 @@ function filterCards(){
     if(status&&c.status!==status)return false;
     if(pay==='pending'&&!(parseFloat(c.due_prior||0)>0))return false;
     if(pay==='paid'&&parseFloat(c.due_prior||0)>0)return false;
+    if(year&&contractYear(c)!==year)return false;
+    if(brand&&String(c.make||'').trim()!==brand)return false;
+    if(salesman&&String(c.salesman||'').trim()!==salesman)return false;
     return true;
   });
-  document.getElementById('totalCount').textContent=filtered.length+' of '+allContracts.length;
+  document.getElementById('totalCount').textContent=filtered.length===allContracts.length
+    ? allContracts.length+' total'
+    : filtered.length+' of '+allContracts.length;
+  renderStats(filtered);
   renderCards(filtered);
+  syncFiltersToUrl();
 }
 
 function renderCards(contracts){
