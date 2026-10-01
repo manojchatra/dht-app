@@ -106,7 +106,18 @@ async function generateAcknowledgementPDF({ contract, formData, customerSigPath,
   const custSig = imgB64(customerSigPath);
   const teamSig = imgB64(teamSigPath);
 
-  const today = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  // Date signed, in Arizona time (the server itself may run on UTC).
+  const today = new Date().toLocaleDateString('en-US',{timeZone:'America/Phoenix',month:'long',day:'numeric',year:'numeric'});
+  // Booked slot — scheduled_datetime is a naive Arizona-time string (YYYY-MM-DDTHH:MM).
+  let slot = '';
+  if (contract.scheduled_datetime) {
+    const dt    = contract.scheduled_datetime;
+    const start = new Date(dt.length === 16 ? dt + ':00-07:00' : dt);
+    const end   = new Date(start.getTime() + (contract.scheduled_duration||120)*60000);
+    const time  = d => d.toLocaleTimeString('en-US',{timeZone:'America/Phoenix',hour:'2-digit',minute:'2-digit'});
+    if (!isNaN(start)) slot = start.toLocaleDateString('en-US',{timeZone:'America/Phoenix',month:'long',day:'numeric',year:'numeric'})
+      + ', ' + time(start) + ' – ' + time(end);
+  }
 
   const docDef = {
     pageSize: 'LETTER', pageMargins: [36,40,36,40],
@@ -141,7 +152,8 @@ async function generateAcknowledgementPDF({ contract, formData, customerSigPath,
                 row2('Name', customerNameTyped || cu.name),
                 row2('Address', (cu.address||'')+(cu.city?', '+cu.city:'')+(cu.zip?' '+cu.zip:'')),
                 row2('Phone', cu.phone?.cell||cu.phone?.home||''),
-                row2('Delivery Date', contract.delivery_date||today),
+                ...(slot ? [row2('Delivery Slot', slot)] : []),
+                row2('Delivered On', today),
               ]}, layout:'noBorders' }
             ]
           },

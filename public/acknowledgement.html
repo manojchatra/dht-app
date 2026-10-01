@@ -163,7 +163,7 @@
       <div class="info-card-body">
         <div class="info-grid">
           <div class="info-field"><label>Name</label><div class="val" id="roCustomer">—</div></div>
-          <div class="info-field"><label>Delivery Date</label><div class="val" id="roDate">—</div></div>
+          <div class="info-field"><label>Delivery Slot</label><div class="val" id="roDate">—</div></div>
           <div class="info-field full"><label>Address</label><div class="val" id="roAddress">—</div></div>
         </div>
       </div>
@@ -453,6 +453,19 @@ function buildParts(wcType) {
   document.getElementById('partsList').innerHTML = html;
 }
 
+// The booked delivery slot, e.g. "Saturday, October 3, 2026 · 09:00 AM – 11:00 AM".
+// scheduled_datetime is a naive Arizona-time string (YYYY-MM-DDTHH:MM), so it
+// is pinned to -07:00 before formatting. Falls back to today if not scheduled.
+function fmtAckSlot(dt, dur) {
+  const opts = { timeZone:'America/Phoenix' };
+  if (!dt) return new Date().toLocaleDateString('en-US',{...opts,weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const start = new Date(dt.length === 16 ? dt + ':00-07:00' : dt);
+  const end   = new Date(start.getTime() + (dur||120)*60000);
+  const time  = d => d.toLocaleTimeString('en-US',{...opts,hour:'2-digit',minute:'2-digit'});
+  return start.toLocaleDateString('en-US',{...opts,weekday:'long',month:'long',day:'numeric',year:'numeric'})
+    + ' · ' + time(start) + ' – ' + time(end);
+}
+
 // ── Load contract ─────────────────────────────────────────────────────────────
 async function loadContract() {
   const r = await fetch('/api/delivery/contract/'+contractId);
@@ -460,9 +473,7 @@ async function loadContract() {
   contractData = await r.json();
   document.getElementById('ackContractNum').textContent = contractData.contract_number||'';
   document.getElementById('roCustomer').textContent = contractData.customer_name||'—';
-  document.getElementById('roDate').textContent = contractData.delivery_date
-    ? new Date(contractData.delivery_date+'T00:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})
-    : new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('roDate').textContent = fmtAckSlot(contractData.scheduled_datetime, contractData.scheduled_duration);
   document.getElementById('roAddress').textContent = (contractData.address||'—')+(contractData.zip?' '+contractData.zip:'');
   document.getElementById('roModel').textContent = (contractData.make||'')+(contractData.model?' '+contractData.model:'');
   document.getElementById('roYear').textContent = contractData.year||'—';

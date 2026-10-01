@@ -6,6 +6,7 @@
 const express = require('express');
 const path    = require('path');
 const fs      = require('fs');
+const crypto  = require('crypto');
 const multer  = require('multer');
 const router  = express.Router();
 const { compressAndGate } = require('../utils/imageUtils');
@@ -50,11 +51,13 @@ function requireDeliveryOrAdmin(req, res, next) {
 // Multer for exception images (PNG/JPEG, max 2)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(__dirname, '../uploads/tmp');
+    const dir = path.join(UPLOADS_DIR, 'tmp');
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.fieldname + path.extname(file.originalname))
+  // Random part is required: several photos in one request can arrive in the
+  // same millisecond, and a timestamp-only name made them overwrite each other.
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + crypto.randomBytes(6).toString('hex') + '-' + file.fieldname + path.extname(file.originalname))
 });
 const uploadAck = multer({ storage, limits:{ fileSize: 5*1024*1024 } });
 
@@ -211,7 +214,7 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
         return res.status(400).json({ error: 'At least 1 photo required when exceptions are noted' });
 
       // Contract folder
-      const contractFolder = path.join(__dirname, '../uploads/contracts', contract.contract_number);
+      const contractFolder = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
       fs.mkdirSync(contractFolder, { recursive: true });
 
       // Save signatures as PNG (uncompressed — preserve signature quality)
@@ -244,7 +247,9 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       }));
 
       // Generate acknowledgement PDF
-      const today     = new Date().toISOString().slice(0,10);
+      // Arizona date (MST, no DST) — a plain toISOString() is UTC and rolls
+      // over to tomorrow for anything signed after 5 pm local time.
+      const today     = new Date(Date.now() - 7 * 3600000).toISOString().slice(0,10);
       const pdfName   = `acknowledgement-${today}.pdf`;
       const pdfPath   = path.join(contractFolder, pdfName);
 

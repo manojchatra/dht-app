@@ -55,6 +55,24 @@ describe('POST /api/contracts', () => {
     expect(res.body.error).toBe('Cheque number is required');
   });
 
+  test('keeps every supporting image when several are uploaded in one request', async () => {
+    const agent = await loginAgent(ctx.app);
+    const img = await require('sharp')({ create: { width: 80, height: 60, channels: 3, background: '#999' } }).jpeg().toBuffer();
+
+    const res = await agent.post('/api/contracts')
+      .field('data', JSON.stringify(contractFormData()))
+      .attach('extraImages', img, { filename: 'a.jpg', contentType: 'image/jpeg' })
+      .attach('extraImages', img, { filename: 'b.jpg', contentType: 'image/jpeg' })
+      .attach('extraImages', img, { filename: 'c.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(200);
+    const extras = JSON.parse(ctx.db.prepare('SELECT extra_images FROM contracts WHERE id=?').get(res.body.contractId).extra_images);
+    expect(extras).toHaveLength(3);
+    const paths = extras.map(e => e.path);
+    expect(new Set(paths).size).toBe(3);
+    paths.forEach(p => expect(require('fs').existsSync(p)).toBe(true));
+  });
+
   test('a non-in-stock product starts life as To Be Ordered (tbo)', async () => {
     const agent = await loginAgent(ctx.app);
 

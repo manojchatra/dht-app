@@ -4,6 +4,7 @@ const router  = express.Router();
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
+const crypto  = require('crypto');
 const db      = require('../db/database');
 const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/googleCalendar');
 const { compressImage, compressAndGate } = require('../utils/imageUtils');
@@ -37,7 +38,9 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.fieldname}${path.extname(file.originalname) || '.jpg'}`);
+    // Random part keeps several extraImages from the same request (same
+    // millisecond) from overwriting each other.
+    cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}-${file.fieldname}${path.extname(file.originalname) || '.jpg'}`);
   },
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
