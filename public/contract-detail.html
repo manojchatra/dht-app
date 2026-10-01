@@ -145,8 +145,8 @@
     <h2 style="font-size:16px;margin-bottom:10px;color:var(--red)"><i class="fa-solid fa-triangle-exclamation"></i> Delete Contract</h2>
     <p style="color:var(--text-muted);margin-bottom:16px">Delete this contract? This cannot be undone.</p>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-secondary" onclick="document.getElementById('deleteModal').classList.remove('open')">Cancel</button>
-      <button class="btn btn-danger" onclick="executeDelete()"><i class="fa-solid fa-trash"></i> Delete</button>
+      <button class="btn btn-secondary" id="deleteCancelBtn" onclick="document.getElementById('deleteModal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-danger" id="deleteConfirmBtn" onclick="executeDelete()"><i class="fa-solid fa-trash"></i> Delete</button>
     </div>
   </div>
 </div>
@@ -640,13 +640,25 @@ async function submitPayment() {
   } catch(e) { showToast(e.message || 'Failed', 'error'); }
   finally { btn.disabled = false; }
 }
+let deleteInFlight = false;
 async function executeDelete() {
+  const btn = document.getElementById('deleteConfirmBtn');
+  const cancelBtn = document.getElementById('deleteCancelBtn');
+  if (deleteInFlight) return;
+  deleteInFlight = true;
+  btn.disabled = true; cancelBtn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...';
   try {
     const r = await fetch('/api/contracts/' + contractId, {method:'DELETE'});
     if (!r.ok) throw new Error((await r.json()).error);
     showToast('Contract deleted', 'success');
     setTimeout(() => window.location.href = '/contracts', 1200);
-  } catch(e) { showToast(e.message || 'Delete failed', 'error'); }
+  } catch(e) {
+    showToast(e.message || 'Delete failed', 'error');
+    deleteInFlight = false;
+    btn.disabled = false; cancelBtn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-trash"></i> Delete';
+  }
 }
 function openLightbox(url) {
   document.getElementById('lbImg').src = url;
@@ -656,7 +668,7 @@ function openLightbox(url) {
 function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
 document.getElementById('lightbox').addEventListener('click', function(e) { if(e.target===e.currentTarget) closeLightbox(); });
 document.getElementById('paymentModal').addEventListener('click', function(e) { if(e.target===e.currentTarget) closePaymentModal(); });
-document.getElementById('deleteModal').addEventListener('click', function(e) { if(e.target===e.currentTarget) document.getElementById('deleteModal').classList.remove('open'); });
+document.getElementById('deleteModal').addEventListener('click', function(e) { if(e.target===e.currentTarget && !deleteInFlight) document.getElementById('deleteModal').classList.remove('open'); });
 
 // ── Add Image on detail page ───────────────────────────────────────────────
 function openDetailAddImage() {

@@ -121,4 +121,20 @@ describe('DELETE /api/contracts/:id', () => {
     const gone = ctx.db.prepare('SELECT id FROM contracts WHERE id=?').get(contractId);
     expect(gone).toBeUndefined();
   });
+
+  test('two concurrent deletes of the same contract (double-click / two tabs): one succeeds, the other 404s — not a 500', async () => {
+    const adminAgent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
+    const created = await adminAgent.post('/api/contracts').send({ data: JSON.stringify(contractFormData()) });
+    const contractId = created.body.contractId;
+
+    const [r1, r2] = await Promise.all([
+      adminAgent.delete(`/api/contracts/${contractId}`),
+      adminAgent.delete(`/api/contracts/${contractId}`),
+    ]);
+    const statuses = [r1.status, r2.status].sort();
+    expect(statuses).toEqual([200, 404]);
+
+    const gone = ctx.db.prepare('SELECT id FROM contracts WHERE id=?').get(contractId);
+    expect(gone).toBeUndefined();
+  });
 });

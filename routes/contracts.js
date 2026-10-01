@@ -985,6 +985,12 @@ router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
 // ── Delete contract ───────────────────────────────────────────────────────────
 router.delete('/:id', requireAdmin, async (req, res) => {
   try {
+    // Serializes everything below per contract — a double-click or two tabs
+    // both confirming "Delete" at once would otherwise both read the row as
+    // still existing and race through the Calendar/Sheets/file cleanup
+    // twice. The row is (re-)fetched inside the lock so a queued second
+    // call sees it's already gone and 404s, instead of acting on stale data.
+    return await withLock('contract-delete:' + req.params.id, async () => {
     const row = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
 
@@ -1027,6 +1033,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     // Deleting is for mistakes — a customer left with no contracts goes too.
     const customerDeleted = deleteCustomerIfOrphan(row.customer_id);
     res.json({ success: true, customerDeleted });
+    }); // end withLock
   } catch (err) {
     console.error('Delete contract error:', err);
     res.status(500).json({ error: 'Failed to delete contract' });

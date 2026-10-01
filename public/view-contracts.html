@@ -186,7 +186,7 @@
     <h2 style="font-size:16px;margin-bottom:10px;color:var(--red)"><i class="fa-solid fa-triangle-exclamation"></i> Delete Contract</h2>
     <p id="deleteMsg" style="color:var(--text-muted);font-size:14px;line-height:1.6;margin-bottom:16px"></p>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-secondary" onclick="document.getElementById('deleteModal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-secondary" id="deleteCancelBtn" onclick="document.getElementById('deleteModal').classList.remove('open')">Cancel</button>
       <button class="btn btn-danger" id="deleteConfirmBtn"><i class="fa-solid fa-trash"></i> Delete</button>
     </div>
   </div>
@@ -522,21 +522,36 @@ async function submitSerialCard() {
 }
 
 let deleteTarget=null;
+let deleteInFlight=false;
 function confirmDelete(id,name){
   deleteTarget=id;
+  deleteInFlight=false;
   document.getElementById('deleteMsg').innerHTML='Delete contract for <strong>'+name+'</strong>? This cannot be undone.';
   document.getElementById('deleteModal').classList.add('open');
-  document.getElementById('deleteConfirmBtn').onclick=executeDelete;
+  const btn=document.getElementById('deleteConfirmBtn');
+  btn.disabled=false; document.getElementById('deleteCancelBtn').disabled=false;
+  btn.innerHTML='<i class="fa-solid fa-trash"></i> Delete';
+  btn.onclick=executeDelete;
 }
 async function executeDelete(){
-  if(!deleteTarget)return;
+  if(!deleteTarget||deleteInFlight)return;
+  deleteInFlight=true;
+  const btn=document.getElementById('deleteConfirmBtn');
+  const cancelBtn=document.getElementById('deleteCancelBtn');
+  btn.disabled=true; cancelBtn.disabled=true;
+  btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Deleting...';
   try{
     const r=await fetch('/api/contracts/'+deleteTarget,{method:'DELETE'});
     if(!r.ok)throw new Error((await r.json()).error);
     document.getElementById('deleteModal').classList.remove('open');
     showToast('Contract deleted','success');
     allContracts=allContracts.filter(c=>c.id!==deleteTarget);filterCards();deleteTarget=null;
-  }catch(e){showToast(e.message||'Delete failed','error')}
+  }catch(e){
+    showToast(e.message||'Delete failed','error');
+    deleteInFlight=false;
+    btn.disabled=false; cancelBtn.disabled=false;
+    btn.innerHTML='<i class="fa-solid fa-trash"></i> Delete';
+  }
 }
 function openLightbox(url){
   document.getElementById('lightboxImg').src=url;
@@ -545,7 +560,7 @@ function openLightbox(url){
 }
 function closeLightbox(){document.getElementById('lightbox').classList.remove('open')}
 var _lb=document.getElementById('lightbox'); if(_lb) _lb.addEventListener('click',e=>{if(e.target===e.currentTarget)closeLightbox()});
-var _dm=document.getElementById('deleteModal'); if(_dm) _dm.addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById('deleteModal').classList.remove('open')});
+var _dm=document.getElementById('deleteModal'); if(_dm) _dm.addEventListener('click',e=>{if(e.target===e.currentTarget&&!deleteInFlight)document.getElementById('deleteModal').classList.remove('open')});
 var _pm=document.getElementById('paymentModal'); if(_pm) _pm.addEventListener('click',e=>{if(e.target===e.currentTarget)closePaymentModal()});
 var _aim=document.getElementById('addImageModal'); if(_aim) _aim.addEventListener('click',e=>{if(e.target===e.currentTarget)closeAddImageModal()});
 
