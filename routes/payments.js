@@ -8,6 +8,18 @@ const { compressAndGate } = require('../utils/imageUtils');
 const { generateReceiptPDF } = require('../utils/receiptGenerator');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyPaymentRecorded } = require('../utils/emailSender');
+const { withLock } = require('../utils/asyncLock');
+
+// Returns the same success shape as a fresh insert, for an idempotency-key
+// hit — re-derives totals live rather than trusting anything cached.
+function existingPaymentResponse(paymentId) {
+  const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(paymentId);
+  const totalPaid = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(payment.contract_id).t;
+  const contract = db.prepare('SELECT data FROM contracts WHERE id=?').get(payment.contract_id);
+  const grandTotal = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
+  const newBalance = Math.max(0, grandTotal - totalPaid);
+  return { success: true, paymentId, totalPaid, newBalance, fullyPaid: newBalance <= 0 };
+}
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
 
@@ -39,20 +51,37 @@ router.post('/', withChequePhoto, async (req, res) => {
   // exit has to throw it away.
   const discardUpload = () => { if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) { /* already gone */ } } };
   try {
-    const { contractId, amount, method, chequeNumber, date, notes } = req.body;
+    const { contractId, amount, method, chequeNumber, date, notes, idempotencyKey } = req.body;
     if (!contractId || !amount || !method) {
       discardUpload();
       return res.status(400).json({ error: 'contractId, amount and method are required' });
     }
+
+    // Duplicate-submission fast path — a resubmit of the exact same attempt
+    // (browser Back, double-click) returns the already-recorded payment
+    // instead of validating/inserting again. Optional: omitted entirely by
+    // older clients and the test suite, which behave exactly as before.
+    if (idempotencyKey) {
+      discardUpload(); // a resend wouldn't need its own fresh photo even if one was attached
+      const dup = db.prepare('SELECT id FROM payments WHERE idempotency_key=?').get(idempotencyKey);
+      if (dup) return res.json(existingPaymentResponse(dup.id));
+    }
+
+    const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+    if (!contract) { discardUpload(); return res.status(404).json({ error: 'Contract not found' }); }
+
+    // Serializes everything below per contract, so the balance check and the
+    // insert are atomic relative to any other concurrent request for the
+    // SAME contract — closes the gap where two individually-under-balance
+    // partial payments could otherwise both pass the check. See
+    // utils/asyncLock.js.
+    return await withLock('contract-payment:' + contractId, async () => {
 
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) {
       discardUpload();
       return res.status(400).json({ error: 'Amount must be a positive number' });
     }
-
-    const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
-    if (!contract) { discardUpload(); return res.status(404).json({ error: 'Contract not found' }); }
 
     const totalPaidBefore = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t;
     const grandTotalCheck = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
@@ -76,12 +105,25 @@ router.post('/', withChequePhoto, async (req, res) => {
       }
     }
 
-    // Insert payment
-    const ins = db.prepare(`
-      INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by)
-      VALUES (?,?,?,?,?,?,?)
-    `).run(contractId, amt, method, chequeNumber||null,
-        date||new Date().toISOString().slice(0,10), notes||null, req.session.username);
+    // Insert payment. A UNIQUE violation on idempotency_key means a
+    // concurrent request with the same key won the race between this
+    // request's fast-path check above and its own insert — return that
+    // request's row instead of erroring.
+    let ins;
+    try {
+      ins = db.prepare(`
+        INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by,idempotency_key)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).run(contractId, amt, method, chequeNumber||null,
+          date||new Date().toISOString().slice(0,10), notes||null, req.session.username, idempotencyKey||null);
+    } catch (e) {
+      if (idempotencyKey && /UNIQUE constraint failed/.test(e.message)) {
+        discardUpload();
+        const dup = db.prepare('SELECT id FROM payments WHERE idempotency_key=?').get(idempotencyKey);
+        if (dup) return res.json(existingPaymentResponse(dup.id));
+      }
+      throw e;
+    }
 
     // Recalculate balance = grand_total - all payments recorded
     const totalPaid  = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t;
@@ -159,6 +201,7 @@ router.post('/', withChequePhoto, async (req, res) => {
       newBalance,
       fullyPaid:  newBalance <= 0,
     });
+    }); // end withLock
   } catch (err) {
     discardUpload();
     console.error('Payment error:', err);

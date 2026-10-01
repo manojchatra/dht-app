@@ -6,3 +6,11 @@ function escHtml(s) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
+
+// newIdempotencyKey: a fresh id for one submit attempt (contract creation,
+// payment recording). Carrying the SAME key through a resubmit — a browser
+// Back navigation, a double-click — lets the server recognize it as the same
+// attempt and return the original result instead of creating a duplicate.
+function newIdempotencyKey() {
+  return (crypto.randomUUID ? crypto.randomUUID() : 'idk-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+}

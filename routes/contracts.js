@@ -21,6 +21,7 @@ const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
 const { queueReviewEmail } = require('../utils/reviewEmail');
+const { withLock } = require('../utils/asyncLock');
 const {
   normalizeContractPhones, nextCustomerNumber,
   syncCustomerRecord, syncCustomerRecordsForCustomer, removeCustomerRecord, deleteCustomerIfOrphan,
@@ -294,6 +295,19 @@ router.get('/meta/salesmen', (req, res) => {
 router.post('/', uploadFields, async (req, res) => {
   try {
     const formData = JSON.parse(req.body.data);
+
+    // Duplicate-submission guard — same draft resubmitted (browser Back to a
+    // still-filled preview page, double-click Save, etc.) must not create a
+    // second contract. Safe as a plain synchronous check-then-proceed: there
+    // is no `await` anywhere between here and the INSERT below (customer
+    // upsert and file-moving are both synchronous), the same property that
+    // already makes the order_placed guard further down race-safe.
+    const idempotencyKey = (formData.idempotencyKey || '').trim() || null;
+    if (idempotencyKey) {
+      const dup = db.prepare('SELECT id, contract_number FROM contracts WHERE idempotency_key=?').get(idempotencyKey);
+      if (dup) return res.json({ success: true, contractId: dup.id, contractNumber: dup.contract_number });
+    }
+
     const { customer, product, payment, costing, details } = formData; // full formData for extraction
 
     // Truncate in place, before anything downstream reads these — customer/
@@ -444,8 +458,8 @@ router.post('/', uploadFields, async (req, res) => {
         (contract_number,customer_id,store,date,delivery_date,salesman,salesman_user_id,
          product_status,status,serial_number,make,model,
          grand_total,paid_amount,due_prior,
-         data,contract_image_path,cheque_image_path,extra_images)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         data,contract_image_path,cheque_image_path,extra_images,idempotency_key)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       contractNumber, customerId,
       formData.store, formData.date, formData.deliveryDate, truncate(formData.salesman, MAX_LEN.salesman), salesmanUserId,
@@ -453,7 +467,8 @@ router.post('/', uploadFields, async (req, res) => {
       grandTotal, paid, pending,
       JSON.stringify(cleanData),
       contractImagePath, chequeImagePath,
-      extraImagePaths.length ? JSON.stringify(extraImagePaths) : null
+      extraImagePaths.length ? JSON.stringify(extraImagePaths) : null,
+      idempotencyKey
     );
 
     const contractId = ins.lastInsertRowid;
@@ -646,6 +661,12 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
   }
 
   try {
+    // Serializes everything below per contract — two requests for the SAME
+    // contract (a resubmit, a double-click) run one after the other instead
+    // of racing; the second sees the already-updated status/calendar_event_id
+    // from the first, rather than both reading stale pre-update values. See
+    // utils/asyncLock.js.
+    await withLock('contract-status:' + req.params.id, async () => {
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Not found' });
     if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {
@@ -655,6 +676,16 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     // Block In Stock → Received
     if (status === 'received' && contract.product_status === 'instock') {
       return res.status(400).json({ error: 'In Stock contracts do not go through Received. Change to Scheduled or Delivered directly.' });
+    }
+
+    // Reject repeating a status that's already been applied — otherwise a
+    // resubmit re-fires that status's email and re-runs its Sheets move.
+    // (delivered is handled separately below as a terminal status.)
+    if (status === 'received' && contract.status === 'received') {
+      return res.status(400).json({ error: 'Contract is already marked received.' });
+    }
+    if (status === 'cancelled' && contract.status === 'cancelled') {
+      return res.status(400).json({ error: 'Contract is already cancelled.' });
     }
 
     // Order Placed: only reachable from TBO, and requires both fields
@@ -859,6 +890,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     }
 
     res.json({ success: true });
+    });
   } catch (err) {
     console.error('Status update error:', err);
     res.status(500).json({ error: 'Failed to update status' });

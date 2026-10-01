@@ -217,6 +217,7 @@ function toggleActionMenu(e,id){
 <script>
 const contractId = window.location.pathname.split('/').pop();
 let currentBalance = 0;
+let paymentIdempotencyKey = null;
 const METHOD_LABELS = {cash:'Cash',cheque:'Cheque',credit_card:'Credit Card',finance:'Finance'};
 const STATUS_LABEL = {assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
 const BADGE = {assigned:'badge-assigned',tbo:'badge-tbo',order_placed:'badge-tbo',received:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
@@ -575,7 +576,19 @@ function loadPostDeliveryFeedback(contractId) {
   }).catch(function(){});
 }
 
+function paymentIdemStorageKey() { return 'dht-payment-idem:' + contractId; }
 function openPaymentModal() {
+  // Reuse a key already sitting in sessionStorage for THIS contract (an
+  // interrupted attempt — e.g. the page was refreshed mid-submit) rather
+  // than generating a fresh one, so a refresh-then-resubmit is still
+  // recognized as the same attempt. Scoped per contract, not a single fixed
+  // key, since sessionStorage persists across same-tab navigation to a
+  // DIFFERENT contract's detail page. Cleared on confirmed success below.
+  paymentIdempotencyKey = sessionStorage.getItem(paymentIdemStorageKey());
+  if (!paymentIdempotencyKey) {
+    paymentIdempotencyKey = newIdempotencyKey();
+    sessionStorage.setItem(paymentIdemStorageKey(), paymentIdempotencyKey);
+  }
   document.getElementById('payAmount').value = '';
   document.getElementById('payDate').value = new Date().toISOString().slice(0,10);
   syncTextFromDate('payDate','payDateText');
@@ -615,11 +628,13 @@ async function submitPayment() {
     fd.append('chequeNumber', document.getElementById('payChequeNum').value);
     fd.append('date', document.getElementById('payDate').value);
     fd.append('notes', document.getElementById('payNotes').value);
+    fd.append('idempotencyKey', paymentIdempotencyKey);
     const photo = document.getElementById('payChequePhoto').files[0];
     if (method === 'cheque' && photo) fd.append('chequePhoto', photo);
     const r = await fetch('/api/payments', {method:'POST', body:fd});
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
     closePaymentModal(); currentBalance = j.newBalance;
+    sessionStorage.removeItem(paymentIdemStorageKey()); // confirmed success — the NEXT payment gets a fresh key
     showToast('Payment recorded' + (j.fullyPaid ? ' — Fully Paid!' : ''), 'success');
     loadContract();
   } catch(e) { showToast(e.message || 'Failed', 'error'); }

@@ -35,6 +35,7 @@ const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered } = require('.
 const { moveToDelivered } = require('../services/driveInventory');
 const { buildDriveData } = require('./contracts');
 const { queueReviewEmail } = require('../utils/reviewEmail');
+const { withLock } = require('../utils/asyncLock');
 
 // Auth middleware — delivery or admin
 function requireDeliveryOrAdmin(req, res, next) {
@@ -172,6 +173,25 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
       if (!contract) return res.status(404).json({ error: 'Not found' });
 
+      // Serializes everything below per contract — closes the double-submit
+      // gap (double-tap on a slow connection, or a resubmit) where nothing
+      // previously stopped this route running twice: it would duplicate every
+      // photo/signature/PDF entry in the gallery (read-modify-write on
+      // extra_images) and could send the customer the acknowledgement email
+      // twice. Shares its key namespace with PATCH /:id/status's lock, so
+      // this also can't race against an admin marking the same contract
+      // delivered from the status board at the same moment. See
+      // utils/asyncLock.js.
+      return await withLock('contract-status:' + req.params.id, async () => {
+
+      // Re-check fresh, now that we hold the lock — `contract` above could be
+      // stale if another request for this contract already ran while this
+      // one was queued.
+      const fresh = db.prepare('SELECT status FROM contracts WHERE id=?').get(req.params.id);
+      if (fresh.status === 'delivered') {
+        return res.status(400).json({ error: 'This contract has already been marked delivered.' });
+      }
+
       const { customerNameTyped, deliveredBy, formDataJson } = req.body;
       if (!customerNameTyped?.trim()) return res.status(400).json({ error: 'Customer name is required' });
       if (!deliveredBy?.trim())       return res.status(400).json({ error: 'Delivered By is required' });
@@ -286,17 +306,17 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       addNotification(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'DELIVERED', color: 'green', message: contract.contract_number+' — marked delivered via acknowledgement' });
       try { queueReviewEmail(req.params.id); }
       catch (e) { console.error('[Review email queue failed — non-fatal]', e.message); }
-      // Tell the salesperson to start their 48-hour follow-up — the admin status
-      // route already does this on delivery, but this path never did. Skipped when
-      // the contract was already delivered, since an acknowledgement can be re-submitted.
-      if (contract.status !== 'delivered') {
-        try {
-          const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
-          const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
-          await notifyDelivered({ contract: freshContract, customerName: custName });
-        } catch (e) { console.error('[Email notify DELIVERED failed — non-fatal]', e.message); }
-      }
+      // Tell the salesperson to start their 48-hour follow-up — the admin
+      // status route already does this on delivery, but this path never did.
+      // The guard above already rules out this contract having been
+      // delivered before now, so this always applies to a fresh delivery.
+      try {
+        const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+        const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
+        await notifyDelivered({ contract: freshContract, customerName: custName });
+      } catch (e) { console.error('[Email notify DELIVERED failed — non-fatal]', e.message); }
       res.json(emailError ? { success: true, pdfName, emailError } : { success: true, pdfName });
+      }); // end withLock
     } catch(e) {
       console.error('[Acknowledgement POST]', e.message, e.stack);
       res.status(500).json({ error: 'Failed to save acknowledgement: ' + e.message });

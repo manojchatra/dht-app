@@ -105,7 +105,7 @@
       </select></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeSlotModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSlot()"><i class="fa-solid fa-calendar-check"></i> Confirm Schedule</button>
+      <button class="btn btn-primary" id="slotConfirmBtn" onclick="submitSlot()"><i class="fa-solid fa-calendar-check"></i> Confirm Schedule</button>
     </div>
   </div>
 </div>
@@ -145,7 +145,7 @@
       </select></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeReschedule()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitReschedule()"><i class="fa-solid fa-check"></i> Reschedule</button>
+      <button class="btn btn-primary" id="reschedConfirmBtn" onclick="submitReschedule()"><i class="fa-solid fa-check"></i> Reschedule</button>
     </div>
   </div>
 </div>
@@ -517,17 +517,21 @@ function openSlotModal(id) {
 }
 function closeSlotModal() { document.getElementById('slotModal').classList.remove('open'); slotContractId=null; }
 async function submitSlot() {
+  const btn=document.getElementById('slotConfirmBtn');
+  if(btn.disabled) return;
   const date=document.getElementById('slotDate').value;
   const start=document.getElementById('slotStart').value;
   const dur=document.getElementById('slotDuration').value;
   if (!date||!start) { showToast('Date and time required','error'); return; }
   const dt=slotToDatetime(date,start);
+  btn.disabled=true;
   try {
     const r=await fetch('/api/contracts/'+slotContractId+'/status',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'scheduled',scheduledDatetime:dt,scheduledDuration:dur,deliveryTeam:document.getElementById('slotTeam')?.value||'team_a'})});
     const j=await r.json(); if(!r.ok){showToast(j.error||'Failed','error');return;}
     closeSlotModal(); showToast('Scheduled: '+formatSlot(dt,dur),'success');
     allContracts=await fetch('/api/contracts').then(r=>r.json()); renderGrid();
   } catch(e){showToast(e.message||'Failed','error');}
+  finally{btn.disabled=false;}
 }
 
 // ── Reschedule modal ──────────────────────────────────────────────────────────
@@ -545,17 +549,21 @@ function openReschedule(id) {
 }
 function closeReschedule(){document.getElementById('rescheduleModal').classList.remove('open');rescheduleContractId=null;}
 async function submitReschedule(){
+  const btn=document.getElementById('reschedConfirmBtn');
+  if(btn.disabled) return;
   const date=document.getElementById('reschedDate').value;
   const start=document.getElementById('reschedStart').value;
   const dur=document.getElementById('reschedDuration').value;
   if(!date||!start){showToast('Date and time required','error');return;}
   const dt=slotToDatetime(date,start);
+  btn.disabled=true;
   try{
     const r=await fetch('/api/contracts/'+rescheduleContractId+'/status',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'scheduled',scheduledDatetime:dt,scheduledDuration:dur,deliveryTeam:document.getElementById('reschedTeam')?.value||'team_a'})});
     const j=await r.json();if(!r.ok){showToast(j.error||'Failed','error');return;}
     closeReschedule();showToast('Rescheduled: '+formatSlot(dt,dur),'success');
     allContracts=await fetch('/api/contracts').then(r=>r.json());renderGrid();
   }catch(e){showToast(e.message||'Failed','error');}
+  finally{btn.disabled=false;}
 }
 
 // ── Order Placed modal ────────────────────────────────────────────────────────

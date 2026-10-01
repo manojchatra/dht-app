@@ -236,6 +236,14 @@ if(!stored){
   document.getElementById('previewBody').innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted)"><i class="fa-solid fa-triangle-exclamation" style="font-size:24px;display:block;margin-bottom:10px;color:var(--yellow)"></i>No draft found. <a href="/contracts/new" style="color:var(--accent)">Start a new contract</a></div>';
 }else{
   draftData=JSON.parse(stored);
+  // Stable across a Back-navigation/reload of THIS same draft, so a resubmit
+  // is recognized server-side as the same attempt rather than a new
+  // contract. A genuinely new draft (sessionStorage cleared on success, or
+  // starting over from /contracts/new) gets a fresh one here.
+  if(!draftData.idempotencyKey){
+    draftData.idempotencyKey=newIdempotencyKey();
+    sessionStorage.setItem('draftContract',JSON.stringify(draftData));
+  }
   renderPreview(draftData);
 }
 </script>

@@ -264,6 +264,21 @@ if (!existingCols.includes('review_email_attempts')) {
   console.log('[DB] contracts.review_email_attempts column added');
 }
 
+// Idempotency keys — a client-generated id carried through a resubmitted
+// form (browser Back, double-click, etc.) so the same submit attempt can
+// only ever create one contract / one payment. SQLite's UNIQUE index allows
+// unlimited NULLs, so this is a no-op for every pre-existing row.
+if (!existingCols.includes('idempotency_key')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN idempotency_key TEXT');
+  console.log('[DB] contracts.idempotency_key column added');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_idempotency_key ON contracts(idempotency_key)');
+if (!paymentCols.includes('idempotency_key')) {
+  db.exec('ALTER TABLE payments ADD COLUMN idempotency_key TEXT');
+  console.log('[DB] payments.idempotency_key column added');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency_key ON payments(idempotency_key)');
+
 // Customer number (DHT-C00001) — allocated from settings.customer_sequence so a
 // number is never reused, even after its customer is deleted. Numbering of
 // existing customers happens in services/customers.js at startup.
