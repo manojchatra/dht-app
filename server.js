@@ -34,9 +34,13 @@ app.use(session({
   },
 }));
 
+const { requireAuth } = require('./middleware/auth');
+
 const uploadsDir = path.join(__dirname, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
-app.use('/uploads', express.static(uploadsDir));
+// Uploaded files are per-customer/contract data (PDFs, signatures, cheque
+// photos, receipts) — never serve them without authentication.
+app.use('/uploads', requireAuth, express.static(uploadsDir));
 app.use('/css', express.static(path.join(__dirname, 'public/css')));
 app.use('/img', express.static(path.join(__dirname, 'public/img')));
 app.use('/js',  express.static(path.join(__dirname, 'public/js')));
@@ -45,8 +49,6 @@ app.use('/partials', express.static(path.join(__dirname, 'public/partials')));
 // DB init
 require('./db/database');
 require('./services/customers').assignMissingCustomerNumbers();
-
-const { requireAuth } = require('./middleware/auth');
 
 // Auth (public)
 app.use('/auth', require('./routes/auth'));

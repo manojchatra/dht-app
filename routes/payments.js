@@ -9,6 +9,12 @@ const { generateReceiptPDF } = require('../utils/receiptGenerator');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyPaymentRecorded } = require('../utils/emailSender');
 const { withLock } = require('../utils/asyncLock');
+const { requireRole } = require('../middleware/auth');
+
+// Payment data is financial/customer data — only admin and sales have any
+// business reason to see it. Ownership (which salesman) is checked per
+// route below, same pattern as routes/contracts.js.
+router.use(requireRole(['admin', 'sales']));
 
 // Returns the same success shape as a fresh insert, for an idempotency-key
 // hit — re-derives totals live rather than trusting anything cached.
@@ -35,7 +41,14 @@ const chequeUpload = multer({
     filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + (path.extname(file.originalname) || '.jpg')),
   }),
   limits: { fileSize: 20 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+  // Reject with a visible error, not a silent drop — `cb(null, false)` would
+  // make multer discard the file with no error at all, so a rejected photo
+  // (e.g. an unexpected mimetype) would look identical to the user as a
+  // payment recorded with no photo attached, no error shown.
+  fileFilter: (req, file, cb) => {
+    if (/^image\//.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Cheque photo must be an image file (got "' + (file.mimetype || 'unknown') + '")'));
+  },
 }).single('chequePhoto');
 
 function withChequePhoto(req, res, next) {
@@ -69,6 +82,10 @@ router.post('/', withChequePhoto, async (req, res) => {
 
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
     if (!contract) { discardUpload(); return res.status(404).json({ error: 'Contract not found' }); }
+    if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {
+      discardUpload();
+      return res.status(403).json({ error: 'Forbidden — not your contract' });
+    }
 
     // Serializes everything below per contract, so the balance check and the
     // insert are atomic relative to any other concurrent request for the
@@ -212,6 +229,12 @@ router.post('/', withChequePhoto, async (req, res) => {
 // ── List payments for a contract ──────────────────────────────────────────────
 router.get('/contract/:contractId', (req, res) => {
   try {
+    const contract = db.prepare('SELECT salesman_user_id FROM contracts WHERE id=?').get(req.params.contractId);
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {
+      return res.status(403).json({ error: 'Forbidden — not your contract' });
+    }
+
     const payments = db.prepare(
       'SELECT * FROM payments WHERE contract_id=? ORDER BY date,created_at'
     ).all(req.params.contractId);
@@ -228,6 +251,10 @@ router.get('/:id/receipt', async (req, res) => {
     const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(req.params.id);
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
     const contract = db.prepare('SELECT c.*, cu.name AS customer_name FROM contracts c LEFT JOIN customers cu ON c.customer_id=cu.id WHERE c.id=?').get(payment.contract_id);
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {
+      return res.status(403).json({ error: 'Forbidden — not your contract' });
+    }
 
     // Serve cached receipt if it exists
     const pdfDir  = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);

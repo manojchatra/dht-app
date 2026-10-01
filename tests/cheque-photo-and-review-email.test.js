@@ -59,6 +59,19 @@ describe('cheque photo on POST /api/payments', () => {
     expect(ctx.db.prepare('SELECT cheque_image_path FROM payments WHERE id=?').get(res.body.paymentId).cheque_image_path).toBeNull();
   });
 
+  test('a non-image file sent as the cheque photo is rejected with a visible error, not silently dropped', async () => {
+    const agent = await loginAgent(ctx.app);
+    const { contractId } = await unpaidContract(agent);
+
+    const res = await agent.post('/api/payments')
+      .field('contractId', String(contractId)).field('amount', '300').field('method', 'cheque')
+      .attach('chequePhoto', Buffer.from('not an image'), { filename: 'x.txt', contentType: 'text/plain' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/must be an image file/);
+    expect(ctx.db.prepare('SELECT COUNT(*) AS c FROM payments WHERE contract_id=?').get(contractId).c).toBe(0);
+  });
+
   test('a rejected payment (exceeds balance) leaves no temp upload behind and records nothing', async () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await unpaidContract(agent);
