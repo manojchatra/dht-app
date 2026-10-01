@@ -1,19 +1,21 @@
 /**
- * Weekly SQLite backup — uses better-sqlite3's online backup API (safe to
+ * Daily SQLite backup (run by scripts/nightly-backup.sh) — uses better-sqlite3's online backup API (safe to
  * run while the app is serving traffic), writes to a fixed, web-inaccessible
  * directory outside public/public_html, and prunes old backups beyond the
  * retention window.
  *
  * Usage: node scripts/backup-db.js
- * Intended to be run on a schedule (Hestia cron), not imported.
+ * Intended to be run on a schedule (via nightly-backup.sh from cron), not imported.
  */
 const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 
-const DB_PATH     = path.join(__dirname, '../../data/dht-app.db');
+const DB_PATH     = process.env.DB_PATH || path.join(__dirname, '../../data/dht-app.db');
 const BACKUP_DIR  = process.env.DB_BACKUP_DIR || path.join(__dirname, '../../backups/db');
-const RETENTION   = 8; // keep the last 8 backups (~2 months at weekly cadence)
+// Keep the last N backups — 14 = two weeks at the daily cadence run by
+// scripts/nightly-backup.sh. Override with DB_BACKUP_RETENTION.
+const RETENTION   = parseInt(process.env.DB_BACKUP_RETENTION, 10) || 14;
 
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
