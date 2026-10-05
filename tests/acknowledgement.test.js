@@ -22,7 +22,7 @@ async function submitAck(agent, contractId, photos) {
   const sig = await signature();
   let req = agent.post(`/api/delivery/acknowledgement/${contractId}`)
     .field('customerNameTyped', 'Jane Test')
-    .field('deliveredBy', 'JV Spa Movers')
+    .field('deliveredBy', 'Clear Choice Team')
     .field('formDataJson', JSON.stringify({ customerSig: sig, teamSig: sig, exceptions: '' }));
   for (const [i, buf] of photos.entries()) {
     req = req.attach('deliveryPhotos', buf, { filename: `photo-${i + 1}.jpg`, contentType: 'image/jpeg' });

@@ -143,9 +143,10 @@ router.post('/', withChequePhoto, async (req, res) => {
     }
 
     // Recalculate balance = grand_total - all payments recorded
-    const totalPaid  = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t;
+    // Rounded to cents — plain float subtraction leaves e.g. 8767.09 - 8767 = 0.0900000000000145.
+    const totalPaid  = Math.round(db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t * 100) / 100;
     const grandTotal = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
-    const newBalance = Math.max(0, grandTotal - totalPaid);
+    const newBalance = Math.max(0, Math.round((grandTotal - totalPaid) * 100) / 100);
 
     db.prepare('UPDATE contracts SET due_prior=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
       .run(String(newBalance), contractId);

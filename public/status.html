@@ -100,8 +100,8 @@
       </select></div>
     <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Assign Team *</label>
       <select id="slotTeam" style="width:100%">
-        <option value="team_a">JV Spa Movers</option>
-        <option value="team_b">Clear Choice Movers</option>
+        <option value="team_a">Clear Choice Team</option>
+        <option value="team_b">Installation Team</option>
       </select></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeSlotModal()">Cancel</button>
@@ -140,8 +140,8 @@
       </select></div>
     <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Assign Team</label>
       <select id="reschedTeam" style="width:100%">
-        <option value="team_a">JV Spa Movers</option>
-        <option value="team_b">Clear Choice Movers</option>
+        <option value="team_a">Clear Choice Team</option>
+        <option value="team_b">Installation Team</option>
       </select></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeReschedule()">Cancel</button>
@@ -352,6 +352,9 @@ const _schedData = {};
 
 // Bank Owned -> red bank icon, DHT Owned -> green dollar-in-circle icon.
 // Blank/unset (no linked inventory item, or item not yet marked either way) shows nothing.
+// Money with exactly 2 decimals, e.g. 7087 -> "7,087.00", 0.0900000000000145 -> "0.09".
+function fmtMoney(v){ return (parseFloat(v)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
 function financeIcon(finance){
   if(finance==='Bank Owned') return '<i class="fa-solid fa-building-columns" style="color:var(--red)" title="Bank Owned"></i>';
   if(finance==='DHT Owned') return '<i class="fa-solid fa-circle-dollar-to-slot" style="color:var(--green)" title="DHT Owned"></i>';
@@ -373,7 +376,7 @@ function buildCard(c) {
 
   // Extra status info
   let extraInfo = '';
-  const _TNAMES = { team_a:'JV Spa Movers', team_b:'Clear Choice Movers' };
+  const _TNAMES = { team_a:'Clear Choice Team', team_b:'Installation Team' };
   if (isScheduled && c.scheduled_datetime)
     extraInfo = '<div class="sc-scheduled"><i class="fa-solid fa-calendar-check"></i> ' + formatSlot(c.scheduled_datetime, c.scheduled_duration||120) + '</div>'
               + (c.delivery_team ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px"><i class="fa-solid fa-people-carry-box"></i> '+(_TNAMES[c.delivery_team]||c.delivery_team)+'</div>' : '<div style="font-size:11px;color:var(--red);margin-top:2px"><i class="fa-solid fa-triangle-exclamation"></i> No team assigned</div>');
@@ -464,7 +467,7 @@ function buildCard(c) {
     + '<div class="sc-sub">'+escHtml(c.store||'—')+' · '+dateStr+'</div>'
     + '<div class="sc-meta"><span>'+escHtml(c.make||'')+' '+escHtml(c.model||'')+'</span></div>'
     + (c.serial_number ? '<div class="sc-meta"><span style="color:var(--text-muted)">S/N: '+escHtml(c.serial_number)+'</span></div>' : '')
-    + '<div class="sc-meta"><span class="sc-total">'+(c.grand_total?'$'+c.grand_total:'—')+'</span>'+(parseFloat(c.due_prior||0)>0?'<span style="font-size:11px;color:var(--red);font-weight:500">Due: $'+c.due_prior+'</span>':'')+'</div>'
+    + '<div class="sc-meta"><span class="sc-total">'+(c.grand_total?'$'+c.grand_total:'—')+'</span>'+(parseFloat(c.due_prior||0)>0?'<span style="font-size:11px;color:var(--red);font-weight:500">Due: $'+fmtMoney(c.due_prior)+'</span>':'')+'</div>'
     + extraInfo
     + '</div>'
     + (actions ? '<div class="status-card-actions">'+actions+'</div>' : '')

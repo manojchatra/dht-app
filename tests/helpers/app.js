@@ -46,6 +46,8 @@ function createTestApp() {
     deleteContractRowFromSheet:   jest.fn().mockResolvedValue(null),
     upsertCustomerRecordRow:      jest.fn().mockResolvedValue(null),
     deleteCustomerRecordRow:      jest.fn().mockResolvedValue(null),
+    appendInventoryItem:          jest.fn().mockResolvedValue(null),
+    deleteInventoryItem:          jest.fn().mockResolvedValue(true),
   }));
 
   jest.doMock('../../utils/emailSender', () => ({
@@ -57,6 +59,7 @@ function createTestApp() {
     sendAcknowledgementEmail:  jest.fn().mockResolvedValue(null),
     sendEmail:                 jest.fn().mockResolvedValue(null),
     sendReviewRequestEmail:    jest.fn().mockResolvedValue(null),
+    notifyUserCreated:         jest.fn().mockResolvedValue(null),
     getStoreReviewUrl:         jest.fn().mockReturnValue('https://g.page/r/test/review'),
   }));
 

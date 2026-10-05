@@ -466,13 +466,15 @@ function renderDetail(c) {
         (mfg.brands||[]).map(function(b){return cbHtml(b,true)}).join('') +
         (mfg.componentYrs ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Components: <strong>' + mfg.componentYrs + ' yrs</strong></div>' : '') +
         (mfg.shellYrs ? '<div style="font-size:12px;color:var(--text-muted)">Shell: <strong>' + mfg.shellYrs + ' yrs</strong></div>' : '') +
-        (mfg.extWarrantyYrs ? '<div style="font-size:12px;color:var(--text-muted)">Ext. Warranty: <strong>' + mfg.extWarrantyYrs + ' yrs</strong></div>' : '') +
+        (mfg.cabinetYrs ? '<div style="font-size:12px;color:var(--text-muted)">Cabinet: <strong>' + escHtml(mfg.cabinetYrs) + ' yrs</strong></div>' : '') +
+        (mfg.extWarrantyYrs ? '<div style="font-size:12px;color:var(--text-muted)">Ext. Warranty: <strong>' + escHtml(mfg.extWarrantyYrs) + ' yrs</strong></div>' : '') +
       '</div>' +
       '<div><div style="font-size:12px;font-weight:600;margin-bottom:8px">EMP / Dealership</div>' +
         (dlr.brands||[]).map(function(b){return cbHtml(b,true)}).join('') +
         (dlr.componentYrs ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Components: <strong>' + dlr.componentYrs + ' yrs</strong></div>' : '') +
         (dlr.shellYrs ? '<div style="font-size:12px;color:var(--text-muted)">Shell: <strong>' + dlr.shellYrs + ' yrs</strong></div>' : '') +
-        (dlr.extWarrantyYrs ? '<div style="font-size:12px;color:var(--text-muted)">Ext. Warranty: <strong>' + dlr.extWarrantyYrs + ' yrs</strong></div>' : '') +
+        (dlr.cabinetYrs ? '<div style="font-size:12px;color:var(--text-muted)">Cabinet: <strong>' + escHtml(dlr.cabinetYrs) + ' yrs</strong></div>' : '') +
+        (dlr.extWarrantyYrs ? '<div style="font-size:12px;color:var(--text-muted)">Ext. Warranty: <strong>' + escHtml(dlr.extWarrantyYrs) + ' yrs</strong></div>' : '') +
       '</div>' +
     '</div></div>' +
 
@@ -562,7 +564,7 @@ function loadPostDeliveryFeedback(contractId) {
       body = '<div style="color:var(--text-muted);font-size:13px">No feedback available</div>';
     } else {
       body = '<div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">Contacted after delivery/installation?</label><div style="font-size:13px">' + (f.contacted ? 'Yes' : 'No') + '</div></div>'
-        + '<div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">Google review provided?</label><div style="font-size:13px">' + (f.google_review ? 'Yes' : 'No') + '</div></div>'
+        + '<div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">' + reviewAnswer(f).label + '</label><div style="font-size:13px">' + escHtml(reviewAnswer(f).value) + '</div></div>'
         + RATING_LABELS.map(function(r){
             return '<div style="margin-bottom:10px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">' + r[1] + '</label><div style="font-size:13px">' + (f[r[0]]||'—') + ' / 5</div></div>';
           }).join('')
@@ -813,6 +815,17 @@ if(_sam)_sam.addEventListener('click',function(e){if(e.target===e.currentTarget)
 // Deferred until sidebar.js's auth check sets window._userRole, so isAdmin
 // inside renderDetail() is never computed before it's known (was a race).
 window._onAuthReady = loadContract;
+
+// Feedback before the change answered "Google review provided?"; newer feedback
+// records whether a review email was requested (and when it actually went out).
+function reviewAnswer(f) {
+  if (f.send_review_email === null || f.send_review_email === undefined)
+    return { label: 'Google review provided?', value: f.google_review ? 'Yes' : 'No' };
+  var value = !f.send_review_email ? 'No'
+    : f.review_email_sent_at ? 'Yes — sent ' + new Date(f.review_email_sent_at.replace(' ', 'T') + 'Z').toLocaleString('en-US', { timeZone: 'America/Phoenix', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'Yes — not sent yet (will retry)';
+  return { label: 'Google review email sent to customer?', value: value };
+}
 </script>
 <div class="modal-overlay" id="detailAddImageModal">
   <div class="modal-box" style="max-width:440px">

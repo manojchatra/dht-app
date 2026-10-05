@@ -49,6 +49,16 @@ router.get('/search', (req, res) => {
   }
 });
 
+// GET /api/inventory/serial-exists?serial=XYZ — { exists } — New Contract shows
+// the DHT/Bank Owned choice only for a serial that isn't in inventory yet
+// (saving that contract creates the unit).
+router.get('/serial-exists', (req, res) => {
+  const serial = String(req.query.serial || '').trim();
+  if (!serial) return res.json({ exists: false });
+  const row = db.prepare('SELECT 1 FROM inventory WHERE serial_number = ?').get(serial);
+  res.json({ exists: !!row });
+});
+
 // POST /api/inventory/refresh — force re-download of the OLD Sheets Inventory
 // cache. Unrelated to the DB-backed search above; left as-is, out of scope.
 router.post('/refresh', async (req, res) => {

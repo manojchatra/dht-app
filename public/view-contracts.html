@@ -361,6 +361,17 @@ function renderCards(contracts){
   grid.innerHTML=contracts.map(c=>buildCard(c)).join('');
 }
 
+// Money with exactly 2 decimals, e.g. 7087 -> "7,087.00", 0.0900000000000145 -> "0.09".
+function fmtMoney(v){ return (parseFloat(v)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+// Finance indicator for the contract's linked inventory unit (same icons as the
+// contract page and Status board).
+function financeIcon(finance){
+  if(finance==='Bank Owned') return '<i class="fa-solid fa-building-columns" style="color:var(--red)" title="Bank Owned"></i>';
+  if(finance==='DHT Owned') return '<i class="fa-solid fa-circle-dollar-to-slot" style="color:var(--green)" title="DHT Owned"></i>';
+  return '';
+}
+
 function buildCard(c){
   const hasPending=parseFloat(c.due_prior||0)>0;
   const isAdmin=window._userRole==='admin';
@@ -375,7 +386,7 @@ function buildCard(c){
   const spaLine=[c.make,c.model].filter(Boolean).join(' ');
   return `<div class="contract-card${hasPending?' pending-pay':''}">
     <div class="card-top">
-      <div class="card-top-row1"><span class="contract-num">${escHtml(c.contract_number||'Draft')}</span><span class="badge ${BADGE[c.status]||'badge-assigned'}">${STATUS_LABEL[c.status]||c.status}</span></div>
+      <div class="card-top-row1"><span class="contract-num">${escHtml(c.contract_number||'Draft')}</span><span style="display:flex;align-items:center;gap:6px">${financeIcon(c.linked_finance)}<span class="badge ${BADGE[c.status]||'badge-assigned'}">${STATUS_LABEL[c.status]||c.status}</span></span></div>
       <div class="cust-name">${escHtml(c.customer_name||'Unknown Customer')}</div>
       <div class="store-sub">${escHtml(c.store||'—')}</div>
       <div class="cust-sub">${escHtml(c.customer_email||'')}${c.customer_phone?' · '+escHtml(c.customer_phone):''}</div>
@@ -388,7 +399,7 @@ function buildCard(c){
       <div class="meta-row"><span class="lbl">Grand Total</span><span class="val total">${c.grand_total?'$'+c.grand_total:'—'}</span></div>
     </div>
     ${imgRow}
-    ${hasPending?`<div class="pay-banner banner-pending"><i class="fa-solid fa-triangle-exclamation"></i> Due: $${c.due_prior}</div>`:`<div class="pay-banner banner-paid"><i class="fa-solid fa-circle-check"></i> Paid</div>`}
+    ${hasPending?`<div class="pay-banner banner-pending"><i class="fa-solid fa-triangle-exclamation"></i> Due: $${fmtMoney(c.due_prior)}</div>`:`<div class="pay-banner banner-paid"><i class="fa-solid fa-circle-check"></i> Paid</div>`}
     <div class="card-actions">
       <a href="/contracts/${c.id}" class="btn btn-secondary btn-sm"><i class="fa-solid fa-eye"></i> View</a>
       <a href="/api/contracts/${c.id}/pdf" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i> PDF</a>

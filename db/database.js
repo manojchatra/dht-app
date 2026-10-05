@@ -263,6 +263,55 @@ if (!existingCols.includes('review_email_attempts')) {
   db.exec('ALTER TABLE contracts ADD COLUMN review_email_attempts INTEGER DEFAULT 0');
   console.log('[DB] contracts.review_email_attempts column added');
 }
+// The review email is now requested from the post-delivery feedback form
+// ("Send Google review email to the customer?") instead of being queued
+// automatically on delivery. send_review_email holds that answer; the old
+// google_review column ("has the customer reviewed?") is kept for feedback
+// submitted before the change.
+if (!pdfCols.includes('send_review_email')) {
+  db.exec('ALTER TABLE post_delivery_feedback ADD COLUMN send_review_email INTEGER');
+  console.log('[DB] post_delivery_feedback.send_review_email column added');
+}
+// One-time: cancel review emails the old automatic rule queued but never sent.
+if (!db.prepare("SELECT 1 FROM settings WHERE key='review_auto_queue_cancelled'").get()) {
+  const n = db.prepare(`UPDATE contracts SET review_email_due_at=NULL
+    WHERE review_email_sent_at IS NULL AND review_email_due_at IS NOT NULL`).run().changes;
+  db.prepare("INSERT INTO settings (key,value) VALUES ('review_auto_queue_cancelled', datetime('now'))").run();
+  if (n) console.log(`[DB] cancelled ${n} automatically queued review email(s)`);
+}
+// Back-entered contracts — saved straight to Delivered because their delivery
+// date was already past (old sales entered after the fact). They need no
+// post-delivery follow-up. One-time: flag the ones entered before this column
+// existed — delivered, with a delivery date earlier than the (Arizona) day they
+// were created. A normal delivery is always on or after the day it was entered.
+if (!existingCols.includes('back_entered')) {
+  db.exec('ALTER TABLE contracts ADD COLUMN back_entered INTEGER DEFAULT 0');
+  console.log('[DB] contracts.back_entered column added');
+}
+if (!db.prepare("SELECT 1 FROM settings WHERE key='back_entered_flagged'").get()) {
+  const n = db.prepare(`UPDATE contracts SET back_entered=1
+    WHERE status='delivered' AND COALESCE(delivery_date,'') <> ''
+      AND delivery_date < date(created_at, '-7 hours')`).run().changes;
+  db.prepare("INSERT INTO settings (key,value) VALUES ('back_entered_flagged', datetime('now'))").run();
+  if (n) console.log(`[DB] flagged ${n} back-entered contract(s)`);
+}
+// One-time: round balances/paid totals saved with float noise (e.g. "0.0900000000000145")
+// to cents. New values are rounded where they're saved (routes/payments.js, contracts.js).
+if (!db.prepare("SELECT 1 FROM settings WHERE key='money_rounded'").get()) {
+  const n = db.prepare(`UPDATE contracts
+    SET due_prior   = CASE WHEN due_prior   GLOB '*.???*' THEN printf('%.2f', CAST(due_prior AS REAL))   ELSE due_prior END,
+        paid_amount = CASE WHEN paid_amount GLOB '*.???*' THEN printf('%.2f', CAST(paid_amount AS REAL)) ELSE paid_amount END
+    WHERE due_prior GLOB '*.???*' OR paid_amount GLOB '*.???*'`).run().changes;
+  db.prepare("INSERT INTO settings (key,value) VALUES ('money_rounded', datetime('now'))").run();
+  if (n) console.log(`[DB] rounded money values on ${n} contract(s)`);
+}
+// Inventory units created automatically by a contract (a typed serial that
+// wasn't in inventory) remember that contract, so deleting the contract can
+// remove the unit it created.
+if (!inventoryCols.includes('created_by_contract_id')) {
+  db.exec('ALTER TABLE inventory ADD COLUMN created_by_contract_id INTEGER');
+  console.log('[DB] inventory.created_by_contract_id column added');
+}
 
 // Idempotency keys — a client-generated id carried through a resubmitted
 // form (browser Back, double-click, etc.) so the same submit attempt can

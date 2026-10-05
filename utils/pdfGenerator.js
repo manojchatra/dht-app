@@ -2,6 +2,8 @@
  * pdfGenerator.js — Desert Hot Tubs Purchase Contract PDF
  * Design: new checkbox style, selected-only options, color chips, full-width payment
  */
+const fs       = require('fs');
+const path     = require('path');
 const pdfMake  = require('pdfmake/build/pdfmake');
 const vfsFonts = require('pdfmake/build/vfs_fonts');
 pdfMake.vfs = vfsFonts.pdfMake ? vfsFonts.pdfMake.vfs : vfsFonts;
@@ -111,8 +113,30 @@ function payRow(label, selected, detail, amount) {
 }
 
 // ── Main generator ────────────────────────────────────────────────────────────
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
+
+// Customer signature drawn on the contract form (saved by routes/contracts.js
+// as uploads/contracts/<number>/sig-contract-customer.png). Returns
+// { image, date } or null when the contract was not signed digitally.
+function contractSignature(contract) {
+  const sig = contract.data?.signature;
+  if (!sig?.file || !contract.contract_number) return null;
+  const file = path.join(UPLOADS_DIR, 'contracts', contract.contract_number, path.basename(sig.file));
+  if (!fs.existsSync(file)) return null;
+  const date = sig.signedAt
+    ? new Date(sig.signedAt).toLocaleDateString('en-US', { timeZone: 'America/Phoenix', month: '2-digit', day: '2-digit', year: 'numeric' })
+    : '';
+  const buf = fs.readFileSync(file);
+  // Drawn size inside a 200x42pt box (pdfmake "fit"), from the PNG header —
+  // lets the Date column line up with the bottom of the signature.
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  const height = Math.min(42, (200 * h) / w) || 42;
+  return { image: 'data:image/png;base64,' + buf.toString('base64'), date, height };
+}
+
 async function generateContractPDF(contract) {
   const d   = contract.data || {};
+  const sig = contractSignature(contract);
   const cu  = d.customer    || {};
   const pr  = d.product     || {};
   const wa  = d.warranty    || {};
@@ -225,7 +249,7 @@ async function generateContractPDF(contract) {
           { columns:[
             kv('COMPONENTS', mfg.componentYrs?mfg.componentYrs+' yrs':''),
             kv('SHELL',      mfg.shellYrs?mfg.shellYrs+' yrs':''),
-            kv('EXT. WARRANTY', mfg.extWarrantyYrs?mfg.extWarrantyYrs+' yrs':''),
+            mfg.extWarrantyYrs ? kv('EXT. WARRANTY', mfg.extWarrantyYrs+' yrs') : kv('CABINET', mfg.cabinetYrs?mfg.cabinetYrs+' yrs':''),
           ], columnGap:8 },
         ]},
         { width:8, text:'' },
@@ -240,7 +264,7 @@ async function generateContractPDF(contract) {
           { columns:[
             kv('COMPONENTS', dlr.componentYrs?dlr.componentYrs+' yrs':''),
             kv('SHELL',      dlr.shellYrs?dlr.shellYrs+' yrs':''),
-            kv('EXT. WARRANTY', dlr.extWarrantyYrs?dlr.extWarrantyYrs+' yrs':''),
+            dlr.extWarrantyYrs ? kv('EXT. WARRANTY', dlr.extWarrantyYrs+' yrs') : kv('CABINET', dlr.cabinetYrs?dlr.cabinetYrs+' yrs':''),
           ], columnGap:8 },
         ]},
       ], margin:[0,0,0,4] },
@@ -465,11 +489,13 @@ async function generateContractPDF(contract) {
       // ── SIGNATURE ──────────────────────────────────────────────────────────
       { columns:[
         { width:'45%', stack:[
+          ...(sig ? [{ image: sig.image, fit:[200,42], margin:[0,0,0,2] }] : []),
           { canvas:[{type:'line',x1:0,y1:0,x2:200,y2:0,lineWidth:0.7,lineColor:C.dark}] },
           { text:'Customer Signature', fontSize:6.5, color:C.grey, margin:[0,3,0,0] },
         ]},
         { width:'*', text:'' },
         { width:'25%', stack:[
+          ...(sig ? [{ text: sig.date, fontSize:9, margin:[0,Math.max(0, sig.height - 11),0,2] }] : []),
           { canvas:[{type:'line',x1:0,y1:0,x2:120,y2:0,lineWidth:0.7,lineColor:C.dark}] },
           { text:'Date', fontSize:6.5, color:C.grey, margin:[0,3,0,0] },
         ]},

@@ -110,8 +110,8 @@
     <option value="warehouse">Warehouse</option>
   </select>
   <select id="newUserTeam" style="display:none">
-    <option value="team_a">JV Spa Movers</option>
-    <option value="team_b">Clear Choice Movers</option>
+    <option value="team_a">Clear Choice Team</option>
+    <option value="team_b">Installation Team</option>
   </select></div>
         <button class="btn btn-primary" onclick="addUser()"><i class="fa-solid fa-plus"></i> Add</button>
       </div>
@@ -147,8 +147,8 @@
     <div style="margin-bottom:14px">
       <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Team</label>
       <select id="editUserTeam" style="width:100%">
-        <option value="team_a">JV Spa Movers</option>
-        <option value="team_b">Clear Choice Movers</option>
+        <option value="team_a">Clear Choice Team</option>
+        <option value="team_b">Installation Team</option>
       </select>
     </div>
     <div id="editUserError" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none"></div>
@@ -340,7 +340,7 @@ async function loadUsers() {
     if (!Array.isArray(users)) throw new Error('Unexpected response: ' + JSON.stringify(users).slice(0,100));
     usersCache = users;
     const tbody = document.getElementById('usersTbody');
-    const roleLabel = u => u.role==='admin'?'Admin':u.role==='delivery'?('Delivery — '+(u.team==='team_a'?'JV Spa Movers':'Clear Choice Movers')):u.role==='warehouse'?'Warehouse':'Sales';
+    const roleLabel = u => u.role==='admin'?'Admin':u.role==='delivery'?('Delivery — '+(u.team==='team_a'?'Clear Choice Team':'Installation Team')):u.role==='warehouse'?'Warehouse':'Sales';
     tbody.innerHTML = users.map(u =>
       '<tr><td style="font-weight:500">' + escHtml(u.name||'—') + '</td>' +
       '<td>' + escHtml(u.username) + '</td>' +

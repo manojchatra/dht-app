@@ -101,137 +101,134 @@ describe('cheque photo on POST /api/payments', () => {
   });
 });
 
-describe('delivery queues the review email', () => {
-  const dueAt = id => ctx.db.prepare('SELECT review_email_due_at FROM contracts WHERE id=?').get(id).review_email_due_at;
-  const paidInStock = (agent, serial) => createContract(agent, {
-    product: { status: 'instock', serialNumber: serial, make: 'TestMake', model: 'TestModel', year: '2026', shellColor: 'Grey', cabinetColor: 'Espresso' },
-    payment: { cheque: { selected: true, number: '1001', amount: '5000' } },
-    costing: { grandTotal: '5000' },
+describe('Google review email — sent from the post-delivery feedback form', () => {
+  const emailSender = () => require('../utils/emailSender');
+  const reviewEmail = () => require('../utils/reviewEmail');
+  const row = id => ctx.db.prepare('SELECT * FROM contracts WHERE id=?').get(id);
+  const feedback = id => ctx.db.prepare('SELECT * FROM post_delivery_feedback WHERE contract_id=?').get(id);
+  const makeDue = id => ctx.db.prepare("UPDATE contracts SET review_email_due_at=datetime('now','-1 minute') WHERE id=?").run(id);
+  let serialNo = 0;
+
+  async function deliveredContract(agent, overrides = {}) {
+    const { contractId } = await createContract(agent, {
+      product: { status: 'instock', serialNumber: `ZZREVIEW-${++serialNo}`, make: 'TestMake', model: 'TestModel', year: '2026', shellColor: 'Grey', cabinetColor: 'Espresso' },
+      payment: { cheque: { selected: true, number: '1001', amount: '5000' } },
+      costing: { grandTotal: '5000' },
+      ...overrides,
+    });
+    const res = await agent.patch(`/api/contracts/${contractId}/status`).send({ status: 'delivered' });
+    expect(res.status).toBe(200);
+    return contractId;
+  }
+  const answers = (sendReviewEmail) => ({
+    contacted: 1, send_review_email: sendReviewEmail,
+    rating_delivery: 5, rating_installation: 5, rating_explanation: 4, rating_confidence: 5, rating_overall: 5,
+  });
+  const admin = () => loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
+
+  beforeEach(() => {
+    emailSender().sendReviewRequestEmail.mockReset().mockResolvedValue(null);
+    emailSender().getStoreReviewUrl.mockReset().mockReturnValue('https://g.page/r/test/review');
   });
 
-  test('marking a contract delivered from the status route queues it', async () => {
-    const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
-    const { contractId } = await paidInStock(agent, 'ZZREVIEW-1');
-    expect(dueAt(contractId)).toBeNull();
+  test('delivering a contract no longer schedules a review email', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
+    expect(row(id).review_email_due_at).toBeNull();
+    expect(emailSender().sendReviewRequestEmail).not.toHaveBeenCalled();
+  });
 
-    const res = await agent.patch(`/api/contracts/${contractId}/status`).send({ status: 'delivered' });
+  test('the form is told the email is available when the showroom has a link and the customer an email', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
+    const res = await agent.get(`/api/post-delivery/contract/${id}`);
+    expect(res.body.review_email_available).toBe(true);
+  });
+
+  test('no review link for the showroom: the form gets the reason, so Yes can be disabled', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
+    emailSender().getStoreReviewUrl.mockReturnValue('');
+    const res = await agent.get(`/api/post-delivery/contract/${id}`);
+    expect(res.body.review_email_available).toBe(false);
+    expect(res.body.review_email_unavailable_reason).toMatch(/No Google review link is set for Phoenix/);
+  });
+
+  test('answering Yes sends the email straight away with the store link', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
+
+    const res = await agent.post(`/api/post-delivery/feedback/${id}`).send(answers(1));
 
     expect(res.status).toBe(200);
-    expect(dueAt(contractId)).toBeTruthy();
+    expect(res.body.reviewEmail).toEqual({ sent: true });
+    expect(emailSender().sendReviewRequestEmail).toHaveBeenCalledWith(expect.objectContaining({
+      customerEmail: 'jane.test@example.com', reviewUrl: 'https://g.page/r/test/review',
+    }));
+    expect(row(id).review_email_sent_at).toBeTruthy();
+    expect(feedback(id).send_review_email).toBe(1);
   });
 
-  test('a contract auto-delivered at creation (delivery date in the past) is never queued', async () => {
-    const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
-    const { contractId } = await createContract(agent, {
-      deliveryDate: '2020-01-15',
-      product: { status: 'instock', serialNumber: 'ZZREVIEW-HIST', make: 'TestMake', model: 'TestModel', year: '2026', shellColor: 'Grey', cabinetColor: 'Espresso' },
-      payment: { cheque: { selected: true, number: '1002', amount: '5000' } },
-      costing: { grandTotal: '5000' },
-    });
+  test('answering No sends nothing', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
 
-    expect(ctx.db.prepare('SELECT status FROM contracts WHERE id=?').get(contractId).status).toBe('delivered');
-    expect(dueAt(contractId)).toBeNull();
-  });
-});
+    const res = await agent.post(`/api/post-delivery/feedback/${id}`).send(answers(0));
 
-describe('google review email queue', () => {
-  const reviewEmail = () => require('../utils/reviewEmail');
-  const emailSender = () => require('../utils/emailSender');
-  const row = id => ctx.db.prepare('SELECT * FROM contracts WHERE id=?').get(id);
-  const makeDue = id => ctx.db.prepare("UPDATE contracts SET review_email_due_at=datetime('now','-1 minute') WHERE id=?").run(id);
-
-  test('queueReviewEmail stamps a due time ~24h out, once', async () => {
-    const agent = await loginAgent(ctx.app);
-    const { contractId } = await unpaidContract(agent);
-
-    reviewEmail().queueReviewEmail(contractId);
-    const first = row(contractId).review_email_due_at;
-    expect(first).toBeTruthy();
-    const hours = (new Date(first.replace(' ', 'T') + 'Z') - Date.now()) / 3600000;
-    expect(hours).toBeGreaterThan(23);
-    expect(hours).toBeLessThan(25);
-
-    reviewEmail().queueReviewEmail(contractId); // e.g. acknowledgement re-submitted
-    expect(row(contractId).review_email_due_at).toBe(first);
+    expect(res.status).toBe(200);
+    expect(res.body.reviewEmail).toBeNull();
+    expect(emailSender().sendReviewRequestEmail).not.toHaveBeenCalled();
+    expect(feedback(id).send_review_email).toBe(0);
   });
 
-  test('a contract that was never queued is never emailed (historical auto-delivered entries)', async () => {
-    const agent = await loginAgent(ctx.app);
-    const { contractId } = await unpaidContract(agent);
-    emailSender().sendReviewRequestEmail.mockClear();
+  test('Yes without a review link: feedback is saved, no email, reason returned', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
+    emailSender().getStoreReviewUrl.mockReturnValue('');
 
-    await reviewEmail().processDueReviewEmails();
+    const res = await agent.post(`/api/post-delivery/feedback/${id}`).send(answers(1));
 
-    expect(emailSender().sendReviewRequestEmail.mock.calls.some(c => c[0].customerEmail === 'jane.test@example.com' && row(contractId).review_email_sent_at)).toBe(false);
-    expect(row(contractId).review_email_sent_at).toBeNull();
+    expect(res.status).toBe(200);
+    expect(res.body.reviewEmail.sent).toBe(false);
+    expect(res.body.reviewEmail.reason).toMatch(/No Google review link/);
+    expect(emailSender().sendReviewRequestEmail).not.toHaveBeenCalled();
+    expect(feedback(id).status).toBe('submitted');
   });
 
-  test('a due contract gets the email with its store link, and is marked sent exactly once', async () => {
-    const agent = await loginAgent(ctx.app);
-    const { contractId } = await unpaidContract(agent);
-    reviewEmail().queueReviewEmail(contractId);
-    makeDue(contractId);
-    const { sendReviewRequestEmail, getStoreReviewUrl } = emailSender();
-    sendReviewRequestEmail.mockClear();
-
-    await reviewEmail().processDueReviewEmails();
-    await reviewEmail().processDueReviewEmails();
-
-    expect(getStoreReviewUrl).toHaveBeenCalledWith('Phoenix');
-    const mine = sendReviewRequestEmail.mock.calls.filter(c => c[0].reviewUrl === 'https://g.page/r/test/review' && c[0].customerEmail === 'jane.test@example.com');
-    expect(mine).toHaveLength(1);
-    expect(row(contractId).review_email_sent_at).toBeTruthy();
+  test('the question must be answered', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
+    const body = answers(1); delete body.send_review_email;
+    const res = await agent.post(`/api/post-delivery/feedback/${id}`).send(body);
+    expect(res.status).toBe(400);
   });
 
-  test('a not-yet-due contract is left alone', async () => {
-    const agent = await loginAgent(ctx.app);
-    const { contractId } = await unpaidContract(agent);
-    reviewEmail().queueReviewEmail(contractId);
-
-    await reviewEmail().processDueReviewEmails();
-
-    expect(row(contractId).review_email_sent_at).toBeNull();
-  });
-
-  test('no link configured for the store: not sent, attempt counted, retried later', async () => {
-    const agent = await loginAgent(ctx.app);
-    const { contractId } = await unpaidContract(agent);
-    reviewEmail().queueReviewEmail(contractId);
-    makeDue(contractId);
-    emailSender().getStoreReviewUrl.mockReturnValueOnce('');
-
-    await reviewEmail().processDueReviewEmails();
-
-    const r = row(contractId);
-    expect(r.review_email_sent_at).toBeNull();
-    expect(r.review_email_attempts).toBe(1);
-    expect(new Date(r.review_email_due_at.replace(' ', 'T') + 'Z').getTime()).toBeGreaterThan(Date.now());
-  });
-
-  test('gives up after 3 failed attempts', async () => {
-    const agent = await loginAgent(ctx.app);
-    const { contractId } = await unpaidContract(agent);
-    reviewEmail().queueReviewEmail(contractId);
+  test('a failed send is retried by the poller, and given up after 3 attempts', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
     emailSender().sendReviewRequestEmail.mockRejectedValue(new Error('smtp down'));
 
-    for (let i = 0; i < 5; i++) { makeDue(contractId); await reviewEmail().processDueReviewEmails(); }
-    emailSender().sendReviewRequestEmail.mockResolvedValue(null);
+    const res = await agent.post(`/api/post-delivery/feedback/${id}`).send(answers(1));
+    expect(res.status).toBe(200);
+    expect(res.body.reviewEmail.sent).toBe(false);
+    expect(row(id).review_email_attempts).toBe(1);
+    expect(row(id).review_email_due_at).toBeTruthy();
 
-    const r = row(contractId);
-    expect(r.review_email_attempts).toBe(3);
-    expect(r.review_email_sent_at).toBeNull();
+    for (let i = 0; i < 4; i++) { makeDue(id); await reviewEmail().processDueReviewEmails(); }
+    expect(row(id).review_email_attempts).toBe(3);
+    expect(row(id).review_email_sent_at).toBeNull();
   });
 
-  test('a customer with no email on file is skipped, not retried', async () => {
-    const agent = await loginAgent(ctx.app);
-    const base = await createContract(agent, { payment: {}, costing: { grandTotal: '5000' }, customer: { name: 'No Email', email: '', zip: '85099', phone: { cell: '5551112222' }, address: '1 A St', city: 'Phoenix', state: 'AZ' } });
-    reviewEmail().queueReviewEmail(base.contractId);
-    makeDue(base.contractId);
-    emailSender().sendReviewRequestEmail.mockClear();
+  test('a retry that succeeds marks the email sent', async () => {
+    const agent = await admin();
+    const id = await deliveredContract(agent);
+    emailSender().sendReviewRequestEmail.mockRejectedValueOnce(new Error('smtp down'));
 
+    await agent.post(`/api/post-delivery/feedback/${id}`).send(answers(1));
+    makeDue(id);
     await reviewEmail().processDueReviewEmails();
 
-    expect(row(base.contractId).review_email_sent_at).toBeNull();
-    expect(row(base.contractId).review_email_attempts).toBe(3);
+    expect(row(id).review_email_sent_at).toBeTruthy();
+    expect(emailSender().sendReviewRequestEmail).toHaveBeenCalledTimes(2);
   });
 });

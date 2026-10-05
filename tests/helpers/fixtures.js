@@ -8,6 +8,9 @@ function loginAgent(app, { username = 'sales', password = 'sales123' } = {}) {
   return agent.post('/auth/login').send({ username, password }).then(() => agent);
 }
 
+// A valid 1x1 PNG — stands in for the customer signature drawn on the form.
+const SIGNATURE_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
 /** Minimal valid create-contract payload; override fields per test via deep-ish merge. */
 function contractFormData(overrides = {}) {
   const base = {
@@ -38,6 +41,7 @@ function contractFormData(overrides = {}) {
     },
     costing: { grandTotal: '5000' },
     details: {},
+    customerSignature: SIGNATURE_PNG,
   };
   return { ...base, ...overrides };
 }
@@ -50,4 +54,4 @@ async function createContract(agent, formDataOverrides = {}) {
   return res.body;
 }
 
-module.exports = { loginAgent, contractFormData, createContract };
+module.exports = { loginAgent, contractFormData, createContract, SIGNATURE_PNG };

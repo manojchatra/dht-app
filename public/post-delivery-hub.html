@@ -13,6 +13,18 @@
 <script src="/js/util.js"></script>
 <style>
 .hamburger{display:none!important}
+/* Filter grid — every field the same width; phones: search on its own row, then pairs */
+.flt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:10px;align-items:end;margin-bottom:14px}
+.flt-grid.admin{grid-template-columns:repeat(5,minmax(0,1fr)) auto}
+.flt-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.flt-field label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em}
+.flt-field input,.flt-field select{width:100%;min-width:0;box-sizing:border-box;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:var(--font)}
+.flt-clear .btn{white-space:nowrap;height:36px}
+.flt-count{font-size:12px;color:var(--text-muted);margin:-4px 0 12px}
+@media(max-width:768px){
+  .flt-grid,.flt-grid.admin{grid-template-columns:1fr 1fr}
+  .flt-search,.flt-clear{grid-column:1/-1}
+}
 @media(max-width:768px){.hamburger{display:flex!important}}
 .ack-tab-bar{display:flex;border-bottom:2px solid var(--border);margin-bottom:24px}
 .ack-tab{padding:10px 20px;font-size:13px;font-weight:500;color:var(--text-muted);cursor:pointer;border:none;background:none;font-family:var(--font);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:6px}
@@ -60,9 +72,15 @@
     <h1 style="margin:0">Post-Delivery Follow-up</h1>
   </div>
 
-  <div class="search-bar">
-    <input type="text" id="searchName" placeholder="Search by customer name..." oninput="renderList()">
+  <div class="flt-grid" id="fltGrid">
+    <div class="flt-field flt-search"><label for="searchName">Customer</label><input type="text" id="searchName" placeholder="Search by customer name..." oninput="renderList()"></div>
+    <div class="flt-field"><label for="fltFrom">Delivered from</label><input type="date" id="fltFrom" onchange="renderList()"></div>
+    <div class="flt-field"><label for="fltTo">Delivered to</label><input type="date" id="fltTo" onchange="renderList()"></div>
+    <div class="flt-field admin-flt" style="display:none"><label for="fltSalesman">Salesman</label><select id="fltSalesman" onchange="renderList()"><option value="">All salesmen</option></select></div>
+    <div class="flt-field admin-flt" style="display:none"><label for="fltStore">Showroom</label><select id="fltStore" onchange="renderList()"><option value="">All showrooms</option><option>Phoenix</option><option>Goodyear</option><option>Chandler</option><option>Surprise</option><option>Tolleson</option></select></div>
+    <div class="flt-field flt-clear" id="clearFlt" style="display:none"><label>&nbsp;</label><button type="button" class="btn btn-secondary btn-sm" onclick="clearFilters()"><i class="fa-solid fa-xmark"></i> Clear filters</button></div>
   </div>
+  <div class="flt-count" id="fltCount"></div>
 
   <div id="listContent"><div style="text-align:center;padding:40px;color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div></div>
 </main>
@@ -139,25 +157,58 @@ function fmtDate(d) {
 
 async function init() {
   allRows = await fetch('/api/post-delivery/contracts').then(r=>r.json()).catch(()=>[]);
+  setupFilters();
   renderList();
 }
+
+// ── Filters: name, delivery date range (everyone); salesman + showroom (admin) ──
+function isAdminView() { return window._userRole === 'admin'; }
+function setupFilters() {
+  var admin = isAdminView();
+  document.querySelectorAll('.admin-flt').forEach(function(el){ el.style.display = admin ? '' : 'none'; });
+  document.getElementById('fltGrid').classList.toggle('admin', admin);
+  var names = Array.from(new Set(allRows.map(function(r){ return r.salesman_name; }).filter(Boolean))).sort();
+  document.getElementById('fltSalesman').innerHTML = '<option value="">All salesmen</option>'
+    + names.map(function(n){ return '<option>'+escHtml(n)+'</option>'; }).join('');
+}
+function filteredRows() {
+  var v = function(id){ return (document.getElementById(id).value || '').trim(); };
+  var search = v('searchName').toLowerCase(), from = v('fltFrom'), to = v('fltTo');
+  var salesman = isAdminView() ? v('fltSalesman') : '', store = isAdminView() ? v('fltStore') : '';
+  var active = !!(search || from || to || salesman || store);
+  document.getElementById('clearFlt').style.display = active ? '' : 'none';
+  var rows = allRows.filter(function(c){
+    if (search && !(c.customer_name||'').toLowerCase().includes(search)) return false;
+    if (from && (!c.delivery_date || c.delivery_date < from)) return false;
+    if (to && (!c.delivery_date || c.delivery_date > to)) return false;
+    if (salesman && c.salesman_name !== salesman) return false;
+    if (store && c.store !== store) return false;
+    return true;
+  });
+  document.getElementById('fltCount').textContent = allRows.length ? ('Showing ' + rows.length + ' of ' + allRows.length) : '';
+  return { rows: rows, active: active };
+}
+function clearFilters() {
+  ['searchName','fltFrom','fltTo','fltSalesman','fltStore'].forEach(function(id){ document.getElementById(id).value = ''; });
+  renderList();
+}
+
 
 function goToFeedback(id) { window.location.href = '/post-delivery/' + id; }
 
 function renderList() {
-  var search = (document.getElementById('searchName').value||'').toLowerCase();
-  var rows = allRows;
-  if (search) rows = rows.filter(function(c){return (c.customer_name||'').toLowerCase().includes(search);});
+  var f = filteredRows(), rows = f.rows, admin = isAdminView();
   var el = document.getElementById('listContent');
   if (!rows.length) {
-    el.innerHTML='<div style="text-align:center;padding:48px;color:var(--text-muted)"><i class="fa-solid fa-truck-ramp-box fa-2x" style="display:block;margin-bottom:12px"></i>'+(search?'No results for current filter':'No delivered contracts yet')+'</div>';
+    el.innerHTML='<div style="text-align:center;padding:48px;color:var(--text-muted)"><i class="fa-solid fa-truck-ramp-box fa-2x" style="display:block;margin-bottom:12px"></i>'+(f.active?'No results for current filter':'No delivered contracts yet')+'</div>';
     return;
   }
   const tableHtml = '<div style="overflow-x:auto"><table class="ack-table">'
-    +'<thead><tr><th>Customer</th><th>Make</th><th>Model</th><th>Serial No.</th><th>Phone</th><th>Email</th><th>Address</th><th>Delivery Date</th><th style="text-align:center">Feedback</th></tr></thead>'
+    +'<thead><tr><th>Customer</th>'+(admin?'<th>Salesman</th>':'')+'<th>Make</th><th>Model</th><th>Serial No.</th><th>Phone</th><th>Email</th><th>Address</th><th>Delivery Date</th><th style="text-align:center">Feedback</th></tr></thead>'
     +'<tbody>'
     + rows.map(function(c){ return '<tr>'
       +'<td style="font-weight:600">'+escHtml(c.customer_name||'—')+'</td>'
+      +(admin?'<td>'+escHtml(c.salesman_name||'—')+'</td>':'')
       +'<td>'+escHtml(c.make||'—')+'</td>'
       +'<td>'+escHtml(c.model||'—')+'</td>'
       +'<td style="font-size:12px;color:var(--text-muted)">'+escHtml(c.serial_number||'—')+'</td>'
@@ -182,14 +233,16 @@ function renderList() {
       +'<div class="ack-card-meta">S/N: '+escHtml(c.serial_number||'—')+'</div>'
       +'<div class="ack-card-meta">'+escHtml(c.phone||'—')+' · '+escHtml(c.email||'—')+'</div>'
       +'<div class="ack-card-address">'+escHtml(c.address||'—')+'</div>'
-      +'<div class="ack-card-meta">Delivered: '+fmtDate(c.delivery_date)+'</div>'
+      +'<div class="ack-card-meta">Delivered: '+fmtDate(c.delivery_date)+(c.store?' · '+escHtml(c.store):'')+'</div>'
+      +(admin?'<div class="ack-card-meta">Salesman: '+escHtml(c.salesman_name||'—')+'</div>':'')
       +'</div>';
     }).join('')
     +'</div>';
   el.innerHTML = tableHtml + cardsHtml;
 }
 
-init();
+// Runs after sidebar.js has signed in and set window._userRole.
+window._onAuthReady = init;
 </script>
 </body>
 </html>

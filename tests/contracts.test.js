@@ -66,7 +66,8 @@ describe('POST /api/contracts', () => {
       .attach('extraImages', img, { filename: 'c.jpg', contentType: 'image/jpeg' });
 
     expect(res.status).toBe(200);
-    const extras = JSON.parse(ctx.db.prepare('SELECT extra_images FROM contracts WHERE id=?').get(res.body.contractId).extra_images);
+    const extras = JSON.parse(ctx.db.prepare('SELECT extra_images FROM contracts WHERE id=?').get(res.body.contractId).extra_images)
+      .filter(e => e.label !== 'Customer Signature');
     expect(extras).toHaveLength(3);
     const paths = extras.map(e => e.path);
     expect(new Set(paths).size).toBe(3);

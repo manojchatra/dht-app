@@ -4,6 +4,7 @@ const router  = express.Router();
 const db      = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
 const { logActivity } = require('../utils/activityLogger');
+const { notifyUserCreated } = require('../utils/emailSender');
 
 // PATCH /api/users/me/password — change own password (any logged-in role).
 // Must be registered before the router-wide requireAdmin gate below, or it's
@@ -55,6 +56,10 @@ router.post('/', (req, res) => {
       eventType: 'USER_CREATED', actor: req.session.username || 'system',
       detail: `Created ${cleanUsername} (${role}${cleanTeam ? ', ' + cleanTeam : ''})`
     });
+    // Welcome email — never blocks or fails the account creation.
+    Promise.resolve()
+      .then(() => notifyUserCreated({ name: name.trim(), username: cleanUsername, email: email.trim() }))
+      .catch(e => console.error('[Email welcome failed — non-fatal]', e.message));
     res.json({ success: true, userId: result.lastInsertRowid });
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });

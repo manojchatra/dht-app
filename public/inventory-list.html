@@ -38,7 +38,9 @@
    which item you were looking at. Fixed widths keep the left offsets
    deterministic (auto-width columns would make sticky positioning drift). */
 .inv-table th:nth-child(1),.inv-table td:nth-child(1){position:sticky;left:0;z-index:1;width:90px;min-width:90px;box-shadow:1px 0 0 var(--border)}
-.inv-table th:nth-child(2),.inv-table td:nth-child(2){position:sticky;left:90px;z-index:1;width:80px;min-width:80px}
+.inv-table th:nth-child(2),.inv-table td:nth-child(2){position:sticky;left:90px;z-index:1;width:80px;min-width:80px;box-shadow:1px 0 0 var(--border)}
+/* Column separators (the sticky first three use box-shadow above, which stays put while scrolling) */
+.inv-table th:nth-child(n+4):not(:last-child),.inv-table td:nth-child(n+4):not(:last-child){border-right:1px solid var(--border)}
 .inv-table th:nth-child(3),.inv-table td:nth-child(3){position:sticky;left:170px;z-index:1;width:100px;min-width:100px;box-shadow:1px 0 0 var(--border)}
 .inv-table thead th:nth-child(1),.inv-table thead th:nth-child(2),.inv-table thead th:nth-child(3){z-index:3}
 .inv-table select,.inv-table input[type=text]{font-size:12.5px;padding:5px 7px;width:100%;min-width:90px}

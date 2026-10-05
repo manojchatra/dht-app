@@ -128,7 +128,7 @@ function toggleActionMenu(e,id){
 </script>
 <script>
 const contractId = location.pathname.split('/').pop();
-const ratings = { contacted:null, google_review:null, rating_delivery:null, rating_installation:null, rating_explanation:null, rating_confidence:null, rating_overall:null };
+const ratings = { contacted:null, send_review_email:null, rating_delivery:null, rating_installation:null, rating_explanation:null, rating_confidence:null, rating_overall:null };
 
 const RATING_QUESTIONS = [
   ['rating_delivery',     'How satisfied were you with the delivery?'],
@@ -179,13 +179,21 @@ function renderForm(c) {
     + '<button type="button" class="chip" onclick="setContacted(0)" id="chip-contacted-no">No</button>'
     + '</div></div>';
 
+  // Yes is only possible when the showroom has a review link (Settings) and
+  // the customer has an email — otherwise it's disabled with the reason shown.
+  var canSend = !!c.review_email_available;
   html += '<div class="card">'
     + '<div class="card-header"><i class="fa-brands fa-google"></i> Google Review</div>'
-    + '<label class="lbl">Has the customer provided a Google review?</label>'
-    + '<div class="chip-group" id="googleReviewGroup">'
-    + '<button type="button" class="chip" onclick="setGoogleReview(1)" id="chip-google_review-yes">Yes</button>'
-    + '<button type="button" class="chip" onclick="setGoogleReview(0)" id="chip-google_review-no">No</button>'
-    + '</div></div>';
+    + '<label class="lbl">Send Google review email to the customer?</label>'
+    + '<div class="chip-group" id="reviewEmailGroup">'
+    + '<button type="button" class="chip" onclick="setSendReviewEmail(1)" id="chip-send_review_email-yes"'
+    + (canSend ? '' : ' disabled style="opacity:.4;cursor:not-allowed"') + '>Yes</button>'
+    + '<button type="button" class="chip" onclick="setSendReviewEmail(0)" id="chip-send_review_email-no">No</button>'
+    + '</div>'
+    + (canSend
+        ? '<div style="font-size:12px;color:var(--text-muted);margin-top:8px">Yes emails the customer the Google review link for their showroom as soon as you submit.</div>'
+        : '<div style="font-size:12px;color:var(--red);margin-top:8px"><i class="fa-solid fa-circle-info"></i> '+escHtml(c.review_email_unavailable_reason||'Review email not available')+'</div>')
+    + '</div>';
 
   html += '<div class="card"><div class="card-header"><i class="fa-solid fa-star"></i> Satisfaction Ratings</div>';
   RATING_QUESTIONS.forEach(function(q, i){
@@ -224,10 +232,11 @@ function setContacted(val) {
   document.getElementById('chip-contacted-no').classList.toggle('active', val===0);
 }
 
-function setGoogleReview(val) {
-  ratings.google_review = val;
-  document.getElementById('chip-google_review-yes').classList.toggle('active', val===1);
-  document.getElementById('chip-google_review-no').classList.toggle('active', val===0);
+function setSendReviewEmail(val) {
+  if (val===1 && document.getElementById('chip-send_review_email-yes').disabled) return;
+  ratings.send_review_email = val;
+  document.getElementById('chip-send_review_email-yes').classList.toggle('active', val===1);
+  document.getElementById('chip-send_review_email-no').classList.toggle('active', val===0);
 }
 
 function setRating(field, n) {
@@ -237,7 +246,7 @@ function setRating(field, n) {
 
 async function submitFeedback() {
   if (ratings.contacted===null) return showToast('Please answer the contacted question','error');
-  if (ratings.google_review===null) return showToast('Please answer the Google review question','error');
+  if (ratings.send_review_email===null) return showToast('Please answer the Google review email question','error');
   for (var i=0; i<RATING_QUESTIONS.length; i++) {
     if (!ratings[RATING_QUESTIONS[i][0]]) return showToast('Please answer all rating questions','error');
   }
@@ -247,8 +256,11 @@ async function submitFeedback() {
   });
   const data = await res.json().catch(()=>({}));
   if (!res.ok) return showToast(data.error || 'Failed to submit feedback','error');
-  showToast('Feedback submitted');
-  setTimeout(function(){ window.location.href='/post-delivery'; }, 900);
+  var rv = data.reviewEmail;
+  if (rv && rv.sent) showToast('Feedback submitted — Google review email sent');
+  else if (rv) showToast('Feedback submitted. Review email not sent: '+(rv.reason||''),'error');
+  else showToast('Feedback submitted');
+  setTimeout(function(){ window.location.href='/post-delivery'; }, rv && !rv.sent ? 3500 : 900);
 }
 
 init();

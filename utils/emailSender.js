@@ -216,8 +216,26 @@ async function sendReviewRequestEmail({ customerEmail, customerName, reviewUrl }
   await sendEmail({ to: [customerEmail], subject, text });
 }
 
+// H — new portal user (any role) → that user. Never includes the password.
+const APP_URL = process.env.APP_URL || 'https://app.deserthottubsaz.com';
+async function notifyUserCreated({ name, username, email }) {
+  const subject = 'Welcome to the Desert Hot Tubs portal';
+  const text = [
+    `Hello ${name || username},`,
+    '',
+    `You have been added to the Desert Hot Tubs (${APP_URL}) team. Please login with the username and password below.`,
+    '',
+    `Username: ${username}`,
+    'Password: Please contact admin for the password.',
+    '',
+    'Regards',
+    'Team DHT.',
+  ].join('\n');
+  await sendEmail({ to: [email], subject, text });
+}
+
 module.exports = {
-  sendAcknowledgementEmail, smtpConfigured, sendEmail,
+  sendAcknowledgementEmail, smtpConfigured, sendEmail, notifyUserCreated,
   getAdminRecipients, getSalesmanEmail, getStoreReviewUrl,
   notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived,
   notifyPaymentRecorded, notifyDelivered, sendReviewRequestEmail,

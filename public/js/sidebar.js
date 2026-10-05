@@ -117,7 +117,7 @@ async function initSidebar() {
   if (!u || !u.username) { window.location.href = '/login'; return; }
 
   const _un = document.getElementById('userName'); if (_un) _un.textContent = u.username;
-  const _tNames = { team_a: 'JV Spa Movers', team_b: 'Clear Choice Movers' };
+  const _tNames = { team_a: 'Clear Choice Team', team_b: 'Installation Team' };
   const _ur = document.getElementById('userRole');
   const _roleLabels = { admin: 'Administrator', delivery: _tNames[u.team] || 'Delivery', warehouse: 'Warehouse', sales: 'Sales' };
   if (_ur) _ur.textContent = _roleLabels[u.role] || 'Sales';

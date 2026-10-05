@@ -16,12 +16,11 @@ const {
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, deleteInventoryRow, updateInventoryItemField,
-  deleteContractRowFromSheet
+  deleteContractRowFromSheet, appendInventoryItem, deleteInventoryItem
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
-const { queueReviewEmail } = require('../utils/reviewEmail');
 const { withLock } = require('../utils/asyncLock');
 const {
   normalizeContractPhones, nextCustomerNumber,
@@ -43,7 +42,8 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}-${file.fieldname}${path.extname(file.originalname) || '.jpg'}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
+// fieldSize: the contract JSON (with the signature data URL) arrives as a form field.
+const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024, fieldSize: 3 * 1024 * 1024 } });
 const uploadFields = upload.fields([
   { name: 'contractImage', maxCount: 1 },
   { name: 'chequeImage',   maxCount: 1 },
@@ -108,6 +108,28 @@ function extractPaid(payment = {}) {
 
 function initialStatus(productStatus) {
   return productStatus === 'instock' ? 'assigned' : 'tbo';
+}
+
+// Inventory finance indicator values (same options as the Inventory page).
+const FINANCE_OPTIONS = ['DHT Owned', 'Bank Owned'];
+
+// Today's date in Arizona (MST, no DST) as YYYY-MM-DD.
+function phoenixToday() {
+  return new Date(Date.now() - 7 * 3600000).toISOString().slice(0, 10);
+}
+
+// Customer signature from the contract form: a PNG data URL. Returns
+// { buffer } for a valid image, {} when none was given, or { error }.
+const MAX_SIGNATURE_BYTES = 500 * 1024;
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+function parseSignature(dataUrl) {
+  if (!dataUrl) return {};
+  const m = typeof dataUrl === 'string' && /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!m) return { error: 'Invalid signature image' };
+  const buffer = Buffer.from(m[1], 'base64');
+  if (buffer.length > MAX_SIGNATURE_BYTES) return { error: 'Signature image is too large' };
+  if (!buffer.subarray(0, 8).equals(PNG_MAGIC)) return { error: 'Invalid signature image' };
+  return { buffer };
 }
 
 // Defense-in-depth against oversized free-text input — mirrors the client-side
@@ -358,6 +380,16 @@ router.post('/', uploadFields, async (req, res) => {
       return res.status(400).json({ error: payErrors[0], errors: payErrors });
     }
 
+    // Customer signature (PNG data URL drawn on the form). Required, except for
+    // back-entered contracts whose delivery date is already past — those are
+    // saved straight to Delivered with no customer present. Saved as a file in
+    // the contract folder below; the image itself is never kept in `data`.
+    const signature = parseSignature(formData.customerSignature);
+    delete formData.customerSignature;
+    const isBackEntry = !!(formData.deliveryDate && formData.deliveryDate < phoenixToday());
+    if (signature.error) return res.status(400).json({ error: signature.error });
+    if (!signature.buffer && !isBackEntry) return res.status(400).json({ error: 'Customer signature is required' });
+
     // Phones: 10 digits, stored as 602-112-2111, at least one required.
     // Written back onto `customer` so the stored snapshot is formatted too.
     const { phone: cleanPhone, error: phoneError } = normalizeContractPhones(customer?.phone);
@@ -442,6 +474,13 @@ router.post('/', uploadFields, async (req, res) => {
       return newPath ? { path: newPath, label } : null;
     }).filter(Boolean);
 
+    if (signature.buffer) {
+      const sigPath = path.join(contractFolder, 'sig-contract-customer.png');
+      fs.writeFileSync(sigPath, signature.buffer);
+      cleanData.signature = { file: 'sig-contract-customer.png', signedAt: new Date().toISOString() };
+      extraImagePaths.push({ path: sigPath, label: 'Customer Signature' });
+    }
+
     // 4. Summary fields
     const cover       = summariseCover(details?.cover);
     const steps       = details?.steps?.type || '';
@@ -497,17 +536,20 @@ router.post('/', uploadFields, async (req, res) => {
     // just a pre-insert estimate (contractId didn't exist yet to seed
     // payments against); this is the authoritative figure.
     const grandTotalNum = parseFloat(costing?.grandTotal||0);
-    const dueBalance    = Math.max(0, grandTotalNum - totalSeeded);
+    // Rounded to cents (float subtraction leaves long fractions otherwise).
+    totalSeeded         = Math.round(totalSeeded * 100) / 100;
+    const dueBalance    = Math.max(0, Math.round((grandTotalNum - totalSeeded) * 100) / 100);
     db.prepare('UPDATE contracts SET paid_amount=?,due_prior=? WHERE id=?').run(String(totalSeeded), String(dueBalance), contractId);
 
     // 6. Auto-deliver if delivery date is in the past
     // Compare as plain YYYY-MM-DD strings (lexicographic order == chronological order for ISO dates) —
     // avoids new Date(dateOnlyStr) being parsed as UTC while new Date().toDateString() parses as server-local.
     const deliveryDateVal = cleanData.deliveryDate;
-    const todayPhoenix    = new Date(Date.now() - 7 * 3600000).toISOString().slice(0,10);
+    const todayPhoenix    = phoenixToday();
     const isAutoDeliver = deliveryDateVal && deliveryDateVal < todayPhoenix;
     if (isAutoDeliver) {
-      db.prepare('UPDATE contracts SET status=? WHERE id=?').run('delivered', contractId);
+      // back_entered: an old sale entered after the fact — no post-delivery follow-up.
+      db.prepare('UPDATE contracts SET status=?, back_entered=1 WHERE id=?').run('delivered', contractId);
     }
 
     // 7. Google Sheets write-back (non-fatal)
@@ -542,20 +584,39 @@ router.post('/', uploadFields, async (req, res) => {
       console.error('[Drive write failed — non-fatal]', driveErr.message);
     }
 
-    // 7b. Link the picked in-stock DB inventory row (if any) to this contract.
-    // Enables the Finance Indicator for in-stock sales, which previously
-    // never fired for them because nothing tied a picked unit to the new
-    // contract. Mirrors routes/warehouse.js POST /:id/receive's "existing
-    // inventory row" branch. Skips silently if no matching row exists (e.g.
-    // a manually-typed serial with no prior DB record).
-    if (product?.status === 'instock' && product?.serialNumber) {
+    // 7b. Link the spa's inventory unit to this contract (marks it Sold) —
+    // for in-stock sales and back-entered (already delivered) contracts.
+    // Enables the Finance indicator. A serial typed by hand that isn't in
+    // inventory yet gets a unit created here (Sold, with the Finance choice
+    // from the form), tagged with this contract so deleting the contract
+    // removes it again. To Be Ordered contracts get their unit when the
+    // warehouse receives the spa.
+    if (product?.serialNumber && (product.status === 'instock' || isAutoDeliver)) {
       try {
-        const invRow = db.prepare('SELECT id FROM inventory WHERE serial_number = ?').get(product.serialNumber);
+        const serial = product.serialNumber.trim();
+        const invRow = db.prepare('SELECT id FROM inventory WHERE serial_number = ?').get(serial);
         if (invRow) {
           db.prepare(`UPDATE inventory SET availability='Sold', contract_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
             .run(contractId, invRow.id);
-          try { await updateInventoryItemField(product.serialNumber, 'availability', 'Sold'); }
+          try { await updateInventoryItemField(serial, 'availability', 'Sold'); }
           catch(e) { console.error('[Drive update inventory item availability failed — non-fatal]', e.message); }
+        } else {
+          const finance = FINANCE_OPTIONS.includes(product.finance) ? product.finance : null;
+          const unit = {
+            make: truncate(product.make, MAX_LEN.make) || '', series: product.series || '',
+            model: truncate(product.model, MAX_LEN.model) || '',
+            shellColor: product.shellColor || '', cabinetColor: product.cabinetColor || '',
+            serialNumber: serial, availability: 'Sold', finance: finance || '',
+            speaker: product.included?.speaker ? 'Yes' : '',
+          };
+          db.prepare(`INSERT INTO inventory
+            (make, series, model, shell_color, cabinet_color, serial_number, availability, finance,
+             speaker, contract_id, created_by_contract_id, added_by)
+            VALUES (?,?,?,?,?,?,'Sold',?,?,?,?,?)`
+          ).run(unit.make, unit.series, unit.model, unit.shellColor, unit.cabinetColor, serial,
+            finance, unit.speaker, contractId, contractId, req.session?.username || 'system');
+          try { await appendInventoryItem(unit); }
+          catch(e) { console.error('[Drive add inventory item for contract failed — non-fatal]', e.message); }
         }
       } catch (e) {
         console.error('[Inventory link-on-contract failed — non-fatal]', e.message);
@@ -755,7 +816,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
           const exStart = new Date(ex.scheduled_datetime + '-07:00').getTime();
           const exEnd   = exStart + (ex.scheduled_duration||120)*60000;
           if (startMs < exEnd && endMs > exStart) {
-            const teamLabel = teamVal==='team_a'?'JV Spa Movers':'Clear Choice Movers';
+            const teamLabel = teamVal==='team_a'?'Clear Choice Team':'Installation Team';
             return res.status(400).json({
               error: teamLabel+' is already booked at this time ('+ex.contract_number+'). Choose a different slot or team.'
             });
@@ -849,7 +910,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     const _cnum   = contract.contract_number;
     const _cuname = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
     if (status === 'scheduled') {
-      const _team  = req.body.deliveryTeam==='team_a'?'JV Spa Movers':'Clear Choice Movers';
+      const _team  = req.body.deliveryTeam==='team_a'?'Clear Choice Team':'Installation Team';
       const _slot  = scheduledDatetime ? new Date(scheduledDatetime + '-07:00').toLocaleString('en-US',{timeZone:'America/Phoenix',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
       logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'SCHEDULED',
         actor: _actor, detail: `Team: ${_team} | Slot: ${_slot}` });
@@ -860,8 +921,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         actor: _actor, detail: `${contract.status} → delivered` });
       addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'DELIVERED',
         color: 'green', message: `${_cnum} — ${_cuname} marked delivered` });
-      try { queueReviewEmail(req.params.id); }
-      catch (e) { console.error('[Review email queue failed — non-fatal]', e.message); }
+      // Google review email: sent from the post-delivery feedback form now.
       try {
         const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
         await notifyDelivered({ contract: freshContract, customerName: _cuname });
@@ -1014,8 +1074,20 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     db.prepare('DELETE FROM payments WHERE contract_id=?').run(req.params.id);
     db.prepare('DELETE FROM activity_log WHERE contract_id=?').run(req.params.id);
     db.prepare('DELETE FROM notifications WHERE contract_id=?').run(req.params.id);
-    // Unlink (not delete) any inventory item tied to this contract — it may
-    // still be real physical stock, and SQLite's foreign-key constraint
+    // A unit this contract created itself (a serial typed by hand that wasn't
+    // in inventory) only existed because of this contract — remove it, as
+    // long as it's still linked here (a cancelled contract already released
+    // it to In-stock as real stock, and then it stays).
+    const createdUnits = db.prepare('SELECT id, serial_number FROM inventory WHERE created_by_contract_id=? AND contract_id=?').all(row.id, row.id);
+    for (const u of createdUnits) {
+      db.prepare('DELETE FROM inventory WHERE id=?').run(u.id);
+      if (u.serial_number) {
+        try { await deleteInventoryItem(u.serial_number); }
+        catch (e) { console.error('[Drive delete contract-created inventory item failed — non-fatal]', e.message); }
+      }
+    }
+    // Unlink (not delete) any other inventory item tied to this contract — it
+    // may still be real physical stock, and SQLite's foreign-key constraint
     // would otherwise block the delete below outright. Undelivered units go
     // back to In-stock; a delivered unit is at the customer's, so it stays Sold.
     if (row.status !== 'delivered') await releaseInventoryForContract(row.id);

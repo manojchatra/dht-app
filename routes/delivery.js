@@ -35,7 +35,6 @@ const { generateAcknowledgementPDF } = require('../utils/acknowledgementPDF');
 const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered } = require('../utils/emailSender');
 const { moveToDelivered } = require('../services/driveInventory');
 const { buildDriveData } = require('./contracts');
-const { queueReviewEmail } = require('../utils/reviewEmail');
 const { withLock } = require('../utils/asyncLock');
 
 // Auth middleware — delivery or admin
@@ -309,8 +308,8 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
 
       logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'ACK_SUBMITTED', actor: req.session.username||req.session.team||'delivery', detail: emailError ? 'Acknowledgement saved, email failed: '+emailError : 'Acknowledgement submitted' });
       addNotification(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'DELIVERED', color: 'green', message: contract.contract_number+' — marked delivered via acknowledgement' });
-      try { queueReviewEmail(req.params.id); }
-      catch (e) { console.error('[Review email queue failed — non-fatal]', e.message); }
+      // The Google review email is no longer queued here — the salesperson
+      // chooses to send it from the post-delivery feedback form.
       // Tell the salesperson to start their 48-hour follow-up — the admin
       // status route already does this on delivery, but this path never did.
       // The guard above already rules out this contract having been

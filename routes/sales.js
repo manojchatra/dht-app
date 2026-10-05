@@ -9,6 +9,7 @@ const router  = express.Router();
 const db      = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
 const { logActivity } = require('../utils/activityLogger');
+const { notifyUserCreated } = require('../utils/emailSender');
 
 // GET /api/sales/active/list — {id, name} for active salespeople only, no
 // admin gate: any authenticated user creating a contract needs this for the
@@ -84,6 +85,10 @@ router.post('/', (req, res) => {
       eventType: 'USER_CREATED', actor: req.session.username || 'system',
       detail: `Created ${cleanUsername} (sales)`
     });
+    // Welcome email — never blocks or fails the account creation.
+    Promise.resolve()
+      .then(() => notifyUserCreated({ name: name.trim(), username: cleanUsername, email: email.trim() }))
+      .catch(e => console.error('[Email welcome failed — non-fatal]', e.message));
     res.json({ success: true, userId: result.lastInsertRowid });
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
