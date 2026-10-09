@@ -4,3 +4,8 @@ uploads/
 *.log
 .DS_Store
 Thumbs.db
+
+# Inventory/stock spreadsheets (business data) — never commit
+*.xlsx
+*.xls
+*.csv

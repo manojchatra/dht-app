@@ -400,9 +400,11 @@ const INVENTORY_ITEMS_TAB = 'Inventory Items';
 const INVENTORY_ITEMS_HEADERS = [
   'Serial Number','SKU Number','Make','Series','Model','Shell Color','Cabinet Color',
   'Availability','Location','Steps','Cover','Finance','Added Date','Speaker',
-  'Web Order Number','Truck Number'
+  'Web Order Number','Truck Number',
+  // Appended (never inserted): the app writes to fixed column positions.
+  'Year','Line','Bay'
 ];
-const INVENTORY_ITEM_FIELD_COLS = { availability:8, location:9, steps:10, cover:11, finance:12, speaker:14 };
+const INVENTORY_ITEM_FIELD_COLS = { availability:8, location:9, steps:10, cover:11, finance:12, speaker:14, year:17, line:18, bay:19 };
 const INVENTORY_ITEM_WEB_ORDER_COL = 15;
 
 function buildInventoryItemRow(d) {
@@ -413,7 +415,36 @@ function buildInventoryItemRow(d) {
     d.addedDate||new Date().toISOString().slice(0,10),
     d.speaker||'',
     d.webOrderNumber||'', d.truckNumber||'',
+    d.year||'', d.line||'', d.bay||'',
   ];
+}
+
+// Inventory DB row -> the object buildInventoryItemRow expects.
+function inventoryRowToItem(r) {
+  return {
+    serialNumber: r.serial_number, skuNumber: r.sku_number, make: r.make, series: r.series, model: r.model,
+    shellColor: r.shell_color, cabinetColor: r.cabinet_color, availability: r.availability,
+    location: r.location, steps: r.steps, cover: r.cover, finance: r.finance,
+    addedDate: (r.created_at || '').slice(0, 10), speaker: r.speaker,
+    webOrderNumber: r.web_order_number, truckNumber: r.truck_number,
+    year: r.year, line: r.line, bay: r.bay,
+  };
+}
+
+// Replace the whole "Inventory Items" tab with the given inventory DB rows —
+// header + every unit in one write (no per-row quota). Used after a bulk
+// inventory replacement, or to resync the mirror.
+async function rewriteInventoryItemsTab(dbRows) {
+  const sheets = getSheets();
+  await ensureTab(sheets, INVENTORY_ITEMS_TAB, INVENTORY_ITEMS_HEADERS);
+  await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID, range: `${INVENTORY_ITEMS_TAB}!A:Z` });
+  const values = [INVENTORY_ITEMS_HEADERS, ...dbRows.map(r => buildInventoryItemRow(inventoryRowToItem(r)))];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID, range: `${INVENTORY_ITEMS_TAB}!A1`,
+    valueInputOption: 'RAW', requestBody: { values },
+  });
+  console.log('[Drive] Rewrote Inventory Items tab:', dbRows.length, 'units');
+  return dbRows.length;
 }
 
 async function appendInventoryItem(d) {
@@ -445,6 +476,7 @@ async function findInventoryItemRowByWebOrder(sheets, webOrderNumber) {
 // column A and flips Availability (column H) to 'In-stock', located by Web
 // Order Number since Serial Number is still blank at this point.
 async function markInventoryItemReceivedInSheet(webOrderNumber, serialNumber) {
+  if (!String(webOrderNumber || '').trim()) { console.warn('[Drive] No Web Order # — Inventory Items row not updated for', serialNumber); return false; }
   const sheets = getSheets();
   const rowIndex = await findInventoryItemRowByWebOrder(sheets, webOrderNumber);
   if (rowIndex < 0) { console.warn('[Drive] Ordered inventory item not found for receive:', webOrderNumber); return false; }
@@ -457,6 +489,7 @@ async function markInventoryItemReceivedInSheet(webOrderNumber, serialNumber) {
 async function updateInventoryItemField(serialNumber, field, value) {
   const col = INVENTORY_ITEM_FIELD_COLS[field];
   if (!col) throw new Error('Unknown inventory item field: ' + field);
+  if (!String(serialNumber || '').trim()) { console.warn('[Drive] Unit has no serial — Inventory Items row not updated'); return false; }
   const sheets = getSheets();
   const rowIndex = await findInventoryItemRow(sheets, serialNumber);
   if (rowIndex < 0) { console.warn('[Drive] Inventory item not found for update:', serialNumber); return false; }
@@ -774,6 +807,7 @@ module.exports = {
   deleteInventoryRow,
   getSkuList, lookupSku,
   appendInventoryItem, updateInventoryItemField, deleteInventoryItem, inventoryItemExistsInSheet,
+  rewriteInventoryItemsTab,
   markInventoryItemReceivedInSheet,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,

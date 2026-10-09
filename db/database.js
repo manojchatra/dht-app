@@ -308,6 +308,13 @@ if (!db.prepare("SELECT 1 FROM settings WHERE key='money_rounded'").get()) {
 // Inventory units created automatically by a contract (a typed serial that
 // wasn't in inventory) remember that contract, so deleting the contract can
 // remove the unit it created.
+// Model year, and Line/Bay — where the unit sits in the warehouse.
+for (const [col, type] of [['year', 'TEXT'], ['line', 'TEXT'], ['bay', 'TEXT']]) {
+  if (!inventoryCols.includes(col)) {
+    db.exec(`ALTER TABLE inventory ADD COLUMN ${col} ${type}`);
+    console.log(`[DB] inventory.${col} column added`);
+  }
+}
 if (!inventoryCols.includes('created_by_contract_id')) {
   db.exec('ALTER TABLE inventory ADD COLUMN created_by_contract_id INTEGER');
   console.log('[DB] inventory.created_by_contract_id column added');

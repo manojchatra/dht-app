@@ -101,6 +101,7 @@ router.post('/', (req, res) => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     try {
       const { make, series, model, shellColor, cabinetColor, serialNumber, skuNumber, speaker, webOrderNumber, truckNumber } = req.body;
+      const year = String(req.body.year || '').trim(), line = String(req.body.line || '').trim(), bay = String(req.body.bay || '').trim();
       const hasSerial = serialNumber && serialNumber.trim();
       const hasOrderInfo = webOrderNumber && webOrderNumber.trim() && truckNumber && truckNumber.trim();
 
@@ -117,12 +118,12 @@ router.post('/', (req, res) => {
         const result = db.prepare(`
           INSERT INTO inventory
             (make, series, model, shell_color, cabinet_color, sku_number,
-             availability, added_by, speaker, web_order_number, truck_number)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             availability, added_by, speaker, web_order_number, truck_number, year, line, bay)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `).run(
           make.trim(), (series||'').trim(), model.trim(), (shellColor||'').trim(), (cabinetColor||'').trim(),
           (skuNumber||'').trim(), 'Ordered', req.session.username || 'system', (speaker||'').trim(),
-          webOrderNumber.trim(), truckNumber.trim()
+          webOrderNumber.trim(), truckNumber.trim(), year, line, bay
         );
 
         try {
@@ -132,6 +133,7 @@ router.post('/', (req, res) => {
             shellColor: (shellColor||'').trim(), cabinetColor: (cabinetColor||'').trim(),
             availability: 'Ordered', speaker: (speaker||'').trim(),
             webOrderNumber: webOrderNumber.trim(), truckNumber: truckNumber.trim(),
+            year, line, bay,
           });
         } catch(e) { console.error('[Drive add inventory item failed — non-fatal]', e.message); }
 
@@ -149,12 +151,13 @@ router.post('/', (req, res) => {
       const result = db.prepare(`
         INSERT INTO inventory
           (make, series, model, shell_color, cabinet_color, serial_number, sku_number,
-           availability, sku_photo_path, serial_photo_path, added_by, speaker)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+           availability, sku_photo_path, serial_photo_path, added_by, speaker, year, line, bay)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         make.trim(), (series||'').trim(), model.trim(), (shellColor||'').trim(), (cabinetColor||'').trim(),
         serialNumber.trim(), (skuNumber||'').trim(),
-        'In-stock', skuPhotoPath, serialPhotoPath, req.session.username || 'system', (speaker||'').trim()
+        'In-stock', skuPhotoPath, serialPhotoPath, req.session.username || 'system', (speaker||'').trim(),
+        year, line, bay
       );
 
       try {
@@ -163,6 +166,7 @@ router.post('/', (req, res) => {
           make: make.trim(), series: (series||'').trim(), model: model.trim(),
           shellColor: (shellColor||'').trim(), cabinetColor: (cabinetColor||'').trim(),
           availability: 'In-stock', speaker: (speaker||'').trim(),
+          year, line, bay,
         });
       } catch(e) { console.error('[Drive add inventory item failed — non-fatal]', e.message); }
 
@@ -175,12 +179,18 @@ router.post('/', (req, res) => {
 });
 
 // ── PATCH /:id — update Availability/Location/Steps/Cover/Finance ────────────
-// Admin-only: warehouse can view/add inventory but not edit these fields —
+// Admin-only, except Line/Bay — warehouse can view/add inventory but not edit the rest —
 // same layering as the DELETE route below (outer requireRole allows
 // admin+warehouse in, requireAdmin narrows this specific route further).
-const EDITABLE_FIELDS = ['availability', 'location', 'steps', 'cover', 'finance', 'speaker'];
-router.patch('/:id', requireAdmin, async (req, res) => {
+// Exception: warehouse staff may set Line/Bay (where the unit sits) — nothing else.
+const EDITABLE_FIELDS  = ['availability', 'location', 'steps', 'cover', 'finance', 'speaker', 'year', 'line', 'bay'];
+const WAREHOUSE_FIELDS = ['line', 'bay'];
+router.patch('/:id', async (req, res) => {
   try {
+    if (req.session.role !== 'admin') {
+      const other = EDITABLE_FIELDS.filter(fld => !WAREHOUSE_FIELDS.includes(fld) && req.body[fld] !== undefined);
+      if (other.length) return res.status(403).json({ error: 'Only Line and Bay can be changed by warehouse users' });
+    }
     const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
     if (!item) return res.status(404).json({ error: 'Not found' });
 

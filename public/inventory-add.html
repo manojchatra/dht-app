@@ -94,6 +94,9 @@
       <div><label>Shell Color</label><input type="text" id="fldShell"></div>
       <div><label>Cabinet Color</label><input type="text" id="fldCabinet"></div>
       <div><label>Speaker</label><select id="fldSpeaker"><option value="">—</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
+      <div><label>Year</label><input type="text" id="fldYear" maxlength="4" inputmode="numeric" placeholder="2026"></div>
+      <div><label>Line <span style="font-weight:400;color:var(--text-muted)">(warehouse)</span></label><input type="text" id="fldLine" maxlength="20"></div>
+      <div><label>Bay <span style="font-weight:400;color:var(--text-muted)">(warehouse)</span></label><input type="text" id="fldBay" maxlength="20"></div>
     </div>
   </div>
 
@@ -205,7 +208,7 @@ function clearSkuScan(){
   skuPhotoBlob=null;
   // Full reset — also wipe everything the SKU lookup auto-filled, so the form
   // never shows product details from a scan that no longer exists.
-  ['fldMake','fldSeries','fldModel','fldShell','fldCabinet','fldSpeaker'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['fldMake','fldSeries','fldModel','fldShell','fldCabinet','fldSpeaker','fldYear','fldLine','fldBay'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('skuResolvedBadge').style.display='none';
   hideSkuSuggestion();
 }
@@ -256,6 +259,7 @@ async function submitInventoryItem(){
   fd.append('make',make); fd.append('series',series); fd.append('model',model);
   fd.append('shellColor',shellColor); fd.append('cabinetColor',cabinetColor);
   fd.append('skuNumber',skuNumber); fd.append('speaker',speaker);
+  ['Year','Line','Bay'].forEach(function(k){ fd.append(k.toLowerCase(), document.getElementById('fld'+k).value.trim()); });
 
   if(addMode==='onorder'){
     const webOrderNumber=document.getElementById('fldWebOrder').value.trim();

@@ -36,7 +36,7 @@ router.get('/search', (req, res) => {
 
     if (query) {
       rows = rows.filter(r => {
-        const hay = [r.make, r.series, r.model, r.serial_number, r.shell_color, r.cabinet_color]
+        const hay = [r.make, r.series, r.model, r.year, r.serial_number, r.shell_color, r.cabinet_color]
           .join(' ').toLowerCase();
         return hay.includes(query);
       });
