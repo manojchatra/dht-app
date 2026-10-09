@@ -358,6 +358,11 @@ router.post('/', uploadFields, async (req, res) => {
 
     // 0. Validate costing and payment method requirements
     const payErrors = [];
+    const money = v => parseFloat(String(v ?? '').replace(/[$,]/g, '')) || 0;
+    // A spa is never free — price always required (spaIncluded is ignored).
+    if (!(money(details?.spaPrice) > 0)) {
+      payErrors.push('Spa price is required');
+    }
     if (!(parseFloat(costing?.grandTotal) > 0)) {
       payErrors.push('Grand Total must be a valid amount greater than $0');
     }
@@ -375,6 +380,13 @@ router.post('/', uploadFields, async (req, res) => {
     if (payment?.finance?.selected) {
       if (!payment.finance.plan) payErrors.push('Finance lender/plan name is required');
       if (!(parseFloat(payment.finance.amount) > 0)) payErrors.push('Finance amount is required');
+    }
+    // Payments taken at signing may not exceed the Grand Total (1¢ rounding slack).
+    const contractTotal = money(costing?.grandTotal);
+    const paidAtSigning = ['cheque', 'cash', 'creditCard', 'finance']
+      .reduce((sum, k) => sum + (payment?.[k]?.selected ? money(payment[k].amount) : 0), 0);
+    if (contractTotal > 0 && paidAtSigning > contractTotal + 0.01) {
+      payErrors.push(`Payments ($${paidAtSigning.toFixed(2)}) exceed Grand Total ($${contractTotal.toFixed(2)}) by $${(paidAtSigning - contractTotal).toFixed(2)}`);
     }
     if (payErrors.length) {
       return res.status(400).json({ error: payErrors[0], errors: payErrors });

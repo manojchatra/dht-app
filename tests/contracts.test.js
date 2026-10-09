@@ -55,6 +55,59 @@ describe('POST /api/contracts', () => {
     expect(res.body.error).toBe('Cheque number is required');
   });
 
+  test.each([['blank', ''], ['$0', '0']])('rejects a %s spa price', async (_label, spaPrice) => {
+    const agent = await loginAgent(ctx.app);
+    const res = await agent.post('/api/contracts')
+      .send({ data: JSON.stringify(contractFormData({ details: { spaPrice } })) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Spa price is required');
+  });
+
+  test('a spa can never be marked Included (free) — spaIncluded with no price is still rejected', async () => {
+    const agent = await loginAgent(ctx.app);
+    const res = await agent.post('/api/contracts')
+      .send({ data: JSON.stringify(contractFormData({ details: { spaPrice: '', spaIncluded: true } })) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Spa price is required');
+  });
+
+  test('rejects payments that exceed the Grand Total', async () => {
+    const agent = await loginAgent(ctx.app);
+    const formData = contractFormData({
+      payment: {
+        cheque: { selected: true, number: '1001', amount: '1000' },
+        cash:   { selected: true, amount: '500' },
+      },
+      costing: { grandTotal: '1000' },
+    });
+
+    const res = await agent.post('/api/contracts').send({ data: JSON.stringify(formData) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Payments ($1500.00) exceed Grand Total ($1000.00) by $500.00');
+    expect(ctx.db.prepare("SELECT COUNT(*) AS n FROM payments WHERE cheque_number='1001' AND amount=1000").get().n).toBe(0);
+  });
+
+  test('accepts payments exactly equal to the Grand Total, ignoring unselected methods', async () => {
+    const agent = await loginAgent(ctx.app);
+    const formData = contractFormData({
+      payment: {
+        cheque: { selected: true, number: '1002', amount: '600' },
+        cash:   { selected: true, amount: '400' },
+        creditCard: { selected: false, lastFour: '', amount: '9999' },
+      },
+      costing: { grandTotal: '1000' },
+    });
+
+    const res = await agent.post('/api/contracts').send({ data: JSON.stringify(formData) });
+
+    expect(res.status).toBe(200);
+    const contract = ctx.db.prepare('SELECT due_prior FROM contracts WHERE id=?').get(res.body.contractId);
+    expect(contract.due_prior).toBe('0');
+  });
+
   test('keeps every supporting image when several are uploaded in one request', async () => {
     const agent = await loginAgent(ctx.app);
     const img = await require('sharp')({ create: { width: 80, height: 60, channels: 3, background: '#999' } }).jpeg().toBuffer();

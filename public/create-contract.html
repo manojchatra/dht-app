@@ -360,7 +360,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="detail-row">
       <div><div class="detail-label">Spa</div><div class="detail-sub" id="spaSerial" style="font-size:12px;color:var(--text-muted)">Serial auto-filled from product section</div></div>
       <input type="text" id="dtSpaPrice" placeholder="$" oninput="recalcAll()">
-      <label class="incl-toggle"><input type="checkbox" id="dtSpaIncl" onchange="recalcAll()"> Included</label>
+      <span></span><!-- no Included option: a spa is never free -->
     </div>
 
     <div class="detail-row">
@@ -982,15 +982,15 @@ function renderInvResults(rows){
   res.innerHTML='';
   if(!rows.length){res.innerHTML='<p class="no-results">No matching inventory</p>';return;}
   var table=document.createElement('table');table.className='inv-table';
-  table.innerHTML='<thead><tr><th>Make</th><th>Series</th><th>Model</th><th>Shell</th><th>Cabinet</th><th>Serial</th><th>Location</th></tr></thead>';
+  table.innerHTML='<thead><tr><th>Make</th><th>Series</th><th>Model</th><th>Year</th><th>Shell</th><th>Cabinet</th><th>Serial</th><th>Location</th></tr></thead>';
   var tbody=document.createElement('tbody');
   rows.forEach(function(r){
     var tr=document.createElement('tr');
     var isStock=(r.availability||'').toLowerCase()==='in-stock';
-    tr.innerHTML='<td>'+(r.make||'')+'</td><td>'+(r.series||'')+'</td><td>'+(r.model||'')+'</td>'+
-      '<td>'+(r.shell_color||'')+'</td><td>'+(r.cabinet_color||'')+'</td>'+
-      '<td><strong>'+(r.serial_number||'')+'</strong></td>'+
-      '<td><span class="avail-chip'+(isStock?' avail-stock':'')+'">'+(r.location||'—')+'</span></td>';
+    tr.innerHTML='<td>'+escHtml(r.make||'')+'</td><td>'+escHtml(r.series||'')+'</td><td>'+escHtml(r.model||'')+'</td><td>'+escHtml(r.year||'')+'</td>'+
+      '<td>'+escHtml(r.shell_color||'')+'</td><td>'+escHtml(r.cabinet_color||'')+'</td>'+
+      '<td><strong>'+escHtml(r.serial_number||'')+'</strong></td>'+
+      '<td><span class="avail-chip'+(isStock?' avail-stock':'')+'">'+escHtml(r.location||'—')+'</span></td>';
     tr.addEventListener('click',function(){selectUnit(r)});
     tbody.appendChild(tr);
   });
@@ -1046,6 +1046,7 @@ function selectUnit(row){
   document.getElementById('prodMake').value=row.make||'';
   document.getElementById('prodSeries').value=row.series||'';
   document.getElementById('prodModel').value=row.model||'';
+  document.getElementById('prodYear').value=row.year||'';
   document.getElementById('prodSerial').value=row.serial_number||'';
   document.getElementById('spaSerial').textContent=row.serial_number||'Serial auto-filled';
   document.getElementById('invTrigger').value=(row.make||'')+' '+(row.model||'')+' - '+(row.serial_number||'');
@@ -1269,7 +1270,7 @@ function collectData(){
     electrical:{pamphletProvided:cb('#elecPamphlet'),ownElectrician:cb('#elecOwnElec'),notes:v('elecNotes')},
     misc:{notes:v('miscNotes'),monthlyCleanings:cb('#miscCleanings'),cleaningPrice:v('miscCleaningPrice')},
     details:{
-      spaPrice:v('dtSpaPrice'),spaIncluded:cb('#dtSpaIncl'),
+      spaPrice:v('dtSpaPrice'),
       cover:{coverType:mc('.cover-type'),brand:mc('.cover-brand').join(', '),lift:mc('.cover-lift').join(', '),otherLift:v('coverLiftOther'),price:v('dtCoverPrice'),included:cb('#dtCoverIncl')},
       steps:{type:rd('steps'),price:v('dtStepsPrice'),included:cb('#dtStepsIncl')},
       subpanel:{provided:rd('subpanel')==='yes',amperage:rd('subpanelAmp'),price:v('dtSubpanelPrice'),included:cb('#dtSubpanelIncl')},
@@ -1307,6 +1308,13 @@ async function goToPreview(){
   if(data.service.crane && !data.service.craneFee){showToast('Please enter a Crane fee','error');return;}
   if(data.service.outOfTownDelivery && !data.service.outOfTownDeliveryFee){showToast('Please enter an Out-of-Town Delivery fee','error');return;}
 
+  if(!(numVal('dtSpaPrice')>0)){
+    showToast('Spa price is required','error');
+    document.getElementById('dtSpaPrice').scrollIntoView({behavior:'smooth',block:'center'});
+    document.getElementById('dtSpaPrice').focus();
+    return;
+  }
+
   var pm=data.payment||{};
   if(pm.cheque&&pm.cheque.selected){
     if(!pm.cheque.number){showToast('Cheque number is required','error');return;}
@@ -1322,6 +1330,12 @@ async function goToPreview(){
   if(pm.finance&&pm.finance.selected){
     if(!pm.finance.plan){showToast('Finance lender/plan name is required','error');return;}
     if(!(parseFloat(pm.finance.amount)>0)){showToast('Finance amount is required','error');return;}
+  }
+  var over=paymentOverage();
+  if(over){
+    showToast('Payments ($'+fmtMoney(over.paid)+') exceed Grand Total ($'+fmtMoney(over.grandTotal)+') by $'+fmtMoney(over.paid-over.grandTotal),'error');
+    document.getElementById('payDuePrior').scrollIntoView({behavior:'smooth',block:'center'});
+    return;
   }
 
   // Customer signature — required, except for back-entered contracts (delivery
@@ -1432,7 +1446,7 @@ function onDiscountChange(){
 
 function recalcAll(){
   // Product items (Included items contribute $0 to Subtotal)
-  var spa      = cbVal('dtSpaIncl')          ? 0 : numVal('dtSpaPrice');
+  var spa      = numVal('dtSpaPrice');
   var cover    = cbVal('dtCoverIncl')        ? 0 : numVal('dtCoverPrice');
   var steps    = cbVal('dtStepsIncl')        ? 0 : numVal('dtStepsPrice');
   var subpanel = cbVal('dtSubpanelIncl')     ? 0 : numVal('dtSubpanelPrice');
@@ -1482,15 +1496,31 @@ function onWaterCareChange(){
 }
 
 // ── Auto-calculate Due Prior to Delivery ─────────────────────────────────────
-function recalcDuePrior(){
-  var grandTotal=parseFloat((document.getElementById('costGrandTotal').value||'').replace(/[$,]/g,''))||0;
+function paidAtSigning(){
   var paid=0;
-  if(document.getElementById('payChequeSel').checked) paid+=parseFloat(document.getElementById('payChequeAmt').value)||0;
-  if(document.getElementById('payCashSel').checked)   paid+=parseFloat(document.getElementById('payCashAmt').value)||0;
-  if(document.getElementById('payCCSel').checked)     paid+=parseFloat(document.getElementById('payCCAmt').value)||0;
-  if(document.getElementById('payFinanceSel').checked)paid+=parseFloat(document.getElementById('payFinanceAmt').value)||0;
-  var due=Math.max(0,grandTotal-paid);
+  if(cbVal('payChequeSel'))  paid+=numVal('payChequeAmt');
+  if(cbVal('payCashSel'))    paid+=numVal('payCashAmt');
+  if(cbVal('payCCSel'))      paid+=numVal('payCCAmt');
+  if(cbVal('payFinanceSel')) paid+=numVal('payFinanceAmt');
+  return paid;
+}
+function fmtMoney(n){return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+// Payments recorded on the contract may not exceed the Grand Total (1¢ rounding slack).
+function paymentOverage(){
+  var grandTotal=numVal('costGrandTotal'), paid=paidAtSigning();
+  return paid>grandTotal+0.01 ? {paid:paid,grandTotal:grandTotal} : null;
+}
+
+function recalcDuePrior(){
+  var grandTotal=numVal('costGrandTotal');
+  var paid=paidAtSigning();
   var field=document.getElementById('payDuePrior');
+  if(paymentOverage()){
+    field.value='Overpaid by $'+fmtMoney(paid-grandTotal);
+    field.style.color='var(--red)';
+    return;
+  }
+  var due=Math.max(0,grandTotal-paid);
   field.value=due>0?due.toFixed(2):'0.00';
   field.style.color=due>0?'var(--red)':'var(--green)';
 }

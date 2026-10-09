@@ -16,7 +16,8 @@ function contractFormData(overrides = {}) {
   const base = {
     store: 'Phoenix',
     date: '2026-09-20',
-    deliveryDate: '2026-10-05',
+    // Always in the future — a past delivery date makes the contract back-entered (auto-delivered).
+    deliveryDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
     salesman: 'Michael Ioli',
     customer: {
       name: 'Jane Test',
@@ -40,7 +41,7 @@ function contractFormData(overrides = {}) {
       cheque: { selected: true, number: '1001', amount: '5000' },
     },
     costing: { grandTotal: '5000' },
-    details: {},
+    details: { spaPrice: '5000' },
     customerSignature: SIGNATURE_PNG,
   };
   return { ...base, ...overrides };
