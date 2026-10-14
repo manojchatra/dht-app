@@ -121,4 +121,30 @@ async function deleteCalendarEvent(eventId) {
   }
 }
 
-module.exports = { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarConfigured };
+// ── Does this event exist (and isn't cancelled) on the configured calendar? ──
+// Used by scripts/resync-calendar.js so a re-run never duplicates events.
+async function calendarEventExists(eventId) {
+  if (!calendarConfigured() || !eventId) return false;
+  try {
+    const res = await getCalendar().events.get({ calendarId: CALENDAR_ID, eventId });
+    return res.data.status !== 'cancelled';
+  } catch (e) {
+    if ([404, 403, 410].includes(e.code) || [404, 403, 410].includes(e.status)) return false; // not on this calendar
+    throw e;
+  }
+}
+
+// ── Can the service account write to the configured calendar? ────────────────
+// Lists one event; a calendar that isn't shared (or only free/busy) fails here.
+async function checkCalendarAccess() {
+  if (!calendarConfigured()) throw new Error('GOOGLE_CALENDAR_ID / GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY not set in .env');
+  const cal = getCalendar();
+  const acl = await cal.calendarList.get({ calendarId: CALENDAR_ID }).catch(() => null);
+  if (acl && !['owner', 'writer'].includes(acl.data.accessRole)) {
+    throw new Error(`Service account has "${acl.data.accessRole}" access — share the calendar with it as "Make changes to events"`);
+  }
+  await cal.events.list({ calendarId: CALENDAR_ID, maxResults: 1 });
+  return { calendarId: CALENDAR_ID, account: process.env.GOOGLE_CLIENT_EMAIL, accessRole: acl ? acl.data.accessRole : 'unknown' };
+}
+
+module.exports = { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarConfigured, calendarEventExists, checkCalendarAccess };

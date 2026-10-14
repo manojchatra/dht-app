@@ -23,6 +23,8 @@ function createTestApp() {
     updateCalendarEvent: jest.fn().mockResolvedValue(null),
     deleteCalendarEvent: jest.fn().mockResolvedValue(null),
     calendarConfigured:  jest.fn().mockReturnValue(false),
+    calendarEventExists: jest.fn().mockResolvedValue(false),
+    checkCalendarAccess: jest.fn().mockResolvedValue({ accessRole: 'writer' }),
   }));
 
   jest.doMock('../../services/driveInventory', () => ({

@@ -6,10 +6,10 @@
 #  2. Sundays (or first run): uploads + activity log → $BACKUP_ROOT/files/uploads-YYYY-MM-DD.tar.gz
 #     (keeps 2 — full copies of every photo are large, so not kept daily on this disk).
 #  3. Sundays (or first run): .env + nginx/Hestia config → $BACKUP_ROOT/config/ (secrets, mode 600, keeps 8).
-#  4. If the rclone remote $RCLONE_REMOTE exists (use an rclone *crypt* remote so
-#     everything is encrypted), copies off the server:
-#       $BACKUP_ROOT (db + config) → $RCLONE_REMOTE:backups
-#       $APP_DIR/uploads    → $RCLONE_REMOTE:uploads   (incremental, nightly; never deletes remotely)
+#  4. Copies off the server (each only if its rclone remote exists):
+#       $BACKUP_ROOT (db + config) → $RCLONE_REMOTE:backups  (an rclone *crypt* remote — always encrypted)
+#       $APP_DIR/uploads           → $UPLOADS_REMOTE         (plain, readable in Drive; incremental,
+#                                                             nightly; never deletes remotely)
 #
 # Paths can be overridden with environment variables (used for testing).
 set -uo pipefail
@@ -18,6 +18,9 @@ APP_DIR="${APP_DIR:-/home/DHT/dht-app}"
 DATA_DIR="${DATA_DIR:-/home/DHT/data}"
 BACKUP_ROOT="${BACKUP_ROOT:-/home/DHT/backups}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-dhtbackup-crypt}"
+# Uploads go to the Shared Drive unencrypted so files open straight from Google Drive.
+# To encrypt them again: UPLOADS_REMOTE="dhtbackup-crypt:uploads"
+UPLOADS_REMOTE="${UPLOADS_REMOTE:-dhtbackup:uploads}"
 NGINX_PROXY_CONF="${NGINX_PROXY_CONF:-/home/DHT/conf/web/app.deserthottubsaz.com/nginx.ssl.conf_proxy}"
 HESTIA_TPL_DIR="${HESTIA_TPL_DIR:-/usr/local/hestia/data/templates/web/nginx/php-fpm}"
 NODE_BIN="${NODE_BIN:-$(command -v node || echo /usr/bin/node)}"
@@ -74,16 +77,29 @@ if [ -n "$WEEKLY" ] || ! ls "$BACKUP_ROOT"/config/config-*.tar.gz >/dev/null 2>&
   ls -1t "$BACKUP_ROOT"/config/config-*.tar.gz 2>/dev/null | tail -n +9 | xargs -r rm -f
 fi
 
-# 4. Off-server copy (encrypted rclone remote)
-if command -v rclone >/dev/null 2>&1 && rclone listremotes 2>/dev/null | grep -qx "$RCLONE_REMOTE:"; then
-  if rclone copy "$BACKUP_ROOT" "$RCLONE_REMOTE:backups" --exclude 'backup.log' --exclude '*.tmp' --exclude 'files/**' >>"$LOG" 2>&1 \
-     && rclone copy "$APP_DIR/uploads" "$RCLONE_REMOTE:uploads" --exclude 'tmp/**' >>"$LOG" 2>&1; then
-    log "Off-server copy OK ($RCLONE_REMOTE)"
+# 4. Off-server copy
+remote_ok() { command -v rclone >/dev/null 2>&1 && rclone listremotes 2>/dev/null | grep -qx "${1%%:*}:"; }
+
+# 4a. Database + config (secrets) → encrypted remote
+if remote_ok "$RCLONE_REMOTE"; then
+  if rclone copy "$BACKUP_ROOT" "$RCLONE_REMOTE:backups" --exclude 'backup.log' --exclude '*.tmp' --exclude 'files/**' >>"$LOG" 2>&1; then
+    log "Off-server copy OK ($RCLONE_REMOTE:backups)"
   else
     fail "off-server copy to $RCLONE_REMOTE failed"
   fi
 else
   log "WARNING: rclone remote '$RCLONE_REMOTE' not configured — backups are on this server only"
+fi
+
+# 4b. Uploads (photos, signatures, PDFs) → $UPLOADS_REMOTE, readable in Google Drive
+if remote_ok "$UPLOADS_REMOTE"; then
+  if rclone copy "$APP_DIR/uploads" "$UPLOADS_REMOTE" --exclude 'tmp/**' >>"$LOG" 2>&1; then
+    log "Uploads copy OK ($UPLOADS_REMOTE)"
+  else
+    fail "uploads copy to $UPLOADS_REMOTE failed"
+  fi
+else
+  log "WARNING: rclone remote for '$UPLOADS_REMOTE' not configured — uploads are on this server only"
 fi
 
 if [ "$FAILED" -ne 0 ]; then
