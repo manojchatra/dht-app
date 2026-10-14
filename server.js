@@ -53,8 +53,11 @@ require('./services/customers').assignMissingCustomerNumbers();
 // Auth (public)
 app.use('/auth', require('./routes/auth'));
 
+// Photos uploaded with a request that didn't use them (rejected/failed save) are deleted
+app.use('/api', require('./utils/uploadCleanup').discardUnusedUploads);
+
 // Protected API routes
-app.use('/api/contracts',    requireAuth, require('./routes/contracts'));
+app.use('/api/contracts',   requireAuth, require('./routes/contracts'));
 app.use('/api/notifications', requireAuth, require('./routes/notifications'));
 app.use('/api/inventory',    requireAuth, require('./routes/inventory'));
 app.use('/api/inventory-items', requireAuth, require('./routes/inventory-items'));
@@ -114,6 +117,7 @@ app.use((req, res) => res.status(404).send('Not found'));
 if (require.main === module) {
   app.listen(PORT, '127.0.0.1', () => console.log(`DHT App running on port ${PORT}`));
   require('./utils/reviewEmail').startReviewEmailScheduler();
+  require('./utils/uploadCleanup').startStrayUploadSweep();
 }
 
 module.exports = app;
