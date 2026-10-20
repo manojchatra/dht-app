@@ -157,10 +157,14 @@
       <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-truck-fast" style="color:var(--accent)"></i> Move to Order Placed</h2>
       <button onclick="closeOrderPlacedModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
     </div>
+    <!-- Unreserved on-order stock of the same make/model: link one instead of ordering again -->
+    <div id="orderPlacedMatches" style="display:none;margin-bottom:14px"></div>
+    <div id="orderPlacedNewFields">
     <div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Web Order Number *</label>
       <input type="text" id="orderPlacedWebNum" style="width:100%" placeholder="e.g. WO-12345"></div>
     <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Truck Number *</label>
       <input type="text" id="orderPlacedTruckNum" style="width:100%" placeholder="e.g. T-204"></div>
+    </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeOrderPlacedModal()">Cancel</button>
       <button class="btn btn-primary" id="orderPlacedSaveBtn" onclick="submitOrderPlaced()"><i class="fa-solid fa-truck-fast"></i> Confirm</button>
@@ -575,17 +579,42 @@ function openOrderPlacedModal(id){
   orderPlacedContractId=id;
   document.getElementById('orderPlacedWebNum').value='';
   document.getElementById('orderPlacedTruckNum').value='';
+  document.getElementById('orderPlacedMatches').style.display='none';
+  document.getElementById('orderPlacedNewFields').style.display='';
   document.getElementById('orderPlacedModal').classList.add('open');
+  loadOrderedMatches(id);
+}
+// Unreserved on-order stock of this contract's make/model — admin can link one
+// instead of placing a second factory order for the same spa.
+async function loadOrderedMatches(id){
+  const c=allContracts.find(x=>x.id===id); if(!c) return;
+  try{
+    const j=await fetch('/api/inventory/ordered-matches?make='+encodeURIComponent(c.make||'')+'&model='+encodeURIComponent(c.model||'')).then(r=>r.json());
+    const rows=j.results||[];
+    if(orderPlacedContractId!==id||!rows.length) return;
+    const box=document.getElementById('orderPlacedMatches');
+    box.innerHTML='<div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--accent)"><i class="fa-solid fa-truck-fast"></i> Already on order — '+escHtml(c.make||'')+' '+escHtml(c.model||'')+'</div>'
+      +rows.map(u=>'<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:6px 0;cursor:pointer"><input type="radio" name="opPick" value="'+u.id+'" onchange="onOrderedPick()">'
+        +'<span>Truck '+escHtml(u.truck_number||'—')+' · Web Order # '+escHtml(u.web_order_number||'—')
+        +'<br><span style="color:var(--text-muted);font-size:12px">'+escHtml([u.shell_color,u.cabinet_color].filter(Boolean).join(' / ')||'Colours not set')+(u.year?' · '+escHtml(u.year):'')+'</span></span></label>').join('')
+      +'<label style="display:flex;gap:8px;align-items:center;font-size:13px;padding:6px 0;cursor:pointer"><input type="radio" name="opPick" value="" checked onchange="onOrderedPick()"> Place a new order</label>';
+    box.style.display='block';
+  }catch(e){ /* matches are a convenience — the manual fields still work */ }
+}
+function onOrderedPick(){
+  const v=(document.querySelector('[name=opPick]:checked')||{}).value;
+  document.getElementById('orderPlacedNewFields').style.display=v?'none':'';
 }
 function closeOrderPlacedModal(){document.getElementById('orderPlacedModal').classList.remove('open');orderPlacedContractId=null;}
 async function submitOrderPlaced(){
+  const inventoryId=(document.querySelector('#orderPlacedMatches [name=opPick]:checked')||{}).value||'';
   const webOrderNumber=document.getElementById('orderPlacedWebNum').value.trim();
   const truckNumber=document.getElementById('orderPlacedTruckNum').value.trim();
-  if(!webOrderNumber||!truckNumber){showToast('Web Order Number and Truck Number are required','error');return;}
+  if(!inventoryId&&(!webOrderNumber||!truckNumber)){showToast('Web Order Number and Truck Number are required','error');return;}
   const btn=document.getElementById('orderPlacedSaveBtn');
   btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
   try{
-    await applyStatus(orderPlacedContractId,'order_placed',{webOrderNumber,truckNumber});
+    await applyStatus(orderPlacedContractId,'order_placed',inventoryId?{inventoryId:Number(inventoryId)}:{webOrderNumber,truckNumber});
     closeOrderPlacedModal();
   }finally{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-truck-fast"></i> Confirm';}
 }

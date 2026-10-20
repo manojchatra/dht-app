@@ -121,7 +121,7 @@ Any (not Delivered) → Cancelled → Assigned  (revert)
 
 **Cancel vs Delete:**
 - **Cancel** — a real customer backed out. Contract, payments, PDFs and history are kept (the contract terms charge for cancellations after the deposit becomes non-refundable). Any linked spa goes back to **In-stock**. Reverting re-claims the spa only if it hasn't been sold meanwhile (logged either way).
-- **Delete** (admin only) — mistakes and test entries. Permanently removes the contract, its payments, activity, notifications, uploads folder, Sheet rows and calendar event. An undelivered linked spa goes back to In-stock (a delivered one stays Sold). If that was the customer's last contract, the customer is deleted too.
+- **Delete** (admin only) — mistakes and test entries. Permanently removes the contract, its payments, activity, notifications, uploads folder, Sheet rows and calendar event. An undelivered linked spa goes back to In-stock (a delivered one stays Sold, unlinked). The spa's inventory unit is never deleted — even one the contract or the stock import created; a mistyped serial is removed by hand from Inventory. If that was the customer's last contract, the customer is deleted too.
 
 ---
 
@@ -162,10 +162,12 @@ The **customer record is the source of truth** for a customer's name, phone and 
 - **Add to Inventory:** *In Hand* (scan SKU + serial) or *On Order* (Web Order # + Truck #). SKU scan looks the product up in the **SKU List** Sheet tab (tolerates formatting differences, a trailing `.NN` suffix, and suggests a close match for 1–2 character typos) and auto-fills Make/Series/Model/Colors/Speaker.
 - **Barcode scanning** (`public/js/barcode-scanner.js`): Code 128 only, native `BarcodeDetector` where available (Android Chrome), self-hosted ZXing WASM polyfill elsewhere (iOS Safari). Strips the GS1 `]C1` prefix.
 - **Take Photo fallback:** every Scan button has a **Take Photo** button beside it (phone camera) for labels that won't scan — staff type the serial/SKU by hand and attach the photo.
-- **Picking a spa on a contract:** New Contract's inventory search only offers `In-stock` units; picking one marks it **Sold** and links it to the contract.
+- **Picking a spa on a contract:** New Contract's inventory search offers `In-stock` units (picking one marks it **Sold** and links it to the contract) and, listed after them, unreserved **on-order stock** (`Ordered`, "On order · Truck … · WO …"; hidden when a store filter is set).
+- **Selling on-order stock** (`services/orderedStock.js`): picking an on-order unit sets the contract to To Be Ordered on the paperwork, but it is saved straight to **Order Placed** with that unit's Web Order # / Truck #, and the unit is **reserved** (`availability='Ordered'` + `contract_id`). Admin gets "New Contract (Already On Order)" instead of the To Be Ordered email, so the spa isn't ordered twice. A reserved unit shows "Ordered · Reserved DHT…" on the Inventory page and can't be received or re-labelled there. Receiving the contract (Warehouse or admin Mark Received) writes the serial onto that same unit (Sold) — no second unit. Cancel/delete before receipt returns it to unreserved `Ordered`.
+- **Admin: Move to Order Placed** lists unreserved on-order units of the contract's make/model; admin can link one instead of entering a new Web Order # / Truck #.
 - Inventory editing is admin-only; the Finance field on a unit drives the finance indicator icon on contract cards/detail.
 
-**Warehouse dashboard** (`/warehouse`, `routes/warehouse.js`): one queue of everything awaiting receipt — Order-Placed contracts (no pricing shown) plus Ordered general stock — searchable by Web Order # / Truck #.
+**Warehouse dashboard** (`/warehouse`, `routes/warehouse.js`): one queue of everything awaiting receipt — Order-Placed contracts (no pricing shown) plus unreserved Ordered general stock (reserved stock appears once, as its contract) — searchable by Web Order # / Truck #.
 - Receiving a **customer contract** requires serial number + serial photo + SKU photo; creates/links the inventory row (Sold), moves the contract to Received.
 - Receiving **general stock** requires the serial; photo optional; unit becomes In-stock.
 
@@ -193,7 +195,7 @@ Card grid with search (customer, serial, make, contract #, salesman) and filters
     contract.jpg / contract.pdf        ← handwritten contract
     cheque.jpg
     serial-photo.jpg                   ← required at Received
-    delivery-photo-1.jpg ... -5.jpg    ← delivery evidence photos
+    delivery-photo-1.jpg ... -10.jpg   ← delivery evidence photos
     extra-1-Label.jpg                  ← supporting docs (images or PDFs)
     exception-1.jpg                    ← exception photos from ack form
     sig-customer.png                   ← uncompressed signatures
@@ -236,8 +238,8 @@ Tabs are created automatically the first time they're needed. Sheet writes are a
 4. `/delivery/:id`: contract details (no pricing), address = the contract's delivery address. Admin sees full sidebar + "Back to Acknowledgement". Delivery sees no sidebar + "Back to Calendar".
 5. "Start Delivery Acknowledgement" → `/acknowledgement/:id`
 6. Form sections:
-   - **Delivery Photos** — 1 required, up to 5. Slot grid with camera capture. Compressed and saved as `delivery-photo-1..5.jpg`.
-   - Items Delivered — 11 checkbox items
+   - **Delivery Photos** — 1 required, up to 10. Slot grid with camera capture. Shrunk in the browser (2000px, JPEG 80%) before upload to stay under nginx's 20 MB request limit, compressed again on the server and saved as `delivery-photo-1..10.jpg`. A photo still over 2 MB is skipped, not recorded.
+   - Items Delivered — 11 checkbox items; ticking "Other" shows a required text box, printed on the PDF as "Other: …"
    - Product Details — Steps Model, Cover Lifter
    - **Water Care Installed** — 7-item checkbox group (FreshWater Salt System, FreshWater IQ, Auto Dosing, Standard Water Care, Ozone, Frog System, Other + text box)
    - Water Care Parts — pre-ticked by contract water care type

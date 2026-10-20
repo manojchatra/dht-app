@@ -210,6 +210,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
           <i class="fa-solid fa-magnifying-glass"></i> Search
         </button>
       </div>
+      <p id="orderedNote" style="display:none;font-size:12px;color:var(--accent);margin:6px 0 0"></p>
     </div>
     <div class="grid-4" style="margin-bottom:14px">
       <div class="ac-wrap">
@@ -677,6 +678,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
         <option value="chandler">Chandler Floor</option>
         <option value="surprise">Surprise Floor</option>
         <option value="tolleson">Tolleson Floor</option>
+        <option value="onorder">On order (on a truck)</option>
       </select>
     </div>
     <div class="inv-body" id="invResults">
@@ -812,6 +814,7 @@ document.addEventListener('DOMContentLoaded',function(){
       btn.classList.add('active');
       selectedStatus=btn.dataset.status;
       document.getElementById('floorModelRow').style.display=selectedStatus==='instock'?'block':'none';
+      if(selectedStatus==='instock') clearOrderedUnit();
     });
   });
 
@@ -828,6 +831,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
   document.getElementById('prodSerial').addEventListener('input',function(){
     document.getElementById('spaSerial').textContent=this.value||'Serial auto-filled from product section';
+    if(this.value.trim()) clearOrderedUnit(); // a typed serial means a different, physical spa
   });
 
   document.getElementById('saleDate').value=new Date().toISOString().slice(0,10);
@@ -971,7 +975,7 @@ async function runSearch(){
   var res=document.getElementById('invResults');
   res.innerHTML='<p class="no-results"><i class="fa-solid fa-spinner fa-spin"></i> Searching...</p>';
   try{
-    var r=await fetch('/api/inventory/search?q='+encodeURIComponent(q)+'&store='+encodeURIComponent(store));
+    var r=await fetch('/api/inventory/search?includeOrdered=1&q='+encodeURIComponent(q)+'&store='+encodeURIComponent(store));
     var data=await r.json();
     renderInvResults(data.results||[]);
   }catch(e){res.innerHTML='<p class="no-results" style="color:var(--red)">Search failed</p>';}
@@ -987,10 +991,11 @@ function renderInvResults(rows){
   rows.forEach(function(r){
     var tr=document.createElement('tr');
     var isStock=(r.availability||'').toLowerCase()==='in-stock';
+    var onOrder=r.availability==='Ordered';
     tr.innerHTML='<td>'+escHtml(r.make||'')+'</td><td>'+escHtml(r.series||'')+'</td><td>'+escHtml(r.model||'')+'</td><td>'+escHtml(r.year||'')+'</td>'+
       '<td>'+escHtml(r.shell_color||'')+'</td><td>'+escHtml(r.cabinet_color||'')+'</td>'+
-      '<td><strong>'+escHtml(r.serial_number||'')+'</strong></td>'+
-      '<td><span class="avail-chip'+(isStock?' avail-stock':'')+'">'+escHtml(r.location||'—')+'</span></td>';
+      '<td><strong>'+(onOrder?'<em style="font-weight:500">On order</em>':escHtml(r.serial_number||''))+'</strong></td>'+
+      '<td><span class="avail-chip'+(isStock?' avail-stock':'')+'">'+(onOrder?'Truck '+escHtml(r.truck_number||'—')+' · WO '+escHtml(r.web_order_number||'—'):escHtml(r.location||'—'))+'</span></td>';
     tr.addEventListener('click',function(){selectUnit(r)});
     tbody.appendChild(tr);
   });
@@ -1042,14 +1047,36 @@ document.getElementById('deliveryDate').addEventListener('change',refreshFinance
 document.getElementById('deliveryDateText').addEventListener('blur',refreshFinanceChoice); // typed dates update the hidden field without a change event
 document.querySelectorAll('[data-status]').forEach(function(b){ b.addEventListener('click',refreshFinanceChoice); });
 
+// On-order stock picked in the search (on a truck, no serial yet): saved as
+// To Be Ordered, and the server reserves that unit and starts the contract at
+// Order Placed — so admin doesn't order the same spa twice.
+var selectedOrderedUnitId=null;
+function clearOrderedUnit(){
+  if(!selectedOrderedUnitId) return;
+  selectedOrderedUnitId=null;
+  document.getElementById('orderedNote').style.display='none';
+  document.getElementById('invTrigger').value='';
+}
+
 function selectUnit(row){
+  if(row.availability==='Ordered'){
+    document.querySelector('.status-btn[data-status="tbo"]').click();
+    selectedOrderedUnitId=row.id;
+    var note=document.getElementById('orderedNote');
+    note.innerHTML='<i class="fa-solid fa-truck-fast"></i> On order — Truck '+escHtml(row.truck_number||'—')+', Web Order # '+escHtml(row.web_order_number||'—')+'. Reserved for this customer when you save; no new order is placed.';
+    note.style.display='block';
+  } else if(selectedOrderedUnitId){
+    // switching from an on-order pick (which set To Be Ordered) to a physical spa
+    clearOrderedUnit();
+    document.querySelector('.status-btn[data-status="instock"]').click();
+  }
   document.getElementById('prodMake').value=row.make||'';
   document.getElementById('prodSeries').value=row.series||'';
   document.getElementById('prodModel').value=row.model||'';
   document.getElementById('prodYear').value=row.year||'';
   document.getElementById('prodSerial').value=row.serial_number||'';
   document.getElementById('spaSerial').textContent=row.serial_number||'Serial auto-filled';
-  document.getElementById('invTrigger').value=(row.make||'')+' '+(row.model||'')+' - '+(row.serial_number||'');
+  document.getElementById('invTrigger').value=(row.make||'')+' '+(row.model||'')+' - '+(row.availability==='Ordered'?'On order (Truck '+(row.truck_number||'—')+')':(row.serial_number||''));
   updateSeriesDl(row.make||'');
   selectChipFromValue('shellChips',   SHELL_COLORS,   row.shell_color,   'shellColorOther',   function(v){selectedShell=v});
   selectChipFromValue('cabinetChips', CABINET_COLORS, row.cabinet_color, 'cabinetColorOther', function(v){selectedCabinet=v});
@@ -1252,6 +1279,7 @@ function collectData(){
       status:selectedStatus,floorModel:v('floorModel'),
       make:v('prodMake'),series:v('prodSeries'),model:v('prodModel'),year:v('prodYear'),
       serialNumber:v('prodSerial'),
+      orderedUnitId:selectedOrderedUnitId,
       finance:document.getElementById('prodFinanceWrap').style.display==='none'?'':v('prodFinance'),
       shellColor:selectedShell!=='Others'?selectedShell:v('shellColorOther'),
       cabinetColor:selectedCabinet!=='Others'?selectedCabinet:v('cabinetColorOther'),

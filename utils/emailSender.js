@@ -127,6 +127,24 @@ async function notifyContractCreatedTBO({ contract, customerName }) {
   await sendEmail({ to, subject, text });
 }
 
+// A2 — contract sold from on-order stock (already on a truck) → salesperson + admin.
+// Replaces A for these: the spa is already ordered, so nothing to place.
+async function notifyContractCreatedOnOrder({ contract, customerName }) {
+  const to = [getSalesmanEmail(contract), ...getAdminRecipients()];
+  const subject = `New Contract (Already On Order) — ${contract.contract_number} — ${customerName || ''}`;
+  const text = [
+    'A new contract was sold from on-order stock. The spa is already ordered — do NOT place another order.',
+    '',
+    `Contract #: ${contract.contract_number}`,
+    `Customer: ${customerName || ''}`,
+    `Make / Model: ${contract.make || ''} / ${contract.model || ''}`,
+    `Web Order #: ${contract.web_order_number || ''}`,
+    `Truck #: ${contract.truck_number || ''}`,
+    `Store: ${contract.store || ''}`,
+  ].join('\n') + footer;
+  await sendEmail({ to, subject, text });
+}
+
 // C — admin moves contract to Order Placed → salesperson only
 async function notifyOrderPlaced({ contract, customerName, webOrderNumber, truckNumber }) {
   const to = [getSalesmanEmail(contract)];
@@ -237,6 +255,6 @@ async function notifyUserCreated({ name, username, email }) {
 module.exports = {
   sendAcknowledgementEmail, smtpConfigured, sendEmail, notifyUserCreated,
   getAdminRecipients, getSalesmanEmail, getStoreReviewUrl,
-  notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived,
+  notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived,
   notifyPaymentRecorded, notifyDelivered, sendReviewRequestEmail,
 };

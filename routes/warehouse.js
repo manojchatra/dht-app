@@ -20,6 +20,7 @@ const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyReceived } = require('../utils/emailSender');
 const { buildDriveData } = require('./contracts');
 const { syncCustomerRecord } = require('../services/customers');
+const { receiveSerialConflict, receiveReservedUnit } = require('../services/orderedStock');
 
 router.use(requireRole(['admin', 'warehouse']));
 
@@ -83,7 +84,7 @@ router.get('/queue', (req, res) => {
     const inventoryRows = db.prepare(`
       SELECT id, make, model, shell_color, cabinet_color, web_order_number, truck_number
       FROM inventory
-      WHERE availability = 'Ordered'
+      WHERE availability = 'Ordered' AND contract_id IS NULL  -- reserved stock shows as its contract's row
       ORDER BY created_at DESC
     `).all().map(r => ({ ...r, type: 'inventory', customer_name: '' }));
 
@@ -112,6 +113,8 @@ router.post('/:id/receive', (req, res) => {
 
       const serial = serialNumber.trim();
       const sku    = (skuNumber || '').trim();
+      const serialClash = receiveSerialConflict(db, contract.id, serial);
+      if (serialClash) return res.status(409).json({ error: serialClash });
       const serialPhotoPath = await finalizePhoto(req.files.serialPhoto[0], serial, 'serial-photo');
       const skuPhotoPath    = await finalizePhoto(req.files.skuPhoto[0],    serial, 'sku-photo');
       const actualDate = receivedDate || new Date().toISOString().slice(0,10);
@@ -132,8 +135,13 @@ router.post('/:id/receive', (req, res) => {
       // contract's Web Order Number/Truck Number over too, same as the
       // general "Add to Inventory" flow already does for Ordered stock.
       const product = data.product || {};
-      const invExisting = db.prepare('SELECT id FROM inventory WHERE serial_number=?').get(serial);
-      if (invExisting) {
+      // On-order stock this contract reserved: that unit gets the serial — no second unit.
+      // (receiveReservedUnit also updates that unit's Sheet row.)
+      const usedReserved = await receiveReservedUnit(db, contract.id, { serial, sku, skuPhotoPath, serialPhotoPath });
+      const invExisting = usedReserved ? null : db.prepare('SELECT id FROM inventory WHERE serial_number=?').get(serial);
+      if (usedReserved) {
+        // nothing more to create or link
+      } else if (invExisting) {
         db.prepare(`UPDATE inventory SET contract_id=?,availability=?,sku_number=?,sku_photo_path=?,serial_photo_path=?,web_order_number=?,truck_number=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
           .run(req.params.id, 'Sold', sku, skuPhotoPath, serialPhotoPath, contract.web_order_number || '', contract.truck_number || '', invExisting.id);
       } else {
@@ -163,7 +171,7 @@ router.post('/:id/receive', (req, res) => {
         const photoUrl = 'https://app.deserthottubsaz.com' + (toUrlPath(serialPhotoPath) || '');
         await moveToReceived(contract.contract_number, actualDate, photoUrl, driveData);
 
-        const alreadyInSheet = await inventoryItemExistsInSheet(serial);
+        const alreadyInSheet = usedReserved || await inventoryItemExistsInSheet(serial);
         if (!alreadyInSheet) {
           await appendInventoryItem({
             serialNumber: serial, skuNumber: sku,

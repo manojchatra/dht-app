@@ -171,6 +171,8 @@ function isAdmin(){ return window._userRole==='admin'; }
 function canEditLocationRef(){ return isAdmin() || window._userRole==='warehouse'; }
 
 function availSelect(it){
+  // On-order stock reserved by a contract: fixed until that contract is received or cancelled.
+  if(it.reserved_contract_number) return '<span title="Reserved for '+escHtml(it.reserved_contract_number)+'">Ordered · <strong>Reserved '+escHtml(it.reserved_contract_number)+'</strong></span>';
   if(!isAdmin()) return '<span>'+escHtml(it.availability||'—')+'</span>';
   const opts=['In-stock','Hold','Sold','Ordered'];
   return '<select onchange="markDirty('+it.id+',\'availability\',this.value)">'+
@@ -211,7 +213,7 @@ function photoCell(it){
 function actionsCell(it){
   const dirty = canEditLocationRef() && !!pendingChanges[it.id];
   var out='<button type="button" id="save-'+it.id+'" class="btn-row-save" style="display:'+(dirty?'inline-block':'none')+'" onclick="saveRow('+it.id+')" title="Save changes"><i class="fa-solid fa-floppy-disk"></i></button>';
-  if(it.availability==='Ordered'){
+  if(it.availability==='Ordered' && !it.reserved_contract_number){
     out+='<button type="button" class="btn-row-receive" onclick="openReceiveModal('+it.id+')" title="Mark Received"><i class="fa-solid fa-truck-arrow-right"></i></button>';
   }
   if(window._userRole==='admin'){

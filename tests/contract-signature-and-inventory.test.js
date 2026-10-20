@@ -105,17 +105,45 @@ describe('inventory unit for a serial typed on the contract', () => {
     expect(rows[0]).toMatchObject({ availability: 'Sold', contract_id: contractId, created_by_contract_id: null, finance: 'DHT Owned' });
   });
 
-  test('deleting the contract removes the unit it created', async () => {
+  test('deleting an undelivered contract keeps the unit it created, back In-stock', async () => {
     const agent = await admin();
     const p = product();
-    const { contractId } = await createContract(agent, { product: p, deliveryDate: '2020-03-01' });
-    expect(unit(p.serialNumber)).toBeTruthy();
+    const { contractId } = await createContract(agent, { product: p });
+    expect(unit(p.serialNumber)).toMatchObject({ availability: 'Sold', created_by_contract_id: contractId });
 
     const res = await agent.delete(`/api/contracts/${contractId}`);
 
     expect(res.status).toBe(200);
-    expect(unit(p.serialNumber)).toBeUndefined();
-    expect(require('../services/driveInventory').deleteInventoryItem).toHaveBeenCalledWith(p.serialNumber);
+    expect(unit(p.serialNumber)).toMatchObject({ availability: 'In-stock', contract_id: null });
+    expect(require('../services/driveInventory').deleteInventoryItem).not.toHaveBeenCalledWith(p.serialNumber);
+  });
+
+  test('deleting an undelivered contract keeps a unit the stock import linked to it', async () => {
+    const agent = await admin();
+    const serial = `ZZSIG-IMPORT-${++n}`;
+    const { contractId } = await createContract(agent, { product: product({ status: 'tbo', serialNumber: '' }) });
+    // What the Oct 9 import's "link" step produced: a Sold unit tagged as created by the contract.
+    ctx.db.prepare("UPDATE contracts SET serial_number=?, status='assigned' WHERE id=?").run(serial, contractId);
+    ctx.db.prepare(`INSERT INTO inventory (make, model, serial_number, availability, contract_id, created_by_contract_id, added_by)
+      VALUES ('Caldera','Vanto',?,'Sold',?,?,'inventory-import')`).run(serial, contractId, contractId);
+
+    expect((await agent.delete(`/api/contracts/${contractId}`)).status).toBe(200);
+
+    expect(unit(serial)).toMatchObject({ make: 'Caldera', model: 'Vanto', availability: 'In-stock', contract_id: null });
+  });
+
+  test('deleting a delivered contract keeps its unit as Sold, and re-entering the contract links to it', async () => {
+    const agent = await admin();
+    const p = product();
+    const { contractId } = await createContract(agent, { product: p, deliveryDate: '2020-03-01' });
+
+    expect((await agent.delete(`/api/contracts/${contractId}`)).status).toBe(200);
+    expect(unit(p.serialNumber)).toMatchObject({ availability: 'Sold', contract_id: null });
+
+    const again = await createContract(agent, { product: p, deliveryDate: '2020-03-01' });
+    const rows = ctx.db.prepare('SELECT * FROM inventory WHERE serial_number=?').all(p.serialNumber);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ availability: 'Sold', contract_id: again.contractId });
   });
 
   test('deleting a contract keeps a unit that existed before it (back to In-stock if undelivered)', async () => {

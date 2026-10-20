@@ -50,10 +50,13 @@ function createTestApp() {
     deleteCustomerRecordRow:      jest.fn().mockResolvedValue(null),
     appendInventoryItem:          jest.fn().mockResolvedValue(null),
     deleteInventoryItem:          jest.fn().mockResolvedValue(true),
+    markInventoryItemReceivedInSheet: jest.fn().mockResolvedValue(true),
+    inventoryItemExistsInSheet:   jest.fn().mockResolvedValue(false),
   }));
 
   jest.doMock('../../utils/emailSender', () => ({
     notifyContractCreatedTBO:  jest.fn().mockResolvedValue(null),
+    notifyContractCreatedOnOrder: jest.fn().mockResolvedValue(null),
     notifyOrderPlaced:         jest.fn().mockResolvedValue(null),
     notifyReceived:            jest.fn().mockResolvedValue(null),
     notifyPaymentRecorded:     jest.fn().mockResolvedValue(null),

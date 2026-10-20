@@ -67,8 +67,9 @@ async function finalizeInventoryPhoto(tmpFile, serialNumber, label) {
 router.get('/', (req, res) => {
   try {
     const rows = db.prepare(`
-      SELECT * FROM inventory
-      ORDER BY (availability = 'Sold') ASC, created_at DESC
+      SELECT i.*, c.contract_number AS reserved_contract_number FROM inventory i
+      LEFT JOIN contracts c ON c.id = i.contract_id AND i.availability = 'Ordered'
+      ORDER BY (i.availability = 'Sold') ASC, i.created_at DESC
     `).all();
     const items = rows.map(r => ({
       ...r,
@@ -193,6 +194,9 @@ router.patch('/:id', async (req, res) => {
     }
     const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
     if (!item) return res.status(404).json({ error: 'Not found' });
+    if (item.availability === 'Ordered' && item.contract_id && req.body.availability !== undefined && req.body.availability !== 'Ordered') {
+      return res.status(400).json({ error: 'This on-order spa is reserved for a contract — its availability changes when the contract is received or cancelled.' });
+    }
 
     const updates = [];
     const params = [];
@@ -240,6 +244,10 @@ router.patch('/:id/receive', (req, res) => {
       if (!item) return res.status(404).json({ error: 'Not found' });
       if (item.availability !== 'Ordered') {
         return res.status(400).json({ error: 'Only Ordered items can be marked received here.' });
+      }
+      if (item.contract_id) {
+        const c = db.prepare('SELECT contract_number FROM contracts WHERE id=?').get(item.contract_id);
+        return res.status(400).json({ error: `Reserved for ${c ? c.contract_number : 'a contract'} — receive it from that contract (Warehouse queue).` });
       }
 
       const serialNumber = (req.body.serialNumber || '').trim();

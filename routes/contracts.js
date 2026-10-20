@@ -16,11 +16,12 @@ const {
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, deleteInventoryRow, updateInventoryItemField,
-  deleteContractRowFromSheet, appendInventoryItem, deleteInventoryItem
+  deleteContractRowFromSheet, appendInventoryItem
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
-const { notifyContractCreatedTBO, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
+const { notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
+const { getUnreservedOrdered, reserveOrdered, receiveSerialConflict, receiveReservedUnit } = require('../services/orderedStock');
 const { withLock } = require('../utils/asyncLock');
 const {
   normalizeContractPhones, nextCustomerNumber,
@@ -148,17 +149,23 @@ function truncate(s, max) {
 // received by the warehouse for it) is marked Sold. When that contract is
 // cancelled or deleted before delivery the spa is still on hand, so it must go
 // back to In-stock — otherwise it silently vanishes from the in-stock picker.
-// Returns the serial numbers released.
+// Reserved on-order stock (still Ordered, not yet received) goes back to
+// unreserved Ordered — it's still on the truck (services/orderedStock.js).
+// Returns labels of the units released (serial, or web order for on-order stock).
 async function releaseInventoryForContract(contractId) {
-  const units = db.prepare('SELECT id, serial_number FROM inventory WHERE contract_id=?').all(contractId);
+  const units = db.prepare('SELECT id, serial_number, availability, web_order_number FROM inventory WHERE contract_id=?').all(contractId);
   for (const u of units) {
+    if (u.availability === 'Ordered') {
+      db.prepare('UPDATE inventory SET contract_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(u.id);
+      continue;
+    }
     db.prepare(`UPDATE inventory SET availability='In-stock', contract_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(u.id);
     if (u.serial_number) {
       try { await updateInventoryItemField(u.serial_number, 'availability', 'In-stock'); }
       catch (e) { console.error('[Drive inventory release failed — non-fatal]', e.message); }
     }
   }
-  return units.map(u => u.serial_number).filter(Boolean);
+  return units.map(u => u.availability === 'Ordered' ? `on-order stock (Web Order # ${u.web_order_number || '—'})` : u.serial_number).filter(Boolean);
 }
 
 // Reverting a cancellation re-links the contract's unit only if it's still
@@ -402,6 +409,26 @@ router.post('/', uploadFields, async (req, res) => {
     if (signature.error) return res.status(400).json({ error: signature.error });
     if (!signature.buffer && !isBackEntry) return res.status(400).json({ error: 'Customer signature is required' });
 
+    // A spa picked from Ordered stock (on a truck, no serial yet): the contract
+    // reserves that unit and starts at Order Placed with its Web Order # /
+    // Truck # — no second factory order. Everything from here to the reserve
+    // after the INSERT is synchronous, so no other request can take the unit
+    // in between.
+    let orderedUnit = null;
+    if (product?.orderedUnitId) {
+      if (product.status !== 'tbo' || isBackEntry) {
+        return res.status(400).json({ error: 'An on-order spa can only be sold as To Be Ordered, with a future delivery date.' });
+      }
+      orderedUnit = getUnreservedOrdered(db, product.orderedUnitId);
+      if (!orderedUnit) {
+        return res.status(409).json({ error: 'That on-order spa is no longer available (reserved or received). Search inventory again.' });
+      }
+      product.orderedUnitId = orderedUnit.id;
+      product.serialNumber = '';
+    } else if (product) {
+      delete product.orderedUnitId;
+    }
+
     // Phones: 10 digits, stored as 602-112-2111, at least one required.
     // Written back onto `customer` so the stored snapshot is formatted too.
     const { phone: cleanPhone, error: phoneError } = normalizeContractPhones(customer?.phone);
@@ -501,7 +528,7 @@ router.post('/', uploadFields, async (req, res) => {
     const paid        = extractPaid(payment);
     const pending     = payment?.duePriorToDelivery || '';
     const grandTotal  = costing?.grandTotal || '';
-    const status      = initialStatus(product?.status);
+    const status      = orderedUnit ? 'order_placed' : initialStatus(product?.status);
 
     // 4. Insert contract
     // Server-enforced, not just client-disabled: a sales-role user's contract
@@ -526,6 +553,12 @@ router.post('/', uploadFields, async (req, res) => {
     );
 
     const contractId = ins.lastInsertRowid;
+
+    if (orderedUnit) {
+      reserveOrdered(db, orderedUnit.id, contractId);
+      db.prepare('UPDATE contracts SET web_order_number=?, truck_number=? WHERE id=?')
+        .run(orderedUnit.web_order_number || '', orderedUnit.truck_number || '', contractId);
+    }
 
     // 5. Auto-seed payments from contract form
     const pmEntries = [
@@ -589,6 +622,8 @@ router.post('/', uploadFields, async (req, res) => {
         if (product?.serialNumber) {
           await deleteInventoryRow(product.serialNumber);
         }
+      } else if (orderedUnit) {
+        await moveToOrderPlaced(contractNumber, orderedUnit.web_order_number || '', orderedUnit.truck_number || '', driveRow);
       } else {
         await writeToTBO(driveRow);
       }
@@ -600,8 +635,9 @@ router.post('/', uploadFields, async (req, res) => {
     // for in-stock sales and back-entered (already delivered) contracts.
     // Enables the Finance indicator. A serial typed by hand that isn't in
     // inventory yet gets a unit created here (Sold, with the Finance choice
-    // from the form), tagged with this contract so deleting the contract
-    // removes it again. To Be Ordered contracts get their unit when the
+    // from the form), tagged with this contract (created_by_contract_id — a
+    // record of where it came from; deleting the contract keeps the unit).
+    // To Be Ordered contracts get their unit when the
     // warehouse receives the spa.
     if (product?.serialNumber && (product.status === 'instock' || isAutoDeliver)) {
       try {
@@ -647,6 +683,12 @@ router.post('/', uploadFields, async (req, res) => {
         ? `${customer.name||''}, $${Math.round(cleanData.costing?.grandTotal||0)} (${cleanData.store||''})`
         : `Contract updated`
     });
+    if (orderedUnit) {
+      logActivity(db, {
+        contractId, contractNum: cnum, eventType: 'ORDER_PLACED', actor,
+        detail: `Reserved on-order stock — Web Order #: ${orderedUnit.web_order_number || ''} | Truck #: ${orderedUnit.truck_number || ''}`,
+      });
+    }
     if (existing) {
       logActivity(db, {
         contractId, contractNum: cnum, eventType: 'CUSTOMER_LINKED', actor,
@@ -665,10 +707,11 @@ router.post('/', uploadFields, async (req, res) => {
         eventType: 'CONTRACT_CREATED', color: 'green',
         message: `${cnum} — New contract by ${cleanData.salesman||actor} for ${customer.name||''}`
       });
-      if (status === 'tbo') {
+      if (status === 'tbo' || status === 'order_placed') {
         try {
           const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
-          await notifyContractCreatedTBO({ contract: freshContract, customerName: customer.name });
+          if (orderedUnit) await notifyContractCreatedOnOrder({ contract: freshContract, customerName: customer.name });
+          else await notifyContractCreatedTBO({ contract: freshContract, customerName: customer.name });
         } catch (e) { console.error('[Email notify CONTRACT_CREATED failed — non-fatal]', e.message); }
       }
     }
@@ -764,12 +807,19 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
       return res.status(400).json({ error: 'Contract is already cancelled.' });
     }
 
-    // Order Placed: only reachable from TBO, and requires both fields
+    // Order Placed: only reachable from TBO, and requires both fields — unless
+    // admin links on-order stock (inventoryId), whose Web Order # / Truck # are used.
+    let linkUnit = null;
     if (status === 'order_placed') {
       if (contract.status !== 'tbo') {
         return res.status(400).json({ error: 'Order Placed is only reachable from To Be Ordered.' });
       }
-      if (!req.body.webOrderNumber || !req.body.truckNumber) {
+      if (req.body.inventoryId) {
+        linkUnit = getUnreservedOrdered(db, req.body.inventoryId);
+        if (!linkUnit) return res.status(409).json({ error: 'That on-order spa is no longer available (reserved or received).' });
+        req.body.webOrderNumber = linkUnit.web_order_number || '';
+        req.body.truckNumber    = linkUnit.truck_number || '';
+      } else if (!req.body.webOrderNumber || !req.body.truckNumber) {
         return res.status(400).json({ error: 'Web Order Number and Truck Number are required.' });
       }
     }
@@ -848,11 +898,16 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
       const released = await releaseInventoryForContract(contract.id);
       if (released.length) {
         logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'INVENTORY_RELEASED',
-          actor: req.session.username || 'system', detail: `Returned to In-stock: ${released.join(', ')}` });
+          actor: req.session.username || 'system', detail: `Returned to stock: ${released.join(', ')}` });
       }
     } else if (status === 'order_placed') {
       db.prepare('UPDATE contracts SET status=?,web_order_number=?,truck_number=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run(status, req.body.webOrderNumber.trim(), req.body.truckNumber.trim(), req.params.id);
+      if (linkUnit) {
+        reserveOrdered(db, linkUnit.id, contract.id);
+        const d = JSON.parse(contract.data || '{}');
+        if (d.product) { d.product.orderedUnitId = linkUnit.id; db.prepare('UPDATE contracts SET data=? WHERE id=?').run(JSON.stringify(d), contract.id); }
+      }
     } else {
       // assigned — revert from cancelled
       db.prepare('UPDATE contracts SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
@@ -949,7 +1004,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
       } catch (e) { console.error('[Email notify RECEIVED failed — non-fatal]', e.message); }
     } else if (status === 'order_placed') {
       logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'ORDER_PLACED',
-        actor: _actor, detail: `Web Order #: ${req.body.webOrderNumber.trim()} | Truck #: ${req.body.truckNumber.trim()}` });
+        actor: _actor, detail: (linkUnit ? 'Linked on-order stock — ' : '') + `Web Order #: ${req.body.webOrderNumber.trim()} | Truck #: ${req.body.truckNumber.trim()}` });
       addNotification(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'ORDER_PLACED',
         color: 'green', message: `${_cnum} — ${_cuname} order placed (Web Order #${req.body.webOrderNumber.trim()})` });
       try {
@@ -1015,6 +1070,8 @@ router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
       if (contract.product_status === 'instock') {
         return res.status(400).json({ error: 'In Stock contracts do not go through Received. Change to Scheduled or Delivered directly.' });
       }
+      const serialClash = receiveSerialConflict(db, contract.id, serialNumber.trim());
+      if (serialClash) return res.status(409).json({ error: serialClash });
       // Move serial photo to contract folder
       const contractFolder = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
       fs.mkdirSync(contractFolder, { recursive: true });
@@ -1035,6 +1092,8 @@ router.post('/:id/received', requireRole(['admin','sales']), (req, res) => {
       const actualDate = receivedDate || new Date().toISOString().slice(0,10);
       db.prepare('UPDATE contracts SET status=?,serial_number=?,data=?,extra_images=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run('received', serialNumber.trim(), JSON.stringify(data), JSON.stringify(filtered), req.params.id);
+      // On-order stock reserved by this contract: that unit gets the serial (Sold).
+      await receiveReservedUnit(db, contract.id, { serial: serialNumber.trim(), serialPhotoPath: finalPhotoPath });
       // Google Sheets (non-fatal)
       try {
         const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(contract.customer_id);
@@ -1086,22 +1145,13 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     db.prepare('DELETE FROM payments WHERE contract_id=?').run(req.params.id);
     db.prepare('DELETE FROM activity_log WHERE contract_id=?').run(req.params.id);
     db.prepare('DELETE FROM notifications WHERE contract_id=?').run(req.params.id);
-    // A unit this contract created itself (a serial typed by hand that wasn't
-    // in inventory) only existed because of this contract — remove it, as
-    // long as it's still linked here (a cancelled contract already released
-    // it to In-stock as real stock, and then it stays).
-    const createdUnits = db.prepare('SELECT id, serial_number FROM inventory WHERE created_by_contract_id=? AND contract_id=?').all(row.id, row.id);
-    for (const u of createdUnits) {
-      db.prepare('DELETE FROM inventory WHERE id=?').run(u.id);
-      if (u.serial_number) {
-        try { await deleteInventoryItem(u.serial_number); }
-        catch (e) { console.error('[Drive delete contract-created inventory item failed — non-fatal]', e.message); }
-      }
-    }
-    // Unlink (not delete) any other inventory item tied to this contract — it
-    // may still be real physical stock, and SQLite's foreign-key constraint
-    // would otherwise block the delete below outright. Undelivered units go
-    // back to In-stock; a delivered unit is at the customer's, so it stays Sold.
+    // Never delete the spa's inventory unit — even one this contract (or the
+    // stock import) created is a real spa, and deleting a contract to re-enter
+    // it used to make that spa vanish from stock. Unlink it instead (SQLite's
+    // foreign-key constraint would otherwise block the delete below):
+    // undelivered units go back to In-stock; a delivered unit is at the
+    // customer's, so it stays Sold. A mistyped serial is left for an admin to
+    // delete from Inventory.
     if (row.status !== 'delivered') await releaseInventoryForContract(row.id);
     db.prepare('UPDATE inventory SET contract_id=NULL WHERE contract_id=?').run(req.params.id);
 
