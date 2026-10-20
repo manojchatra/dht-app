@@ -17,6 +17,7 @@
  *
  * Blocking problems (nothing is applied): a serial listed twice, missing Make/Model.
  * Used by scripts/replace-inventory.js (report by default, --apply to write).
+ * planAdd/applyAdd are the add-only variant used by scripts/add-inventory.js.
  */
 
 const LOCATIONS = ['Warehouse', 'EMP Room', 'Phoenix Floor', 'Goodyear Floor', 'Chandler Floor', 'Surprise Floor', 'Tolleson Floor'];
@@ -116,24 +117,30 @@ function planReplace(db, items) {
   return plan;
 }
 
-// One transaction: if anything fails, nothing changes.
-function applyReplace(db, plan, actor = 'inventory-import') {
-  if (plan.blocking.length) throw new Error('Blocking problems — fix the sheet first');
-  const del = db.prepare('DELETE FROM inventory WHERE id = ? AND contract_id IS NULL');
+// Inserts one normalised sheet item; `p` is a removed unit whose photos carry over.
+function unitInserter(db, actor) {
   const ins = db.prepare(`INSERT INTO inventory
     (make, series, model, year, shell_color, cabinet_color, serial_number, sku_number, availability,
      location, steps, cover, finance, speaker, web_order_number, truck_number, line, bay,
      sku_photo_path, serial_photo_path, contract_id, created_by_contract_id, added_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  return (it, contractId, p) => ins.run(it.make, it.series, it.model, it.year, it.shellColor, it.cabinetColor,
+    it.serial || null, it.sku, it.availability, it.location, it.steps, it.cover, it.finance || null, it.speaker,
+    it.webOrderNumber, it.truckNumber, it.line, it.bay,
+    p ? p.sku_photo_path : null, p ? p.serial_photo_path : null, contractId || null, contractId || null, actor);
+}
+
+// One transaction: if anything fails, nothing changes.
+function applyReplace(db, plan, actor = 'inventory-import') {
+  if (plan.blocking.length) throw new Error('Blocking problems — fix the sheet first');
+  const del = db.prepare('DELETE FROM inventory WHERE id = ? AND contract_id IS NULL');
+  const ins = unitInserter(db, actor);
   // Photos of removed units, by serial — carried over to the new unit with that serial.
   const photos = new Map(plan.remove.filter(u => u.serial_number && (u.sku_photo_path || u.serial_photo_path))
     .map(u => [key(u.serial_number), u]));
   const insert = (it, contractId) => {
     const p = it.serial ? photos.get(key(it.serial)) : null;
-    ins.run(it.make, it.series, it.model, it.year, it.shellColor, it.cabinetColor, it.serial || null, it.sku,
-      it.availability, it.location, it.steps, it.cover, it.finance || null, it.speaker,
-      it.webOrderNumber, it.truckNumber, it.line, it.bay,
-      p ? p.sku_photo_path : null, p ? p.serial_photo_path : null, contractId || null, contractId || null, actor);
+    ins(it, contractId, p);
     return !!p;
   };
   const run = db.transaction(() => {
@@ -146,4 +153,37 @@ function applyReplace(db, plan, actor = 'inventory-import') {
   return run();
 }
 
-module.exports = { parseSheetRows, planReplace, applyReplace, mapLocation };
+// Add-only: the sheet's rows go in alongside the current inventory — nothing is
+// removed or changed. A row whose serial is already in the inventory, or on a
+// contract that isn't cancelled, is skipped. Used by scripts/add-inventory.js.
+function planAdd(db, items) {
+  const unitSerials = new Set(db.prepare('SELECT serial_number FROM inventory').all()
+    .map(u => key(u.serial_number)).filter(Boolean));
+  const contractBySerial = new Map(db.prepare(`SELECT contract_number, status, serial_number FROM contracts
+    WHERE status <> 'cancelled' AND TRIM(COALESCE(serial_number,'')) <> ''`).all().map(c => [key(c.serial_number), c]));
+
+  const plan = { add: [], skipExisting: [], skipSold: [], blocking: [], warnings: [] };
+  const seen = new Map();
+  for (const it of items) {
+    if (!it.make || !it.model) plan.blocking.push(`Row ${it.rowNumber}: Make and Model are required`);
+    if (it.serial) {
+      const k = key(it.serial);
+      if (seen.has(k)) plan.blocking.push(`Serial ${it.serial} is listed more than once (rows ${seen.get(k)} and ${it.rowNumber})`);
+      else seen.set(k, it.rowNumber);
+      if (contractBySerial.has(k)) { plan.skipSold.push({ item: it, contract: contractBySerial.get(k) }); continue; }
+      if (unitSerials.has(k)) { plan.skipExisting.push(it); continue; }
+    }
+    if (!it.locationKnown) plan.warnings.push(`Row ${it.rowNumber}: location "${it.location}" is not one of the app's locations (kept as typed)`);
+    if (it.financeRaw && !it.finance) plan.warnings.push(`Row ${it.rowNumber}: finance "${it.financeRaw}" ignored (must be DHT Owned or Bank Owned)`);
+    plan.add.push(it);
+  }
+  return plan;
+}
+
+function applyAdd(db, plan, actor = 'inventory-import') {
+  if (plan.blocking.length) throw new Error('Blocking problems — fix the sheet first');
+  const ins = unitInserter(db, actor);
+  return db.transaction(() => { for (const it of plan.add) ins(it); return { added: plan.add.length }; })();
+}
+
+module.exports = { parseSheetRows, planReplace, applyReplace, planAdd, applyAdd, mapLocation };

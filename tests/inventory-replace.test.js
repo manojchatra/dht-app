@@ -92,6 +92,50 @@ describe('replace inventory from a new stock sheet', () => {
   });
 });
 
+describe('add units from a sheet without replacing the inventory', () => {
+  let soldOn;
+  beforeAll(async () => {
+    const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
+    insertUnit('ADD-EXISTS', 'In-stock');
+    insertUnit('ADD-UNTOUCHED', 'Hold');
+    soldOn = (await createContract(agent, { product: { status: 'ordered', serialNumber: '', make: 'Tylo', model: 'Kiruna' } })).contractId;
+    ctx.db.prepare("UPDATE contracts SET serial_number='ADD-SOLD', status='assigned' WHERE id=?").run(soldOn);
+  });
+
+  const sheet = () => svc().parseSheetRows([
+    sheetRow({ 'Serial Number': '', 'SKU Number': '9080-3050', Make: 'Tylo', Series: '', Model: 'Kiruna 2 IR' }),
+    sheetRow({ 'Serial Number': '', 'SKU Number': '9080-3050', Make: 'Tylo', Series: '', Model: 'Kiruna 2 IR' }), // same SKU twice is fine
+    sheetRow({ 'Serial Number': 'ADD-NEW', Make: 'Tylo', Model: 'Halmstad 2', Location: 'Phoenix Floor' }),
+    sheetRow({ 'Serial Number': 'add-exists', Make: 'Tylo', Model: 'Lulea 3' }),   // already in inventory (any case) — skipped
+    sheetRow({ 'Serial Number': 'ADD-SOLD', Make: 'Tylo', Model: 'Kiruna' }),       // on a contract — skipped
+  ]);
+
+  test('the report lists adds and skips, and changes nothing', () => {
+    const before = ctx.db.prepare('SELECT COUNT(*) c FROM inventory').get().c;
+    const plan = svc().planAdd(ctx.db, sheet());
+    expect(plan.add.map(i => i.serial || i.sku)).toEqual(['9080-3050', '9080-3050', 'ADD-NEW']);
+    expect(plan.skipExisting.map(i => i.serial)).toEqual(['add-exists']);
+    expect(plan.skipSold.map(s => s.item.serial)).toEqual(['ADD-SOLD']);
+    expect(plan.blocking).toEqual([]);
+    expect(ctx.db.prepare('SELECT COUNT(*) c FROM inventory').get().c).toBe(before);
+  });
+
+  test('a serial listed twice blocks the add', () => {
+    const plan = svc().planAdd(ctx.db, svc().parseSheetRows([sheetRow({ 'Serial Number': 'TWICE' }), sheetRow({ 'Serial Number': 'TWICE' })]));
+    expect(plan.blocking[0]).toMatch(/TWICE is listed more than once/);
+    expect(() => svc().applyAdd(ctx.db, plan)).toThrow(/Blocking/);
+  });
+
+  test('applying adds the new units and leaves every existing unit alone', () => {
+    const existing = ctx.db.prepare('SELECT * FROM inventory ORDER BY id').all();
+    expect(svc().applyAdd(ctx.db, svc().planAdd(ctx.db, sheet()))).toEqual({ added: 3 });
+    expect(ctx.db.prepare(`SELECT * FROM inventory WHERE id <= ? ORDER BY id`).all(existing[existing.length - 1].id)).toEqual(existing);
+    expect(unit('ADD-NEW')).toMatchObject({ make: 'Tylo', availability: 'In-stock', location: 'Phoenix Floor', added_by: 'inventory-import' });
+    expect(ctx.db.prepare("SELECT COUNT(*) c FROM inventory WHERE sku_number='9080-3050' AND serial_number IS NULL AND availability='In-stock'").get().c).toBe(2);
+    expect(unit('ADD-SOLD')).toBeUndefined();
+  });
+});
+
 describe('Year, Line and Bay on inventory units', () => {
   let warehouse, admin, id;
   beforeAll(async () => {
