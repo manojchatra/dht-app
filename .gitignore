@@ -9,3 +9,6 @@ Thumbs.db
 *.xlsx
 *.xls
 *.csv
+
+# Handover documents (incl. credentials register) stay local - never commit
+docs/
