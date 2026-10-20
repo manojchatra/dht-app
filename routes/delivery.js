@@ -169,7 +169,7 @@ router.get('/acknowledgements', requireDeliveryOrAdmin, (req, res) => {
 
 // ── POST /api/acknowledgement/:id — save + mark delivered ──────────────────
 router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
-  uploadAck.fields([{ name:'exceptionImages', maxCount:2 }, { name:'deliveryPhotos', maxCount:5 }]),
+  uploadAck.fields([{ name:'exceptionImages', maxCount:2 }, { name:'deliveryPhotos', maxCount:10 }]),
   async (req, res) => {
     try {
       const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
@@ -224,7 +224,9 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       fs.writeFileSync(custSigPath, Buffer.from(custBase64, 'base64'));
       fs.writeFileSync(teamSigPath, Buffer.from(teamBase64, 'base64'));
 
-      // Save delivery photos (1 required, up to 5)
+      // Save delivery photos (1 required, up to 10). compressAndGate deletes a
+      // file that's still over 2MB after compression — skip it rather than
+      // recording a path that no longer exists (a broken gallery image).
       const delivPhotoFiles = (req.files && req.files.deliveryPhotos) || [];
       const delivPhotoPaths = [];
       for (var dpi = 0; dpi < delivPhotoFiles.length; dpi++) {
@@ -233,17 +235,19 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
         const dpDest = path.join(contractFolder, 'delivery-photo-' + (dpi+1) + dpExt);
         fs.renameSync(dpf.path, dpDest);
         const dpComp = await compressAndGate(dpDest);
-        delivPhotoPaths.push(dpComp.path || dpDest);
+        if (dpComp.path) delivPhotoPaths.push(dpComp.path);
+        else console.warn('[Acknowledgement] delivery photo', dpi+1, 'skipped:', dpComp.error);
       }
 
-      // Save exception images — with compression
-      const exImgPaths = await Promise.all((exFiles).map(async (f, i) => {
+      // Save exception images — with compression (same skip rule)
+      const exImgPaths = (await Promise.all((exFiles).map(async (f, i) => {
         const ext = path.extname(f.originalname) || '.jpg';
         const p   = path.join(contractFolder, `exception-${i+1}${ext}`);
         fs.renameSync(f.path, p);
         const comp = await compressAndGate(p);
-        return comp.path || p;
-      }));
+        if (!comp.path) console.warn('[Acknowledgement] exception photo', i+1, 'skipped:', comp.error);
+        return comp.path;
+      }))).filter(Boolean);
 
       // Generate acknowledgement PDF
       // Arizona date (MST, no DST) — a plain toISOString() is UTC and rolls
@@ -265,8 +269,8 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
 
       // Add PDF + exception images to extra_images
       const existing = contract.extra_images ? JSON.parse(contract.extra_images) : [];
-      // Add delivery photos first
-      delivPhotoPaths.forEach((p, i) => existing.unshift({ path:p, label:`Delivery Photo ${i+1}` }));
+      // Add delivery photos first, in the order they were taken
+      existing.unshift(...delivPhotoPaths.map((p, i) => ({ path:p, label:`Delivery Photo ${i+1}` })));
       existing.push({ path: pdfPath, label: 'Delivery Acknowledgement' });
       exImgPaths.forEach((p, i) => existing.push({ path:p, label:`Exception Photo ${i+1}` }));
       db.prepare('UPDATE contracts SET extra_images=? WHERE id=?')

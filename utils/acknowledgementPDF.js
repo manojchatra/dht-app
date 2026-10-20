@@ -97,6 +97,8 @@ async function generateAcknowledgementPDF({ contract, formData, customerSigPath,
     ['startupChemicals','Start-Up Chemicals'],['ownersManual',"Owner's Manual"],['other','Other'],
   ];
   const itemsDelivered = formData.itemsDelivered || {};
+  const otherText = itemsDelivered.other && String(formData.itemOtherText || '').trim();
+  if (otherText) ITEMS[10] = ['other', 'Other: ' + otherText];
 
   // Load signature images as base64
   function imgB64(p) {

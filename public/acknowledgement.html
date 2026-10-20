@@ -182,11 +182,11 @@
       </div>
     </div>
 
-    <!-- Delivery Photos (required: 1, up to 5) -->
+    <!-- Delivery Photos (required: 1, up to 10) -->
     <div class="section-card">
       <div class="section-header">
         <i class="fa-solid fa-camera"></i> Delivery Photos
-        <span style="font-weight:400;font-size:12px;color:var(--text-muted);margin-left:auto">1 required · up to 5</span>
+        <span style="font-weight:400;font-size:12px;color:var(--text-muted);margin-left:auto">1 required · up to 10</span>
       </div>
       <div class="section-body">
         <div id="delivPhotoGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px">
@@ -212,8 +212,9 @@
           <label class="check-item"><input type="checkbox" id="item_subpanel" class="ack-check" checked><span>Subpanel</span></label>
           <label class="check-item"><input type="checkbox" id="item_startupChemicals" class="ack-check" checked><span>Start-Up Chemicals</span></label>
           <label class="check-item"><input type="checkbox" id="item_ownersManual" class="ack-check" checked><span>Owner's Manual</span></label>
-          <label class="check-item"><input type="checkbox" id="item_other" class="ack-check"><span>Other</span></label>
+          <label class="check-item"><input type="checkbox" id="item_other" class="ack-check" onchange="document.getElementById('itemOtherText').style.display=this.checked?'block':'none'"><span>Other</span></label>
         </div>
+        <input type="text" id="itemOtherText" placeholder="Specify other item..." style="display:none;margin-top:8px;width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font)">
       </div>
     </div>
 
@@ -498,6 +499,9 @@ window._onAuthReady = onAfterAuth;
 // ── Validation ────────────────────────────────────────────────────────────────
 function validateForm() {
   if (!delivPhotos[0]) { showToast('At least 1 delivery photo is required','error'); return false; }
+  if (document.getElementById('item_other').checked && !document.getElementById('itemOtherText').value.trim()) {
+    showToast('Specify the other item delivered','error'); document.getElementById('itemOtherText').focus(); return false;
+  }
   if (!document.getElementById('customerNameTyped').value.trim()) { showToast('Customer name required','error'); return false; }
   if (!document.getElementById('deliveredBy').value.trim())       { showToast('Delivered By name required','error'); return false; }
   if (sigEmpty('sigCustomer')) { showToast('Customer signature required','error'); return false; }
@@ -576,6 +580,7 @@ async function doSubmit(sendEmail, recipients) {
 
   const formData={
     itemsDelivered, partsChecklist,
+    itemOtherText: itemsDelivered.other ? document.getElementById('itemOtherText').value.trim() : '',
     stepsModel:document.getElementById('stepsModel').value.trim(),
     coverLifter:document.getElementById('coverLifter').value.trim(),
     waterCareInstalled: (function(){
@@ -619,13 +624,35 @@ async function doSubmit(sendEmail, recipients) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 // ── Delivery Photos ──────────────────────────────────────────────────────────
-var delivPhotos = [null,null,null,null,null]; // up to 5
+var MAX_DELIV_PHOTOS = 10;
+var delivPhotos = new Array(MAX_DELIV_PHOTOS).fill(null);
+
+// Shrinks a camera photo before upload (same 2000px / JPEG 80% the server uses),
+// so 10 full-size phone photos stay well under the server's upload limit.
+// Falls back to the original file if the browser can't decode it.
+function shrinkPhoto(file) {
+  return new Promise(function(resolve){
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function(){
+      URL.revokeObjectURL(url);
+      var scale = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+      var c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(function(b){
+        resolve(b && b.size < file.size ? new File([b], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type:'image/jpeg' }) : file);
+      }, 'image/jpeg', 0.8);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
 
 function buildDelivPhotoGrid() {
   var grid = document.getElementById('delivPhotoGrid');
   if (!grid) return;
   grid.innerHTML = '';
-  for (var i=0; i<5; i++) {
+  for (var i=0; i<MAX_DELIV_PHOTOS; i++) {
     var slot = document.createElement('div');
     slot.className = 'deliv-photo-slot' + (delivPhotos[i] ? ' filled' : '');
     slot.dataset.idx = i;
@@ -645,9 +672,11 @@ function buildDelivPhotoGrid() {
   if (hint) hint.style.display = delivPhotos[0] ? 'none' : '';
 }
 
-function onDelivPhoto(input) {
+async function onDelivPhoto(input) {
   var idx = parseInt(input.dataset.target||'0');
-  if (input.files[0]) { delivPhotos[idx] = input.files[0]; input.value=''; }
+  var file = input.files[0];
+  input.value='';
+  if (file) delivPhotos[idx] = await shrinkPhoto(file);
   buildDelivPhotoGrid();
 }
 
@@ -656,7 +685,7 @@ function removeDelivPhoto(idx, e) {
   delivPhotos[idx] = null;
   // compact: shift remaining down
   delivPhotos = delivPhotos.filter(function(p){return p;});
-  while(delivPhotos.length<5) delivPhotos.push(null);
+  while(delivPhotos.length<MAX_DELIV_PHOTOS) delivPhotos.push(null);
   buildDelivPhotoGrid();
 }
 

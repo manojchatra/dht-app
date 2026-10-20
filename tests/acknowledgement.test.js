@@ -48,6 +48,21 @@ describe('POST /api/delivery/acknowledgement/:id', () => {
     expect(ctx.db.prepare('SELECT status FROM contracts WHERE id=?').get(contractId).status).toBe('delivered');
   });
 
+  test('accepts up to 10 delivery photos, listed in order in the gallery', async () => {
+    const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
+    const { contractId, contractNumber } = await createContract(agent);
+    const photo = await jpegBuffer('#a73');
+
+    const res = await submitAck(agent, contractId, Array(10).fill(photo));
+
+    expect(res.status).toBe(200);
+    const folder = path.join(process.env.UPLOADS_DIR, 'contracts', contractNumber);
+    for (let n = 1; n <= 10; n++) expect(fs.existsSync(path.join(folder, `delivery-photo-${n}.jpg`))).toBe(true);
+    const gallery = JSON.parse(ctx.db.prepare('SELECT extra_images FROM contracts WHERE id=?').get(contractId).extra_images);
+    expect(gallery.slice(0, 10).map(g => g.label)).toEqual(Array.from({ length: 10 }, (_, i) => `Delivery Photo ${i + 1}`));
+    expect(gallery[0].path).toMatch(/delivery-photo-1\.jpg$/);
+  });
+
   test('records the delivery date as today in Arizona time, not UTC', async () => {
     const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
     const { contractId } = await createContract(agent);
