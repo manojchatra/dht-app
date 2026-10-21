@@ -214,7 +214,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     </div>
     <div class="grid-4" style="margin-bottom:14px">
       <div class="ac-wrap">
-        <label class="lbl">Make</label>
+        <label class="lbl">Make *</label>
         <input type="text" id="prodMake" placeholder="HotSpring" autocomplete="off" maxlength="50"
                oninput="onMakeInput()" onfocus="showMakeDd()" onblur="hideMakeDd()">
         <div class="ac-dropdown" id="makeDd"></div>
@@ -224,7 +224,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
         <datalist id="seriesDl"></datalist>
       </div>
       <div class="ac-wrap">
-        <label class="lbl">Model</label>
+        <label class="lbl">Model *</label>
         <input type="text" id="prodModel" placeholder="Sovereign" autocomplete="off" maxlength="50"
                oninput="onModelInput()" onfocus="showModelDd()" onblur="hideModelDd()">
         <div class="ac-dropdown" id="modelDd"></div>
@@ -1335,6 +1335,13 @@ async function goToPreview(){
   if(!data.service.inTownDelivery && !data.service.outOfTownDelivery){showToast('Please select In-Town or Out-of-Town Delivery','error');return;}
   if(data.service.crane && !data.service.craneFee){showToast('Please enter a Crane fee','error');return;}
   if(data.service.outOfTownDelivery && !data.service.outOfTownDeliveryFee){showToast('Please enter an Out-of-Town Delivery fee','error');return;}
+
+  if(!data.product.make||!data.product.model){
+    showToast('Spa Make and Model are required','error');
+    var missing=document.getElementById(data.product.make?'prodModel':'prodMake');
+    missing.scrollIntoView({behavior:'smooth',block:'center'}); missing.focus();
+    return;
+  }
 
   if(!(numVal('dtSpaPrice')>0)){
     showToast('Spa price is required','error');

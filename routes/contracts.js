@@ -363,6 +363,12 @@ router.post('/', uploadFields, async (req, res) => {
     }
     formData.salesman = truncate(formData.salesman, MAX_LEN.salesman);
 
+    // Spa Make and Model are required — a contract without them can't be
+    // matched to on-order stock and shows a blank brand everywhere.
+    if (!String(product?.make || '').trim() || !String(product?.model || '').trim()) {
+      return res.status(400).json({ error: 'Spa Make and Model are required' });
+    }
+
     // 0. Validate costing and payment method requirements
     const payErrors = [];
     const money = v => parseFloat(String(v ?? '').replace(/[$,]/g, '')) || 0;

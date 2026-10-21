@@ -55,6 +55,14 @@ describe('POST /api/contracts', () => {
     expect(res.body.error).toBe('Cheque number is required');
   });
 
+  test.each([['make', { make: '  ' }], ['model', { model: '' }]])('rejects a contract with no spa %s', async (_label, blank) => {
+    const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
+    const res = await agent.post('/api/contracts')
+      .send({ data: JSON.stringify(contractFormData({ product: { ...contractFormData().product, ...blank } })) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Spa Make and Model are required');
+  });
+
   test.each([['blank', ''], ['$0', '0']])('rejects a %s spa price', async (_label, spaPrice) => {
     const agent = await loginAgent(ctx.app);
     const res = await agent.post('/api/contracts')
