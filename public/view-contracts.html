@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/theme.css">
 <script src="/js/util.js"></script>
+<script src="/js/gallery.js"></script>
 <style>
 .filter-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
 .filter-bar .search-wrap{flex:2;min-width:220px;position:relative}
@@ -45,8 +46,10 @@
 .banner-paid{background:var(--green-bg);color:var(--green)}
 .card-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
 .card-actions .btn{flex:1;justify-content:center}
-.card-img-row{display:flex;gap:6px;padding:0 16px 12px}
-.card-img-thumb{width:44px;height:44px;object-fit:cover;border-radius:7px;border:1px solid var(--border);cursor:pointer}
+.card-img-row{display:flex;gap:6px;padding:0 16px 12px;overflow:hidden}
+.card-img-thumb{width:44px;height:44px;object-fit:cover;border-radius:7px;border:1px solid var(--border);cursor:pointer;flex-shrink:0}
+.card-more-thumb{width:44px;height:44px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;font-family:var(--font);display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;flex-shrink:0;padding:0}
+.card-more-thumb:hover{border-color:var(--accent);color:var(--accent)}
 .card-img-thumb:hover{opacity:.85;transform:scale(1.05)}
 .card-pdf-thumb{width:44px;height:44px;border-radius:7px;border:1px solid var(--border);cursor:pointer;background:var(--red-bg);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0}
 .card-pdf-thumb:hover{opacity:.85}
@@ -64,11 +67,6 @@
 .date-pick-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;font-size:13px;line-height:1}
 .date-pick-btn:hover{color:var(--accent)}
 .date-native-hidden{position:absolute;inset:0;opacity:0;pointer-events:none;width:1px;height:1px}
-.lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:300;align-items:center;justify-content:center;flex-direction:column;gap:16px}
-.lightbox.open{display:flex}
-.lightbox img{max-width:90vw;max-height:80vh;border-radius:8px;object-fit:contain}
-.lightbox-close{position:fixed;top:16px;right:20px;color:#fff;font-size:28px;cursor:pointer;background:none;border:none;line-height:1}
-.lightbox-download{background:#fff;color:#111;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px}
 </style>
 </head>
 <body>
@@ -192,12 +190,6 @@
   </div>
 </div>
 
-<!-- Lightbox -->
-<div class="lightbox" id="lightbox">
-  <button class="lightbox-close" onclick="closeLightbox()">×</button>
-  <img id="lightboxImg" src="" alt="">
-  <button class="lightbox-download" id="lightboxDownloadBtn"><i class="fa-solid fa-download"></i> Download</button>
-</div>
 
 <script>
 // Toast
@@ -372,16 +364,26 @@ function financeIcon(finance){
   return '';
 }
 
+const cardPhotos={}; // contract id -> its photo URLs (no PDFs), for the viewer's ‹ › arrows
+
 function buildCard(c){
   const hasPending=parseFloat(c.due_prior||0)>0;
   const isAdmin=window._userRole==='admin';
   const dateStr=c.date?new Date(c.date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
   const imgs=[c.contract_image_url,c.cheque_image_url,...(c.extra_images_data||[]).map(i=>i.url)].filter(Boolean);
-  const imgRow=imgs.length?`<div class="card-img-row">${imgs.map(u=>
-    (u||'').split('.').pop().toLowerCase()==='pdf'
+  // Up to 6 thumbnails fit a card; beyond that show 5 and a "+N" tile.
+  const isPdf=u=>(u||'').split('.').pop().toLowerCase()==='pdf';
+  const photos=cardPhotos[c.id]=imgs.filter(u=>!isPdf(u));
+  const shown=imgs.length>6?imgs.slice(0,5):imgs, hidden=imgs.slice(shown.length);
+  const firstHiddenPhoto=photos.indexOf(hidden.find(u=>!isPdf(u)));
+  const moreTile=!hidden.length?'':firstHiddenPhoto>=0
+    ? `<button type="button" class="card-more-thumb" onclick="openGallery(cardPhotos[${c.id}],${firstHiddenPhoto})" title="${hidden.length} more">+${hidden.length}</button>`
+    : `<a href="/contracts/${c.id}" class="card-more-thumb" title="${hidden.length} more">+${hidden.length}</a>`;
+  const imgRow=imgs.length?`<div class="card-img-row">${shown.map(u=>
+    isPdf(u)
       ? `<a href="${u}" target="_blank" class="card-pdf-thumb" title="View PDF"><i class="fa-solid fa-file-pdf"></i></a>`
-      : `<img src="${u}" class="card-img-thumb" onclick="openLightbox('${u}')" alt="Image">`
-  ).join('')}</div>`:'';
+      : `<img src="${u}" class="card-img-thumb" onclick="openGallery(cardPhotos[${c.id}],${photos.indexOf(u)})" alt="Image">`
+  ).join('')}${moreTile}</div>`:'';
   const adminMenu=isAdmin?`<hr><button class="danger" onclick="confirmDelete(${c.id},\`${escHtml(c.customer_name||'').replace(/\`/g,"'")}\`)"><i class="fa-solid fa-trash"></i> Delete Contract</button>`:' ';
   const spaLine=[c.make,c.model].filter(Boolean).join(' ');
   return `<div class="contract-card${hasPending?' pending-pay':''}">
@@ -564,13 +566,6 @@ async function executeDelete(){
     btn.innerHTML='<i class="fa-solid fa-trash"></i> Delete';
   }
 }
-function openLightbox(url){
-  document.getElementById('lightboxImg').src=url;
-  document.getElementById('lightboxDownloadBtn').onclick=()=>{const a=document.createElement('a');a.href=url;a.download='image';a.click()};
-  document.getElementById('lightbox').classList.add('open');
-}
-function closeLightbox(){document.getElementById('lightbox').classList.remove('open')}
-var _lb=document.getElementById('lightbox'); if(_lb) _lb.addEventListener('click',e=>{if(e.target===e.currentTarget)closeLightbox()});
 var _dm=document.getElementById('deleteModal'); if(_dm) _dm.addEventListener('click',e=>{if(e.target===e.currentTarget&&!deleteInFlight)document.getElementById('deleteModal').classList.remove('open')});
 var _pm=document.getElementById('paymentModal'); if(_pm) _pm.addEventListener('click',e=>{if(e.target===e.currentTarget)closePaymentModal()});
 var _aim=document.getElementById('addImageModal'); if(_aim) _aim.addEventListener('click',e=>{if(e.target===e.currentTarget)closeAddImageModal()});
