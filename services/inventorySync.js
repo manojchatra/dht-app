@@ -13,6 +13,8 @@
  * Used by scripts/sync-inventory-from-sheet.js (report by default, --apply to write).
  */
 
+const { normalizeMake } = require('../utils/makes');
+
 // The sheet's free-text "Availability" column is really the location.
 const LOCATION_MAP = [
   { match: 'emp',      value: 'EMP Room' },
@@ -54,7 +56,7 @@ function planInventorySync(sheetRows, dbRows) {
     if (!unit) {
       plan.add.push({
         serialNumber: serial,
-        make: cell(row, 'Make'), series: cell(row, 'Series'), model: cell(row, 'Model'),
+        make: normalizeMake(cell(row, 'Make')), series: cell(row, 'Series'), model: cell(row, 'Model'),
         shellColor: cell(row, 'Shell'), cabinetColor: cell(row, 'Cabinet'),
         steps: cell(row, 'Steps'), cover: cell(row, 'Cover'),
         location: loc.value, availability: 'In-stock',

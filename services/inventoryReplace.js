@@ -20,6 +20,8 @@
  * planAdd/applyAdd are the add-only variant used by scripts/add-inventory.js.
  */
 
+const { normalizeMake } = require('../utils/makes');
+
 const LOCATIONS = ['Warehouse', 'EMP Room', 'Phoenix Floor', 'Goodyear Floor', 'Chandler Floor', 'Surprise Floor', 'Tolleson Floor'];
 const FINANCE = ['DHT Owned', 'Bank Owned'];
 
@@ -47,7 +49,7 @@ function parseSheetRows(rows) {
       const finance = text(r['Finance']);
       return {
         rowNumber, serial,
-        make: text(r['Make']), series: text(r['Series']), model: text(r['Model']), year: text(r['Year']),
+        make: normalizeMake(r['Make']), series: text(r['Series']), model: text(r['Model']), year: text(r['Year']),
         shellColor: text(r['Shell Color']), cabinetColor: text(r['Cabinet Color']),
         sku: text(r['SKU Number']), steps: text(r['Steps']), cover: text(r['Cover']), speaker: text(r['Speaker']),
         finance: FINANCE.includes(finance) ? finance : '', financeRaw: finance,

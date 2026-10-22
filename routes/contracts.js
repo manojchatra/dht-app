@@ -22,6 +22,7 @@ const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
 const { getUnreservedOrdered, reserveOrdered, receiveSerialConflict, receiveReservedUnit } = require('../services/orderedStock');
+const { normalizeMake } = require('../utils/makes');
 const { withLock } = require('../utils/asyncLock');
 const {
   normalizeContractPhones, nextCustomerNumber,
@@ -357,7 +358,7 @@ router.post('/', uploadFields, async (req, res) => {
       customer.email = truncate(customer.email, MAX_LEN.email);
     }
     if (product) {
-      product.make         = truncate(product.make, MAX_LEN.make);
+      product.make         = truncate(normalizeMake(product.make), MAX_LEN.make);
       product.model        = truncate(product.model, MAX_LEN.model);
       product.serialNumber = truncate(product.serialNumber, MAX_LEN.serial);
     }
