@@ -76,6 +76,15 @@ SESSION_SECRET=
 
 The app runs under PM2 on port 3001, behind nginx (Hestia-managed) which terminates SSL and reverse-proxies to Node.
 
+**Where files go on the server** — there are only two destinations, because `/home/DHT/dht-app/public` is a symlink to `public_html` (see "Static asset gotcha" above; verified 2026-10-22):
+
+| File in this repo | Upload to | Then |
+|---|---|---|
+| `public/…` — pages (`*.html`), `js/`, `css/`, `img/`, `partials/` | `/home/DHT/web/app.deserthottubsaz.com/public_html/…` (same sub-path) | hard refresh — no restart |
+| everything else — `server.js`, `routes/`, `services/`, `utils/`, `middleware/`, `db/`, `scripts/` | `/home/DHT/dht-app/…` (same sub-path) | `pm2 restart dht-app` (scripts: just run them) |
+
+Example: `public/js/gallery.js` → `/home/DHT/web/app.deserthottubsaz.com/public_html/js/gallery.js`; `routes/contracts.js` → `/home/DHT/dht-app/routes/contracts.js`. Check the symlink is intact with `ls -ld /home/DHT/dht-app/public` (should show `-> …/public_html`).
+
 ```bash
 pm2 start ecosystem.config.js   # first deploy
 pm2 restart dht-app             # after a server.js/routes change (drops active sessions — MemoryStore)
