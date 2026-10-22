@@ -324,7 +324,9 @@ async function deleteItem(id){
     allItems=allItems.filter(function(it){return it.id!==id;});
     delete pendingChanges[id];
     if(j.sheetSynced===false){
-      showToast('Deleted, but couldn\'t remove it from the spreadsheet — check the Serial Number for typos','warning');
+      showToast(item.serial_number
+        ? 'Deleted, but couldn\'t find it in the spreadsheet — check the Serial Number for typos'
+        : 'Deleted, but couldn\'t find its row in the spreadsheet (matched by Web Order #, make and model)','warning');
     }else{
       showToast('Item deleted','success');
     }
@@ -365,7 +367,7 @@ async function submitReceiveModal(){
     if(item){ item.serial_number=serialNumber; item.availability='In-stock'; }
     closeReceiveModal();
     if(j.sheetSynced===false){
-      showToast('Marked received, but couldn\'t sync the spreadsheet — check the Web Order Number for typos','warning');
+      showToast('Marked received, but couldn\'t find its row in the spreadsheet (matched by Web Order #, make and model)','warning');
     }else{
       showToast('Marked as received','success');
     }

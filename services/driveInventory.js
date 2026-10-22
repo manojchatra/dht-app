@@ -8,6 +8,7 @@
 const { google } = require('googleapis');
 const path = require('path');
 const fs   = require('fs');
+const { pickOrderedItemRow } = require('./inventorySheetMatch');
 
 const CACHE_PATH     = path.join(__dirname, '../../data/inventory_cache.json');
 const CACHE_TTL_MS   = 5 * 60 * 1000;
@@ -405,7 +406,6 @@ const INVENTORY_ITEMS_HEADERS = [
   'Year','Line','Bay'
 ];
 const INVENTORY_ITEM_FIELD_COLS = { availability:8, location:9, steps:10, cover:11, finance:12, speaker:14, year:17, line:18, bay:19 };
-const INVENTORY_ITEM_WEB_ORDER_COL = 15;
 
 function buildInventoryItemRow(d) {
   return [
@@ -466,23 +466,34 @@ async function inventoryItemExistsInSheet(serialNumber) {
   return rowIndex >= 0;
 }
 
-// An "Ordered" row has a blank Serial Number (column A) until it's received,
-// so it can't be found the normal way — locate it by Web Order Number instead.
-async function findInventoryItemRowByWebOrder(sheets, webOrderNumber) {
-  return findRowByColumnValue(sheets, INVENTORY_ITEMS_TAB, INVENTORY_ITEM_WEB_ORDER_COL, webOrderNumber);
+// An "Ordered" row has a blank Serial Number (column A) until it's received.
+// One Web Order # can cover a whole truck, so match on Web Order # + blank serial
+// + make/model (+ colours) — see services/inventorySheetMatch.js. -1 if none.
+async function findOrderedItemRow(sheets, unit) {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${INVENTORY_ITEMS_TAB}!A:S` });
+  return pickOrderedItemRow(res.data.values || [], unit);
 }
 
-// Marks an "Ordered" row received in the Sheet: writes the real serial into
-// column A and flips Availability (column H) to 'In-stock', located by Web
-// Order Number since Serial Number is still blank at this point.
-async function markInventoryItemReceivedInSheet(webOrderNumber, serialNumber) {
-  if (!String(webOrderNumber || '').trim()) { console.warn('[Drive] No Web Order # — Inventory Items row not updated for', serialNumber); return false; }
+// Marks an on-order unit's row received in the Sheet: writes the real serial
+// into column A and flips Availability (column H) to 'In-stock'. `unit` is the
+// inventory DB row as it was before receiving (no serial yet).
+async function markInventoryItemReceivedInSheet(unit, serialNumber) {
   const sheets = getSheets();
-  const rowIndex = await findInventoryItemRowByWebOrder(sheets, webOrderNumber);
-  if (rowIndex < 0) { console.warn('[Drive] Ordered inventory item not found for receive:', webOrderNumber); return false; }
+  const rowIndex = await findOrderedItemRow(sheets, unit);
+  if (rowIndex < 0) { console.warn('[Drive] On-order inventory row not found for receive:', unit.make, unit.model, unit.web_order_number || unit.truck_number || '', '— serial', serialNumber); return false; }
   await updateCell(sheets, INVENTORY_ITEMS_TAB, rowIndex, 1, serialNumber);
   await updateCell(sheets, INVENTORY_ITEMS_TAB, rowIndex, INVENTORY_ITEM_FIELD_COLS.availability, 'In-stock');
-  console.log('[Drive] Marked inventory item received:', webOrderNumber, '-> serial', serialNumber);
+  console.log('[Drive] Marked inventory item received: row', rowIndex, '-> serial', serialNumber);
+  return true;
+}
+
+// Deletes an on-order unit's row (no serial to look it up by).
+async function deleteOrderedInventoryItem(unit) {
+  const sheets = getSheets();
+  const rowIndex = await findOrderedItemRow(sheets, unit);
+  if (rowIndex < 0) { console.warn('[Drive] On-order inventory row not found for delete:', unit.make, unit.model, unit.web_order_number || unit.truck_number || ''); return false; }
+  await deleteRow(sheets, INVENTORY_ITEMS_TAB, rowIndex);
+  console.log('[Drive] Deleted on-order inventory item: row', rowIndex);
   return true;
 }
 
@@ -808,7 +819,7 @@ module.exports = {
   getSkuList, lookupSku,
   appendInventoryItem, updateInventoryItemField, deleteInventoryItem, inventoryItemExistsInSheet,
   rewriteInventoryItemsTab,
-  markInventoryItemReceivedInSheet,
+  markInventoryItemReceivedInSheet, deleteOrderedInventoryItem,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus,

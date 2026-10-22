@@ -51,6 +51,7 @@ function createTestApp() {
     appendInventoryItem:          jest.fn().mockResolvedValue(null),
     deleteInventoryItem:          jest.fn().mockResolvedValue(true),
     markInventoryItemReceivedInSheet: jest.fn().mockResolvedValue(true),
+    deleteOrderedInventoryItem:   jest.fn().mockResolvedValue(true),
     inventoryItemExistsInSheet:   jest.fn().mockResolvedValue(false),
   }));
 

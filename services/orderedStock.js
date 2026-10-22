@@ -56,11 +56,62 @@ async function receiveReservedUnit(db, contractId, { serial, sku = '', skuPhotoP
       updated_at=CURRENT_TIMESTAMP
     WHERE id=?`).run(serial, sku, skuPhotoPath, serialPhotoPath, unit.id);
   try {
-    if (await markInventoryItemReceivedInSheet(unit.web_order_number, serial)) {
+    if (await markInventoryItemReceivedInSheet(unit, serial)) {
       await updateInventoryItemField(serial, 'availability', 'Sold');
     }
   } catch (e) { console.error('[Drive receive reserved unit failed — non-fatal]', e.message); }
   return true;
 }
 
-module.exports = { getUnreservedOrdered, reserveOrdered, reservedUnitFor, findOrderedMatches, receiveSerialConflict, receiveReservedUnit };
+// Moves an Order Placed contract from the on-order unit it reserved to another
+// unreserved on-order unit (e.g. linked to the wrong truck). The old unit goes
+// back to unreserved Ordered stock; the contract takes the new unit's Web Order #
+// / Truck #. One transaction. Returns { from, to } (from may be null).
+function relinkOrdered(db, contractId, newUnitId) {
+  const c = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+  if (!c) throw new Error('Contract not found');
+  if (c.status !== 'order_placed') throw new Error(`Contract is "${c.status}" — only an Order Placed contract (not yet received) can be re-linked`);
+  const to = getUnreservedOrdered(db, newUnitId);
+  if (!to) throw new Error(`Unit ${newUnitId} is not unreserved on-order stock`);
+  const from = reservedUnitFor(db, contractId);
+  db.transaction(() => {
+    if (from) db.prepare('UPDATE inventory SET contract_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(from.id);
+    if (!reserveOrdered(db, to.id, contractId)) throw new Error(`Unit ${to.id} was just taken`);
+    const data = JSON.parse(c.data || '{}');
+    if (data.product) data.product.orderedUnitId = to.id;
+    db.prepare('UPDATE contracts SET web_order_number=?, truck_number=?, data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(to.web_order_number || '', to.truck_number || '', JSON.stringify(data), contractId);
+  })();
+  return { from, to };
+}
+
+// Turns a not-yet-ordered contract (Assigned or To Be Ordered — e.g. the
+// salesperson typed "Truck 20" as the serial) into one sold from on-order
+// stock: reserves the unit, contract → Order Placed (paperwork To Be Ordered)
+// with the unit's Web Order # / Truck #, serial cleared. Units the contract had:
+// a placeholder it created itself (hand-typed serial) is deleted; any other unit
+// is released (In-stock, or Ordered if still on order). One transaction.
+function convertToOnOrder(db, contractId, unitId) {
+  const c = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+  if (!c) throw new Error('Contract not found');
+  if (!['assigned', 'tbo'].includes(c.status)) throw new Error(`Contract is "${c.status}" — only Assigned or To Be Ordered can be converted`);
+  const to = getUnreservedOrdered(db, unitId);
+  if (!to) throw new Error(`Unit ${unitId} is not unreserved on-order stock`);
+  const linked = db.prepare('SELECT * FROM inventory WHERE contract_id=?').all(contractId);
+  const removed = linked.filter(u => u.created_by_contract_id === contractId);
+  const released = linked.filter(u => u.created_by_contract_id !== contractId);
+  db.transaction(() => {
+    for (const u of removed) db.prepare('DELETE FROM inventory WHERE id=?').run(u.id);
+    for (const u of released) db.prepare(`UPDATE inventory SET contract_id=NULL,
+      availability=CASE WHEN availability='Ordered' THEN 'Ordered' ELSE 'In-stock' END, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(u.id);
+    if (!reserveOrdered(db, to.id, contractId)) throw new Error(`Unit ${to.id} was just taken`);
+    const data = JSON.parse(c.data || '{}');
+    data.product = Object.assign(data.product || {}, { status: 'tbo', serialNumber: '', orderedUnitId: to.id });
+    db.prepare(`UPDATE contracts SET status='order_placed', product_status='tbo', serial_number=NULL,
+      web_order_number=?, truck_number=?, data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(to.web_order_number || '', to.truck_number || '', JSON.stringify(data), contractId);
+  })();
+  return { removed, released, to };
+}
+
+module.exports = { convertToOnOrder, relinkOrdered, getUnreservedOrdered, reserveOrdered, reservedUnitFor, findOrderedMatches, receiveSerialConflict, receiveReservedUnit };

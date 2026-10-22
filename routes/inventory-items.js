@@ -10,10 +10,11 @@ const multer  = require('multer');
 const router  = express.Router();
 const db      = require('../db/database');
 const { compressAndGate } = require('../utils/imageUtils');
+const { normalizeMake } = require('../utils/makes');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const {
   lookupSku, appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
-  markInventoryItemReceivedInSheet,
+  markInventoryItemReceivedInSheet, deleteOrderedInventoryItem,
 } = require('../services/driveInventory');
 
 // 'warehouse' isn't a creatable role yet (lands in Stage 5) — included here
@@ -101,7 +102,8 @@ router.post('/', (req, res) => {
   uploadPhotos(req, res, async (err) => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     try {
-      const { make, series, model, shellColor, cabinetColor, serialNumber, skuNumber, speaker, webOrderNumber, truckNumber } = req.body;
+      const { series, model, shellColor, cabinetColor, serialNumber, skuNumber, speaker, webOrderNumber, truckNumber } = req.body;
+      const make = normalizeMake(req.body.make); // one spelling per brand (utils/makes.js)
       const year = String(req.body.year || '').trim(), line = String(req.body.line || '').trim(), bay = String(req.body.bay || '').trim();
       const hasSerial = serialNumber && serialNumber.trim();
       const hasOrderInfo = webOrderNumber && webOrderNumber.trim() && truckNumber && truckNumber.trim();
@@ -267,7 +269,7 @@ router.patch('/:id/receive', (req, res) => {
       `).run(serialNumber, serialPhotoPath, req.params.id);
 
       let sheetSynced = true;
-      try { sheetSynced = await markInventoryItemReceivedInSheet(item.web_order_number, serialNumber); }
+      try { sheetSynced = await markInventoryItemReceivedInSheet(item, serialNumber); }
       catch(e) { console.error('[Drive mark inventory received failed — non-fatal]', e.message); sheetSynced = false; }
 
       res.json({ success: true, sheetSynced });
@@ -294,7 +296,8 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     });
 
     let sheetSynced = true;
-    try { sheetSynced = await deleteInventoryItem(item.serial_number); }
+    // On-order units have no serial yet — their Sheet row is found by Web Order # / make / model.
+    try { sheetSynced = item.serial_number ? await deleteInventoryItem(item.serial_number) : await deleteOrderedInventoryItem(item); }
     catch(e) { console.error('[Drive delete inventory item failed — non-fatal]', e.message); sheetSynced = false; }
 
     res.json({ success: true, sheetSynced });

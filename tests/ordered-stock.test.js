@@ -108,6 +108,63 @@ describe('receiving a contract that reserved on-order stock', () => {
   });
 });
 
+describe('re-linking a contract to a different on-order unit', () => {
+  const svc = () => require('../services/orderedStock');
+
+  test('moves the reservation and the Web Order # / Truck #; the old unit is free again', async () => {
+    const wrong = addOrdered(), right = addOrdered();
+    const { contractId } = await createContract(admin, { product: onOrderProduct(wrong) });
+
+    const { from, to } = svc().relinkOrdered(ctx.db, contractId, right);
+
+    expect([from.id, to.id]).toEqual([wrong, right]);
+    expect(unitById(wrong)).toMatchObject({ availability: 'Ordered', contract_id: null });
+    expect(unitById(right)).toMatchObject({ availability: 'Ordered', contract_id: contractId });
+    const c = contract(contractId);
+    expect(c).toMatchObject({ web_order_number: unitById(right).web_order_number, truck_number: unitById(right).truck_number });
+    expect(JSON.parse(c.data).product.orderedUnitId).toBe(right);
+  });
+
+  test('refuses a unit that is already reserved, and a contract already received', async () => {
+    const a = addOrdered(), b = addOrdered();
+    const one = await createContract(admin, { product: onOrderProduct(a) });
+    const two = await createContract(admin, { product: onOrderProduct(b) });
+    expect(() => svc().relinkOrdered(ctx.db, one.contractId, b)).toThrow(/not unreserved/);
+    expect(unitById(a).contract_id).toBe(one.contractId); // unchanged
+
+    ctx.db.prepare("UPDATE contracts SET status='received' WHERE id=?").run(two.contractId);
+    expect(() => svc().relinkOrdered(ctx.db, two.contractId, addOrdered())).toThrow(/only an Order Placed/);
+  });
+});
+
+describe('converting a contract with a typed placeholder serial to on-order stock', () => {
+  const svc = () => require('../services/orderedStock');
+
+  test('reserves the on-order unit, deletes the placeholder unit, and moves the contract to Order Placed', async () => {
+    const id = addOrdered();
+    const placeholder = `Truck 20 #${id}`;
+    const { contractId } = await createContract(admin, { product: { status: 'instock', serialNumber: placeholder, make: 'Caldera', model: 'Vanto' } });
+    expect(ctx.db.prepare('SELECT created_by_contract_id FROM inventory WHERE serial_number=?').get(placeholder).created_by_contract_id).toBe(contractId);
+
+    const { removed } = svc().convertToOnOrder(ctx.db, contractId, id);
+
+    expect(removed.map(u => u.serial_number)).toEqual([placeholder]);
+    expect(ctx.db.prepare('SELECT 1 FROM inventory WHERE serial_number=?').get(placeholder)).toBeUndefined();
+    expect(unitById(id).contract_id).toBe(contractId);
+    const c = contract(contractId);
+    expect(c).toMatchObject({ status: 'order_placed', product_status: 'tbo', serial_number: null, truck_number: unitById(id).truck_number });
+    expect(JSON.parse(c.data).product).toMatchObject({ status: 'tbo', serialNumber: '', orderedUnitId: id });
+  });
+
+  test('a real spa the contract had goes back to In-stock, not deleted', async () => {
+    const serial = `REAL-SPA-${++n}`;
+    ctx.db.prepare("INSERT INTO inventory (make, model, serial_number, availability) VALUES ('Caldera','Vanto',?,'In-stock')").run(serial);
+    const { contractId } = await createContract(admin, { product: { status: 'instock', serialNumber: serial, make: 'Caldera', model: 'Vanto' } });
+    svc().convertToOnOrder(ctx.db, contractId, addOrdered());
+    expect(ctx.db.prepare('SELECT availability, contract_id FROM inventory WHERE serial_number=?').get(serial)).toEqual({ availability: 'In-stock', contract_id: null });
+  });
+});
+
 describe('releasing reserved on-order stock', () => {
   test('cancelling the contract returns the unit to unreserved Ordered stock', async () => {
     const id = addOrdered();
