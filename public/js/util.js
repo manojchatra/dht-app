@@ -99,6 +99,21 @@ function shrinkPhoto(file) {
   });
 }
 
+// deleteUserRequest: deletes a user (admin). A salesperson with contracts gets
+// a Proceed / Cancel popup first — their contracts are kept but unlinked from
+// the login. Resolves { contracts } / { cancelled }; throws with the error.
+async function deleteUserRequest(id) {
+  var r = await fetch('/api/users/' + id, { method: 'DELETE' });
+  var j = await r.json();
+  if (r.status === 409 && j.needsConfirm) {
+    if (!(await confirmDialog(j.message, { title: 'Delete salesperson?', okText: 'Delete' }))) return { cancelled: true };
+    r = await fetch('/api/users/' + id + '?confirm=1', { method: 'DELETE' });
+    j = await r.json();
+  }
+  if (!r.ok) throw new Error(j.error || 'Failed');
+  return { contracts: j.contracts || 0 };
+}
+
 // newIdempotencyKey: a fresh id for one submit attempt (contract creation,
 // payment recording). Carrying the SAME key through a resubmit — a browser
 // Back navigation, a double-click — lets the server recognize it as the same

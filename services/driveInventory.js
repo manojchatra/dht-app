@@ -122,7 +122,7 @@ async function findRowByContractId(sheets, tabName, contractId) {
     });
     const values = res.data.values || [];
     for (let i = 1; i < values.length; i++) {
-      if ((values[i][0]||'').trim() === contractId.trim()) return i + 1; // 1-indexed
+      if (String(values[i][0]||'').trim().toUpperCase() === String(contractId).trim().toUpperCase()) return i + 1; // 1-indexed; serials may be typed in any case
     }
     return -1;
   } catch(e) {

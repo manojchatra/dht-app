@@ -45,18 +45,21 @@ function logActivity(db, { contractId, contractNum, eventType, actor, detail }) 
 }
 
 /**
- * addNotification(db, { contractId, contractNum, eventType, message, color })
+ * addNotification(db, { contractId, contractNum, eventType, message, color, ref })
  * color: 'green' | 'red'
- * Rolling window of 10 — drops oldest when 11th arrives.
+ * Rolling window of 10 — drops oldest when 11th arrives. "Not delivered"
+ * alerts (FAILED_DELIVERY, ref = the missed slot) are outside the window:
+ * deleting them made the dashboard recreate them on every load, pushing real
+ * notifications out (routes/notifications.js).
  */
-function addNotification(db, { contractId, contractNum, eventType, message, color }) {
+function addNotification(db, { contractId, contractNum, eventType, message, color, ref }) {
   try {
     db.prepare(
-      'INSERT INTO notifications (contract_id,contract_num,event_type,message,color) VALUES (?,?,?,?,?)'
-    ).run(contractId||null, contractNum||null, eventType, message||null, color||'green');
+      'INSERT INTO notifications (contract_id,contract_num,event_type,message,color,ref) VALUES (?,?,?,?,?,?)'
+    ).run(contractId||null, contractNum||null, eventType, message||null, color||'green', ref||null);
     // Rolling window: delete oldest beyond 10
     const ids = db.prepare(
-      'SELECT id FROM notifications WHERE dismissed=0 ORDER BY id DESC LIMIT -1 OFFSET 10'
+      "SELECT id FROM notifications WHERE dismissed=0 AND event_type<>'FAILED_DELIVERY' ORDER BY id DESC LIMIT -1 OFFSET 10"
     ).all();
     if (ids.length) {
       db.prepare(`DELETE FROM notifications WHERE id IN (${ids.map(()=>'?').join(',')})`).run(ids.map(r=>r.id));

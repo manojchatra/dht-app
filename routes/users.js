@@ -108,19 +108,37 @@ router.patch('/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// DELETE /api/users/:id
+// DELETE /api/users/:id[?confirm=1]
+// A salesperson with contracts can be deleted too (keeps the Sales list short).
+// Their contracts are kept, still showing their name as salesperson, but are
+// no longer linked to a login — emails and follow-ups for those contracts go
+// to the office only. Because that's a bigger step, the first request answers
+// 409 needsConfirm with the count; the page asks, then repeats with ?confirm=1.
+// (Deleting used to fail with a server error: contracts reference the user.)
 router.delete('/:id', (req, res) => {
   const id = parseInt(req.params.id);
   if (id === req.session.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
-  const before = db.prepare('SELECT username, role FROM users WHERE id = ?').get(id);
-  db.prepare('DELETE FROM users WHERE id = ?').run(id);
-  if (before) {
-    logActivity(db, {
-      eventType: 'USER_DELETED', actor: req.session.username || 'system',
-      detail: `Deleted ${before.username} (${before.role})`
+  const before = db.prepare('SELECT username, name, role FROM users WHERE id = ?').get(id);
+  if (!before) return res.status(404).json({ error: 'User not found' });
+  const who = before.name || before.username;
+  const contracts = db.prepare('SELECT COUNT(*) AS n FROM contracts WHERE salesman_user_id = ?').get(id).n;
+  if (contracts && req.query.confirm !== '1') {
+    return res.status(409).json({
+      needsConfirm: true, contracts,
+      message: `${who} has ${contracts} contract${contracts === 1 ? '' : 's'}. They are kept and still show ${who} as the salesperson, `
+        + `but are no longer linked to a login: emails and follow-ups for them go to the office only. Delete ${who}?`,
     });
   }
-  res.json({ success: true });
+  db.transaction(() => {
+    db.prepare('UPDATE contracts SET salesman_user_id = NULL WHERE salesman_user_id = ?').run(id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  })();
+  req.app.locals.sessionStore?.destroyForUser(id); // logged out everywhere
+  logActivity(db, {
+    eventType: 'USER_DELETED', actor: req.session.username || 'system',
+    detail: `Deleted ${before.username} (${before.role})` + (contracts ? ` — ${contracts} contract(s) kept, unlinked from the login` : '')
+  });
+  res.json({ success: true, contracts });
 });
 
 module.exports = router;

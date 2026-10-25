@@ -32,7 +32,7 @@ function getEmailRecipients() {
   } catch(e) { return []; }
 }
 const { generateAcknowledgementPDF } = require('../utils/acknowledgementPDF');
-const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered } = require('../utils/emailSender');
+const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered, getSalesmanEmail } = require('../utils/emailSender');
 const { moveToDelivered } = require('../services/driveInventory');
 const { deleteCalendarEvent } = require('../services/googleCalendar');
 const { buildDriveData } = require('./contracts');
@@ -179,6 +179,33 @@ router.get('/acknowledgements', requireDeliveryOrAdmin, (req, res) => {
   } catch(e) {
     console.error('[Delivery acknowledgements list]', e.message);
     res.status(500).json({ error: 'Failed to load acknowledgements' });
+  }
+});
+
+// ── GET /api/delivery/calendar — scheduled deliveries for the calendar ──────
+// The delivery calendar used to load the full contracts list (prices,
+// payments) and filter it in the browser. This returns only what the
+// calendar shows: for a delivery user, their team's bookings (and any with no
+// team yet); for admin, all.
+router.get('/calendar', requireDeliveryOrAdmin, (req, res) => {
+  try {
+    const scopedToTeam = req.currentUser.role === 'delivery';
+    const rows = db.prepare(`
+      SELECT c.id, c.contract_number, c.status, c.make, c.model, c.serial_number, c.salesman,
+        c.scheduled_datetime, c.scheduled_duration, c.delivery_team,
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name,
+        COALESCE(json_extract(c.data,'$.customer.address'), cu.address) AS address,
+        COALESCE(json_extract(c.data,'$.customer.city'), cu.city) AS city
+      FROM contracts c
+      LEFT JOIN customers cu ON c.customer_id = cu.id
+      WHERE c.status = 'scheduled' AND c.scheduled_datetime IS NOT NULL
+        ${scopedToTeam ? "AND (c.delivery_team = ? OR COALESCE(c.delivery_team,'') = '')" : ''}
+      ORDER BY c.scheduled_datetime
+    `).all(...(scopedToTeam ? [req.currentUser.team] : []));
+    res.json(rows);
+  } catch(e) {
+    console.error('[Delivery calendar]', e.message);
+    res.status(500).json({ error: 'Failed to load the calendar' });
   }
 });
 
@@ -362,7 +389,7 @@ router.get('/smtp-status', requireDeliveryOrAdmin, (req, res) => {
 
 // ── GET /api/delivery/email-recipients — get recipients for popup ─────────────
 router.get('/email-recipients/:contractId', requireDeliveryOrAdmin, (req, res) => {
-  const contract = db.prepare('SELECT data, salesman FROM contracts WHERE id=?').get(req.params.contractId);
+  const contract = db.prepare('SELECT data, salesman, salesman_user_id FROM contracts WHERE id=?').get(req.params.contractId);
   const custEmail = contract ? JSON.parse(contract.data||'{}').customer?.email : null;
   const settingsRecipients = getEmailRecipients();
 
@@ -370,10 +397,10 @@ router.get('/email-recipients/:contractId', requireDeliveryOrAdmin, (req, res) =
     "SELECT email FROM users WHERE role='admin' AND email IS NOT NULL AND email != ''"
   ).all().map(r => r.email);
 
-  // Best-effort: salesman is still free text on contracts (until it's a real
-  // FK to users), so match it against a sales user's name to find their email.
-  let salesEmail = null;
-  if (contract?.salesman) {
+  // The contract's linked salesperson login; older contracts with no link fall
+  // back to matching the salesman's name against a sales user's name.
+  let salesEmail = contract ? getSalesmanEmail(contract) : null;
+  if (!salesEmail && contract?.salesman) {
     const match = db.prepare(
       "SELECT email FROM users WHERE role='sales' AND email IS NOT NULL AND email != '' AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
     ).get(contract.salesman);

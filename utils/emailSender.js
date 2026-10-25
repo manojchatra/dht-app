@@ -16,11 +16,16 @@ function smtpConfigured() {
 
 function getTransporter() {
   const port = parseInt(process.env.SMTP_PORT) || 465;
+  const host = process.env.SMTP_HOST || 'localhost';
   const opts = {
-    host:              process.env.SMTP_HOST || 'localhost',
+    host,
     port,
     secure:            port === 465,
-    tls:               { rejectUnauthorized: false },
+    // The mail server's certificate is checked (Brevo's is valid) — without
+    // the check, anyone in between could read or change the mail. A relay on
+    // this same server (localhost) never leaves the machine and usually has a
+    // self-signed certificate, so it's exempt.
+    tls:               { rejectUnauthorized: !['localhost', '127.0.0.1'].includes(host) },
     connectionTimeout: 15000,
     greetingTimeout:   10000,
     socketTimeout:     15000,
@@ -263,6 +268,7 @@ async function notifyUserCreated({ name, username, email }) {
 }
 
 module.exports = {
+  getTransporter, // scripts/check-smtp.js
   sendAcknowledgementEmail, smtpConfigured, sendEmail, notifyUserCreated,
   getAdminRecipients, getSalesmanEmail, getStoreReviewUrl,
   notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived,

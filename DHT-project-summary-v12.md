@@ -48,7 +48,7 @@ Contabo VPS (Ubuntu 24) — IP: 164.68.120.23
 - **No** `location /uploads/` block: uploads are served by Node, which checks the login and who may see each contract's files (`middleware/contractFiles.js`). The old nginx alias served them to anyone without a login — removed Oct 2026.
 - Every proxied block sets `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` — required for the login rate-limiter (real client IP) and secure session cookies (real protocol); see Key Technical Learnings.
 
-**Deploying:** pages are edited in the repo's `public/` and uploaded to `public_html/` — no restart needed. Anything under `routes/`, `services/`, `utils/`, `db/`, `server.js` needs `pm2 restart dht-app` as root (logs everyone out — sessions are in-memory).
+**Deploying:** pages are edited in the repo's `public/` and uploaded to `public_html/` — no restart needed. Anything under `routes/`, `services/`, `utils/`, `db/`, `server.js` needs `pm2 restart dht-app` as root. Logins are kept in the database (`sessions` table, utils/sqliteSessionStore.js), so a restart no longer logs anyone out; a login lasts 6 hours. The user is re-read on every request: deactivating or deleting an account logs it out at once, role/team changes apply on the next click.
 
 **Two PM2s on the server:** each Linux user has its own PM2, and `pm2 list` only shows the current user's apps.
 
@@ -95,12 +95,12 @@ SMTP_FROM=deliveries@deserthottubsaz.com
 |---|---|
 | admin | Everything — contracts, status board, customers, inventory, warehouse, sales, calendar, acknowledgement hub, post-delivery admin, settings, notifications |
 | sales | Own contracts only (list, detail, dashboard counts, post-delivery follow-up are all scoped by `salesman_user_id`). Can create contracts, schedule, record payments. Salesman is always themself. |
-| warehouse | `/warehouse` receiving dashboard + Inventory pages (+ Settings for own password). Sees no pricing. |
-| delivery | Calendar + `/delivery/:id` + `/acknowledgement` hub/form (+ Settings for own password). Scoped to own team. |
+| warehouse | `/warehouse` receiving dashboard + Inventory pages (+ Settings for own password). Sees no pricing — the contracts API (`/api/contracts`) and spa search (`/api/inventory`) are admin + sales only. |
+| delivery | Calendar (`/api/delivery/calendar`: own team + unassigned, no prices) + `/delivery/:id` + `/acknowledgement` hub/form (+ Settings for own password). Scoped to own team. |
 
 Delivery users have a `team` field: `team_a` (JV Spa Movers) or `team_b` (Clear Choice Movers). Multiple logins per team allowed.
 
-Users have `name`, `email`, `active`. Sales users are created from the **Sales** section; admin/warehouse/delivery from **Settings → User Management**. Any role can change their own password in Settings. Sidebar items a role can't reach are hidden (`warehouse-hide`, `delivery-hide`, `admin-only` classes).
+Users have `name`, `email`, `active`. Sales users are created from the **Sales** section; admin/warehouse/delivery from **Settings → User Management**. Any role can change their own password in Settings. Sidebar items a role can't reach are hidden (`warehouse-hide`, `delivery-hide`, `admin-only` classes). **Deleting** a user (Settings, or Delete on a salesperson's page): one with contracts is asked to confirm first — the contracts are kept, still showing their name as salesperson, but are unlinked from the login (`salesman_user_id` cleared), so emails and follow-ups for them go to the office only.
 
 ---
 
@@ -304,7 +304,7 @@ Provider: `smtp-relay.brevo.com:587` (STARTTLS). From: `deliveries@deserthottubs
 ## Dashboard & Notifications
 
 - **Stats:** contract counts by status, by showroom, by salesman (showroom/salesman stats hidden for sales users, whose counts are their own).
-- **Notifications (admin only):** Contract created, Order placed, Received, Scheduled, Delivered, Payment recorded (green); Failed delivery (red — automated: scheduled + past datetime, created once per contract).
+- **Notifications (admin only):** Contract created, Order placed, Received, Scheduled, Delivered, Payment recorded (green); Not delivered (red — automated: scheduled + past datetime, one per missed slot). Not-delivered alerts are listed first, outside the 10 newest, until dismissed or the contract is delivered / rescheduled / cancelled.
 - **Rolling window:** 10 most recent. **Dismiss** is permanent per notification (stored in DB).
 
 ---
@@ -405,7 +405,7 @@ Suites: contracts, contract status workflow, payments, notifications, cheque pho
 | Never auto-match customers | Matching by email/name silently merged different people (shared family email) and overwrote names. Link only on explicit staff confirmation. |
 | imageUtils shared module | `compressAndGate` must be in a shared util — not inline in contracts.js — so delivery.js can import it |
 | Activity log await | Cannot use `await` in non-async function. Use `.then()` chain or make function async. |
-| PM2 cluster + MemoryStore | Sessions per-process. Run `pm2 start -i 1` (single instance) as workaround. |
+| PM2 cluster | Run a single instance (`pm2 start -i 1`) — the in-process locks (utils/asyncLock.js, the Sheet queue) assume one process. Sessions are in SQLite, not MemoryStore. |
 | nginx try_files | `/acknowledgement` (no ID) needs `location = /acknowledgement` exact match — otherwise nginx 404 before Node |
 | formatSlot timezone | `toLocaleTimeString()` uses browser timezone without explicit `timeZone: 'America/Phoenix'` option |
 | trust proxy + secure cookies | `cookie.secure:true` behind nginx requires `app.set('trust proxy', 1)` **and** nginx forwarding `X-Forwarded-Proto` on every proxied location block — otherwise `express-session` silently withholds `Set-Cookie` entirely (login returns 200, but no cookie is ever issued; every next request bounces to `/login`). Diagnose with `curl -i` on `/auth/login`, check for `set-cookie` in the raw response. |
@@ -447,7 +447,6 @@ Suites: contracts, contract status workflow, payments, notifications, cheque pho
 - **Customer edit screen** (fix a phone/email without a new contract; merge duplicates).
 - **Service app** (separate): appointment booking → technician visit → notes → invoice. Would read customers/spas from this app over an API (API-key auth, versioned endpoints) and link Passdown customers (IDs like `c-0001`) to `DHT-C` numbers via phone.
 - Installed-spa records (serial, install address, delivery date, warranty) for the service side.
-- SQLite-backed sessions (fix PM2 MemoryStore — restarts log everyone out)
 - Delay notification icon on overdue scheduled cards
 - Zip-code colour coding on calendar (4 Arizona regions)
 - Delivery user management: reassignment flow when crew changes

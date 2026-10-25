@@ -334,6 +334,24 @@ if (!paymentCols.includes('idempotency_key')) {
   console.log('[DB] payments.idempotency_key column added');
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency_key ON payments(idempotency_key)');
+// One inventory unit per serial, whatever the capitals or surrounding spaces
+// (blank serials — on-order stock — don't count). Every check in the app
+// already compares serials this way; the index makes it impossible to get round.
+// If duplicates already exist the index can't be created: they're listed in
+// the log instead (fix them in Inventory, then restart), and the app still starts.
+if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_inventory_serial_unique'").get()) {
+  const dups = db.prepare(`SELECT upper(trim(serial_number)) AS s, COUNT(*) AS n, group_concat(id) AS ids FROM inventory
+    WHERE trim(COALESCE(serial_number,'')) <> '' GROUP BY upper(trim(serial_number)) HAVING COUNT(*) > 1`).all();
+  if (dups.length) {
+    console.warn(`[DB] Serial numbers not made unique — ${dups.length} serial(s) are on more than one inventory unit: `
+      + dups.map(d => `${d.s} (unit ids ${d.ids})`).join(', '));
+  } else {
+    db.exec(`CREATE UNIQUE INDEX idx_inventory_serial_unique ON inventory(upper(trim(serial_number)))
+      WHERE trim(COALESCE(serial_number,'')) <> ''`);
+    console.log('[DB] inventory serial numbers are now unique');
+  }
+}
+
 // Voided payments (admin, with a reason) stay on record but stop counting —
 // see utils/paymentTotals.js.
 for (const col of ['voided_at', 'voided_by', 'void_reason']) {
@@ -394,6 +412,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS notifications (
   dismissed    INTEGER DEFAULT 0,
   created_at   TEXT DEFAULT (datetime('now'))
 )`);
+
+// "Not delivered" alerts remember which slot was missed (ref = scheduled_datetime),
+// so a rescheduled delivery that's missed again gets a new alert. Existing
+// alerts are taken to be for the contract's current slot.
+if (!db.prepare('PRAGMA table_info(notifications)').all().some(c => c.name === 'ref')) {
+  db.exec('ALTER TABLE notifications ADD COLUMN ref TEXT');
+  db.exec(`UPDATE notifications SET ref = (SELECT scheduled_datetime FROM contracts WHERE contracts.id = notifications.contract_id)
+    WHERE event_type = 'FAILED_DELIVERY' AND ref IS NULL`);
+  console.log('[DB] notifications.ref column added');
+}
 
 seedUsers();
 seedSettings();

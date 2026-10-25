@@ -34,6 +34,12 @@ const {
   syncCustomerRecord, syncCustomerRecordsForCustomer, removeCustomerRecord, deleteCustomerIfOrphan,
 } = require('../services/customers');
 
+// Contracts (prices, payments, customer details) are for admin and sales only;
+// a salesperson is further limited to their own contracts route by route.
+// Delivery has its own narrow views (routes/delivery.js), warehouse its queue
+// (routes/warehouse.js).
+router.use(requireRole(['admin', 'sales']));
+
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
 
 // ── Multer ────────────────────────────────────────────────────────────────────
@@ -81,11 +87,6 @@ function generateContractNumber(store, contractDate) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const SALESMEN = [
-  'Michael Ioli','Jeff Geffre','Robert Heger','Dave Pepe',
-  'Paul Williamson','Barbara Hodges','Gaurav Shetty','Joe Sorensen'
-];
-
 function summariseCover(cover = {}) {
   const parts = [];
   if (cover.coverType?.length) parts.push(cover.coverType.join('/'));
@@ -178,7 +179,7 @@ async function releaseInventoryForContract(contractId) {
 async function reclaimInventoryForContract(contract) {
   const serial = contract.serial_number;
   if (!serial) return { reclaimed: false, serial: null };
-  const unit = db.prepare('SELECT id, availability, contract_id FROM inventory WHERE serial_number=?').get(serial);
+  const unit = db.prepare('SELECT id, availability, contract_id FROM inventory WHERE upper(trim(serial_number))=upper(trim(?))').get(serial);
   if (!unit || unit.availability !== 'In-stock' || unit.contract_id) return { reclaimed: false, serial };
   db.prepare(`UPDATE inventory SET availability='Sold', contract_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(contract.id, unit.id);
   try { await updateInventoryItemField(serial, 'availability', 'Sold'); }
@@ -337,15 +338,6 @@ router.post('/upload-temp', uploadFields, async (req, res) => {
   } catch(err) {
     res.status(500).json({ error: 'Upload failed: ' + err.message });
   }
-});
-
-// ── Salesman list ─────────────────────────────────────────────────────────────
-router.get('/meta/salesmen', (req, res) => {
-  try {
-    const fromDb = db.prepare('SELECT DISTINCT salesman FROM contracts WHERE salesman IS NOT NULL ORDER BY salesman').all().map(r => r.salesman);
-    const merged = [...new Set([...SALESMEN, ...fromDb])].sort();
-    res.json(merged);
-  } catch (_) { res.json(SALESMEN); }
 });
 
 // ── Create contract ───────────────────────────────────────────────────────────

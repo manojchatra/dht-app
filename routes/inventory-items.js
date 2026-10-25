@@ -146,7 +146,7 @@ router.post('/', (req, res) => {
         return res.json({ success: true, id: result.lastInsertRowid });
       }
 
-      const existing = db.prepare('SELECT id FROM inventory WHERE serial_number = ?').get(serialNumber.trim());
+      const existing = db.prepare('SELECT id FROM inventory WHERE upper(trim(serial_number)) = upper(trim(?))').get(serialNumber.trim());
       if (existing) return res.status(409).json({ error: 'An item with this serial number is already in inventory.' });
 
       const skuFile    = req.files?.skuPhoto?.[0]    || null;
@@ -262,7 +262,7 @@ router.patch('/:id/receive', (req, res) => {
       const serialNumber = (req.body.serialNumber || '').trim();
       if (!serialNumber) return res.status(400).json({ error: 'Serial number is required' });
 
-      const existing = db.prepare('SELECT id FROM inventory WHERE serial_number = ? AND id != ?').get(serialNumber, req.params.id);
+      const existing = db.prepare('SELECT id FROM inventory WHERE upper(trim(serial_number)) = upper(trim(?)) AND id != ?').get(serialNumber, req.params.id);
       if (existing) return res.status(409).json({ error: 'An item with this serial number is already in inventory.' });
 
       const serialFile = req.files?.serialPhoto?.[0] || null;

@@ -4,6 +4,11 @@ const db = require('../db/database');
 const { getInventory, getLastSynced, getSkuList } = require('../services/driveInventory');
 const { buildColourLists, ALIASES } = require('../utils/colours');
 const { findOrderedMatches } = require('../services/orderedStock');
+const { requireRole } = require('../middleware/auth');
+
+// The spa picker on New Contract and the Status page — admin and sales. The
+// warehouse's Inventory pages use /api/inventory-items instead.
+router.use(requireRole(['admin', 'sales']));
 
 // Keyword → substring match against the DB `location` column (case-insensitive).
 const STORE_MAP = {
@@ -84,7 +89,7 @@ router.get('/ordered-matches', (req, res) => {
 router.get('/serial-exists', (req, res) => {
   const serial = String(req.query.serial || '').trim();
   if (!serial) return res.json({ exists: false });
-  const row = db.prepare('SELECT 1 FROM inventory WHERE serial_number = ?').get(serial);
+  const row = db.prepare('SELECT 1 FROM inventory WHERE upper(trim(serial_number)) = upper(trim(?))').get(serial);
   res.json({ exists: !!row });
 });
 

@@ -99,7 +99,7 @@ router.post('/logout', (req, res) => {
 
 // ── GET /auth/me ──────────────────────────────────────────────────────────────
 router.get('/me', (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
+  if (!require('../middleware/auth').refreshSessionUser(req)) return res.status(401).json({ error: 'Not authenticated' });
   res.json({
     userId:   req.session.userId,
     username: req.session.username,

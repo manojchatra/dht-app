@@ -139,7 +139,7 @@ router.post('/:id/receive', (req, res) => {
       // On-order stock this contract reserved: that unit gets the serial — no second unit.
       // (receiveReservedUnit also updates that unit's Sheet row.)
       const usedReserved = await receiveReservedUnit(db, contract.id, { serial, sku, skuPhotoPath, serialPhotoPath });
-      const invExisting = usedReserved ? null : db.prepare('SELECT id FROM inventory WHERE serial_number=?').get(serial);
+      const invExisting = usedReserved ? null : db.prepare('SELECT id FROM inventory WHERE upper(trim(serial_number))=upper(trim(?))').get(serial);
       if (usedReserved) {
         // nothing more to create or link
       } else if (invExisting) {

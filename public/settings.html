@@ -473,19 +473,21 @@ function closeDeleteUserModal(){
   _deleteUserId = null;
 }
 async function executeDeleteUser() {
+  const id = _deleteUserId;
   try {
-    const r = await fetch('/api/users/'+_deleteUserId,{method:'DELETE'});
-    if (!r.ok) throw new Error((await r.json()).error);
+    const r = await deleteUserRequest(id);
+    if (r.cancelled) return;
     closeDeleteUserModal();
-    showToast('User deleted','success'); loadUsers();
+    showToast(r.contracts ? 'User deleted — their contracts are kept' : 'User deleted','success'); loadUsers();
   } catch(e) { showToast(e.message||'Failed','error'); }
 }
 
 // Wait for auth to complete then load sections
 function initSettingsPage() {
   if (window._userRole === undefined) { setTimeout(initSettingsPage, 80); return; }
-  loadSettings();
-  if (window._userRole === 'admin') loadUsers();
+  // Tax rates / email recipients / review links / users are admin sections
+  // (the email recipients and review links APIs are admin-only).
+  if (window._userRole === 'admin') { loadSettings(); loadUsers(); }
 }
 initSettingsPage();
 </script>

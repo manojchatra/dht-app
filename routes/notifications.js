@@ -19,29 +19,36 @@ router.get('/', requireAdmin, (req, res) => {
     ).all(now);
 
     for (const c of overdue) {
-      // No "AND dismissed=0" here on purpose — this must count a dismissed
-      // notification too, or dismissing does nothing: the very next load
-      // would see the contract is still overdue, find no *undismissed*
-      // notification, and immediately recreate one. Once notified about a
-      // given overdue contract, stay quiet — dismiss is meant to be final.
+      // One alert per missed slot. No "AND dismissed=0" on purpose — a
+      // dismissed alert must count too, or dismissing would do nothing (the
+      // next load would recreate it). A rescheduled delivery that's missed
+      // again is a new slot, so it gets a new alert.
       const alreadyNotified = db.prepare(
-        "SELECT id FROM notifications WHERE contract_id=? AND event_type='FAILED_DELIVERY'"
-      ).get(c.id);
+        "SELECT id FROM notifications WHERE contract_id=? AND event_type='FAILED_DELIVERY' AND ref=?"
+      ).get(c.id, c.scheduled_datetime);
       if (!alreadyNotified) {
         const cuName = (() => { try { return JSON.parse(c.data||'{}').customer?.name||''; } catch(e){ return ''; } })();
         const slot   = new Date(c.scheduled_datetime + '-07:00').toLocaleString('en-US',{timeZone:'America/Phoenix',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
         addNotification(db, {
           contractId: c.id, contractNum: c.contract_number,
-          eventType: 'FAILED_DELIVERY', color: 'red',
+          eventType: 'FAILED_DELIVERY', color: 'red', ref: c.scheduled_datetime,
           message: `${c.contract_number} — ${cuName} scheduled for ${slot} — not delivered`
         });
       }
     }
 
-    const notifications = db.prepare(
-      "SELECT * FROM notifications WHERE dismissed=0 ORDER BY id DESC LIMIT 10"
+    // "Not delivered" alerts first, outside the 10: shown while the contract
+    // is still Scheduled for that same slot (delivered / rescheduled /
+    // cancelled → they go away) and until dismissed. Then the 10 newest others.
+    const failed = db.prepare(`
+      SELECT n.* FROM notifications n JOIN contracts c ON c.id = n.contract_id
+      WHERE n.event_type='FAILED_DELIVERY' AND n.dismissed=0
+        AND c.status='scheduled' AND c.scheduled_datetime = n.ref
+      ORDER BY n.id DESC`).all();
+    const others = db.prepare(
+      "SELECT * FROM notifications WHERE dismissed=0 AND event_type<>'FAILED_DELIVERY' ORDER BY id DESC LIMIT 10"
     ).all();
-    res.json(notifications);
+    res.json([...failed, ...others]);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

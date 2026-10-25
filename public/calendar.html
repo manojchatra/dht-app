@@ -111,15 +111,11 @@ function addMinutesPhoenix(naiveStr, mins) {
 }
 
 async function loadCalendar() {
-  const contracts = await fetch('/api/contracts').then(r=>r.json()).catch(()=>[]);
-  const scheduled = contracts.filter(c=>c.status==='scheduled'&&c.scheduled_datetime);
-
-  // Filter by team if delivery role
+  // Delivery users get their team's bookings only, without prices
+  // (/api/delivery/calendar); admin and sales use the contracts list.
   const userRole = window._userRole;
-  const userTeam = window._userTeam;
-  const filtered = userRole === 'delivery'
-    ? scheduled.filter(c => !c.delivery_team || c.delivery_team === userTeam)
-    : scheduled;
+  const contracts = await fetch(userRole === 'delivery' ? '/api/delivery/calendar' : '/api/contracts').then(r=>r.json()).catch(()=>[]);
+  const filtered = (Array.isArray(contracts) ? contracts : []).filter(c=>c.status==='scheduled'&&c.scheduled_datetime);
 
   const TEAM_COLORS = { team_a:'#673116', team_b:'#059669' };
   const TEAM_BORDERS = { team_a:'#4a230f', team_b:'#047857' };

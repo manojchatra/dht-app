@@ -22,8 +22,15 @@ if (!process.env.SESSION_SECRET) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Logins are kept in the SQLite database (utils/sqliteSessionStore.js), so a
+// restart doesn't log everyone out. Still 6 hours from login.
+const { SqliteSessionStore } = require('./utils/sqliteSessionStore');
+const sessionStore = new SqliteSessionStore(require('./db/database'));
+app.locals.sessionStore = sessionStore;
+
 app.use(session({
   secret:            process.env.SESSION_SECRET,
+  store:             sessionStore,
   resave:            false,
   saveUninitialized: false,
   cookie: {
@@ -110,8 +117,8 @@ app.get('/sales/:id',     requireAuth, serve('sales-profile.html'));
 app.get('/calendar',  requireAuth, serve('calendar.html'));
 app.get('/settings',  requireAuth, serve('settings.html'));
 
-// Unbuilt pages
-['calendar','pre-delivery-checklist'].forEach(slug => {
+// Unbuilt pages (the calendar is built — served above)
+['pre-delivery-checklist'].forEach(slug => {
   app.get(`/${slug}`, requireAuth, (req, res) => res.redirect('/?coming-soon=' + slug));
 });
 

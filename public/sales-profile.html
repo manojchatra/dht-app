@@ -41,6 +41,7 @@
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary" onclick="openEditModal()"><i class="fa-solid fa-pen"></i> Edit</button>
         <button class="btn btn-secondary" id="toggleActiveBtn" onclick="toggleActive()"></button>
+        <button class="btn btn-danger" onclick="deleteSalesperson()" title="Delete this salesperson"><i class="fa-solid fa-trash"></i> Delete</button>
       </div>
     </div>
   </div>
@@ -84,7 +85,7 @@ function showToast(msg,type='success'){
 
 const salesId=window.location.pathname.split('/').pop();
 let currentActive=1;
-let currentName='', currentEmail='';
+let currentName='', currentEmail='', currentContracts=0;
 const STATUS_LABEL={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
 
 async function loadProfile(){
@@ -95,6 +96,7 @@ async function loadProfile(){
     currentActive=u.active?1:0;
     currentName=u.name||u.username||'';
     currentEmail=u.email||'';
+    currentContracts=(u.contracts||[]).length;
     document.getElementById('pName').textContent=u.name||u.username;
     document.getElementById('pEmail').textContent=u.email||'—';
     renderStatus();
@@ -135,6 +137,18 @@ async function toggleActive(){
     currentActive=newActive;
     renderStatus();
     showToast(newActive?'Marked active':'Marked inactive — this user can no longer log in','success');
+  }catch(e){ showToast(e.message||'Failed','error'); }
+}
+
+// Delete keeps the Sales list short. Their contracts stay (the popup says so).
+async function deleteSalesperson(){
+  try{
+    // With contracts the server's popup explains what happens to them; without, ask here.
+    if(!currentContracts && !(await confirmDialog('Delete '+(currentName||'this salesperson')+'? This cannot be undone.',{title:'Delete salesperson?',okText:'Delete'}))) return;
+    const r=await deleteUserRequest(salesId);
+    if(r.cancelled) return;
+    showToast('Salesperson deleted','success');
+    setTimeout(function(){ window.location.href='/sales'; }, 800);
   }catch(e){ showToast(e.message||'Failed','error'); }
 }
 

@@ -24,8 +24,8 @@ router.put('/tax-rates', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/settings/email-recipients
-router.get('/email-recipients', (req, res) => {
+// GET /api/settings/email-recipients (admin only — staff email addresses)
+router.get('/email-recipients', requireAdmin, (req, res) => {
   res.json(getSetting('email_recipients') || []);
 });
 
@@ -37,8 +37,8 @@ router.put('/email-recipients', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/settings/review-urls — per-store Google review links
-router.get('/review-urls', (req, res) => {
+// GET /api/settings/review-urls (admin only) — per-store Google review links
+router.get('/review-urls', requireAdmin, (req, res) => {
   res.json(getSetting('review_urls') || {});
 });
 

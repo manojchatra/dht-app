@@ -41,7 +41,7 @@ function findOrderedMatches(db, make, model) {
 function receiveSerialConflict(db, contractId, serial) {
   const unit = reservedUnitFor(db, contractId);
   if (!unit) return null;
-  const other = db.prepare('SELECT id FROM inventory WHERE serial_number=? AND id<>?').get(serial, unit.id);
+  const other = db.prepare('SELECT id FROM inventory WHERE upper(trim(serial_number))=upper(trim(?)) AND id<>?').get(serial, unit.id);
   return other ? `Serial ${serial} is already on another inventory unit.` : null;
 }
 
