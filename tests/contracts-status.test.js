@@ -73,6 +73,8 @@ describe('PATCH /api/contracts/:id/status', () => {
   test('requires a serial number before scheduling, even with a zero balance', async () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createTBOContract(agent, { paid: true }); // fully paid, no serial yet
+    // Received (a schedulable status) but somehow without its serial.
+    ctx.db.prepare("UPDATE contracts SET status='received' WHERE id=?").run(contractId);
 
     const res = await agent.patch(`/api/contracts/${contractId}/status`).send({
       status: 'scheduled', scheduledDatetime: '2026-10-01T10:00',

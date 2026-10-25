@@ -23,6 +23,12 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
 .store-chip .store-addr{font-size:10px;color:var(--text-light);display:block;margin-top:2px}
 .store-chip.active .store-addr{color:var(--accent)}
 .status-group{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.sold-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px}
+.chan-group{display:flex;gap:6px;flex-wrap:wrap}
+.chan-btn{font-family:var(--font);font-size:13px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:20px;padding:6px 14px;cursor:pointer}
+.chan-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+.sold-row #boothLocation{flex:1 1 220px;min-width:0}
+.booth-tax{font-size:12px;color:var(--yellow);background:var(--yellow-bg);border-radius:8px;padding:7px 10px;margin:4px 0 8px}
 .status-btn{flex:1;min-width:130px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text-muted);font-size:13px;cursor:pointer;text-align:center;transition:all .15s;font-family:var(--font)}
 .status-btn.active{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:500}
 .cb-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
@@ -117,6 +123,20 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
       <div class="chip store-chip" data-store="Surprise">Surprise<span class="store-addr">15278 W Bell Rd #112</span></div>
       <div class="chip store-chip" data-store="Tolleson">Tolleson<span class="store-addr">9897 W McDowell Rd</span></div>
     </div>
+    <!-- Sold at: showroom (default) or a booth. The store above still sets the
+         contract number, tax, PDF header and review link — for a booth sale,
+         pick the showroom that will deliver and service the customer. -->
+    <div class="sold-row">
+      <label class="lbl" style="margin:0">Sold at</label>
+      <div class="chan-group" id="channelBtns">
+        <button type="button" class="chan-btn active" data-channel="showroom">Showroom</button>
+        <button type="button" class="chan-btn" data-channel="costco">Costco</button>
+        <button type="button" class="chan-btn" data-channel="walmart">Walmart</button>
+        <button type="button" class="chan-btn" data-channel="event">Other event</button>
+      </div>
+      <input type="text" id="boothLocation" placeholder="Booth location (optional), e.g. Gilbert" maxlength="60" style="display:none">
+    </div>
+    <p class="helper" id="boothHint" style="display:none;margin:-8px 0 14px">Booth sale: pick the showroom above that will deliver and service this customer.</p>
     <div class="grid-3">
       <div><label class="lbl">Date *</label>
         <div class="date-input-wrap">
@@ -155,9 +175,9 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="grid-2" style="margin-bottom:14px">
       <div><label class="lbl">Address</label><input type="text" id="custAddress" placeholder="545 N Fraser Dr" maxlength="150"></div>
       <div class="grid-3" style="gap:8px">
-        <div><label class="lbl">City</label><input type="text" id="custCity" placeholder="Mesa" maxlength="60"></div>
+        <div><label class="lbl">City *</label><input type="text" id="custCity" placeholder="Mesa" maxlength="60"></div>
         <div><label class="lbl">State</label><input type="text" id="custState" value="AZ" maxlength="2"></div>
-        <div><label class="lbl">Zip</label><input type="text" id="custZip" placeholder="85203" maxlength="5"></div>
+        <div><label class="lbl">Zip *</label><input type="text" id="custZip" placeholder="85203" maxlength="5" inputmode="numeric"></div>
       </div>
     </div>
     <div class="grid-3" style="margin-bottom:4px">
@@ -538,6 +558,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
           <input type="text" id="costTaxAmt" placeholder="$0" style="width:80px">
         </div>
       </div>
+      <p class="booth-tax" id="boothTaxNote" style="display:none"><i class="fa-solid fa-circle-info"></i> Booth sale: the tax was filled from the store's rate. Check the rate for the booth's city.</p>
       <div class="costing-row"><span>Product Total</span><input type="text" id="costProductTotal" placeholder="$0"></div>
       <div class="costing-row"><span>Service Total</span><input type="text" id="costServiceTotal" placeholder="$0"></div>
       <div class="costing-row"><span>Discount</span><input type="text" id="costDiscountAmt" placeholder="$0"></div>
@@ -672,12 +693,14 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
       <select id="invStore" onchange="runSearch()">
         <option value="">All locations</option>
         <option value="stock">Stock (warehouse)</option>
-        <option value="emp">EMP Room</option>
+        <option value="backroom">Back Room</option>
         <option value="phoenix">Phoenix Floor</option>
         <option value="goodyear">Goodyear Floor</option>
         <option value="chandler">Chandler Floor</option>
         <option value="surprise">Surprise Floor</option>
         <option value="tolleson">Tolleson Floor</option>
+        <option value="costco">Costco</option>
+        <option value="walmart">Walmart</option>
         <option value="onorder">On order (on a truck)</option>
       </select>
     </div>
@@ -752,11 +775,13 @@ function toggleActionMenu(e,id){
 </script>
 <script>
 // ── Data ──────────────────────────────────────────────────────────────────────
-const SHELL_COLORS=['Alpine White','Ice Gray','Platinum','Ivory','Pebble','Tuscan Sun',
-  'Arctic White','White Pearl','Desert','Midnight Canyon','Smoky Mountain','Storm Clouds',
-  'Pearl','Sand','Taupe','Espresso','Gray','Dune','Others'];
-const CABINET_COLORS=['Java','Linen','Charcoal','Blackwood','Brushed Nickel','Coastal Gray',
-  'Espresso','Sable','Havana','Storm','Mosaic','Diamond','Ash','Parchment','Mocha','Brown','Almond','Others'];
+// Shell / cabinet buttons follow the SKU List, per brand (+ extras — utils/colours.js),
+// loaded from /api/inventory/colours. These are only the fallback until it answers.
+const SHELL_COLORS=['Alpine White','Arctic White','Desert','Dune','Fog Stone','Ice Gray','Ivory','Midnight Canyon',
+  'Natural Taupe','Pearl','Pebble','Platinum','Sand','Sea Salt','Smoke','Taupe','Tuscan','Others'];
+const CABINET_COLORS=['Almond','Ash','Black','Blackwood','Brown','Brushed Nickel','Charcoal','Coastal Gray','Diamond Weave',
+  'Driftwood','Espresso','Gray','Havana','Honeycomb','Java','Linen','Mocha','Mosaic','Parchment','Sable','Storm','Waves','Others'];
+let COLOUR_LISTS=null, COLOUR_ALIASES={'*':{}};
 const COVER_COLORS=['Black','Storm','Gray','Cocoa','Chestnut','Matching','Others'];
 
 const MAKE_MODELS={
@@ -765,10 +790,11 @@ const MAKE_MODELS={
   'Endless Pools':{'E-Series':['E2000','E700','E550','E500'],'X-Series':['X2000','X500'],'R-Series':['R500','R220','R200']},
   'Tylo':{'Halmstad':['Halmstad 2','Halmstad 3','Halmstad 4'],'Reflection':['Reflection 3','Reflection 4'],'Lulea':['Lulea 3','Lulea 4'],'Infrared':['Kiruna 2','Kiruna 3'],'Hybrid':['Kiruna']},
   'WLA':{'':['532L','735','735L','772L','772']},
+  'LifeSmart':{},
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let selectedStore='', selectedStatus='instock';
+let selectedStore='', selectedStatus='instock', selectedChannel='showroom';
 let selectedShell='', selectedCabinet='', selectedCover='';
 let searchTimer=null, makeBT=null, modelBT=null;
 let extraImgCount=0;
@@ -795,9 +821,13 @@ window._onAuthReady = loadSalesmen;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',function(){
-  buildChips('shellChips',   SHELL_COLORS,   function(v){selectedShell=v},   'shellColorOther');
-  buildChips('cabinetChips', CABINET_COLORS, function(v){selectedCabinet=v}, 'cabinetColorOther');
+  renderColourChips();
+  fetch('/api/inventory/colours').then(function(r){return r.json()}).then(function(j){
+    if(!j||!j.brands) return;
+    COLOUR_LISTS=j; COLOUR_ALIASES=j.aliases||COLOUR_ALIASES; renderColourChips();
+  }).catch(function(){ /* keep the fallback buttons */ });
   buildChips('coverChips',   COVER_COLORS,   function(v){selectedCover=v},   'coverColorOther');
+  document.getElementById('prodMake').addEventListener('change',renderColourChips);
 
   document.getElementById('storeChips').addEventListener('click',function(e){
     var chip=e.target.closest('.store-chip');
@@ -806,6 +836,19 @@ document.addEventListener('DOMContentLoaded',function(){
     chip.classList.add('active');
     selectedStore=chip.dataset.store;
     loadTaxForStore(chip.dataset.store);
+  });
+
+  // Sold at: a booth sale shows the booth location box, the "pick the delivering
+  // showroom" hint and a tax reminder.
+  document.getElementById('channelBtns').addEventListener('click',function(e){
+    var b=e.target.closest('.chan-btn'); if(!b) return;
+    document.querySelectorAll('.chan-btn').forEach(function(x){x.classList.toggle('active',x===b);});
+    selectedChannel=b.dataset.channel;
+    var booth=selectedChannel!=='showroom';
+    document.getElementById('boothLocation').style.display=booth?'':'none';
+    document.getElementById('boothHint').style.display=booth?'':'none';
+    document.getElementById('boothTaxNote').style.display=booth?'':'none';
+    if(!booth) document.getElementById('boothLocation').value='';
   });
 
   document.querySelectorAll('.status-btn').forEach(function(btn){
@@ -834,7 +877,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(this.value.trim()) clearOrderedUnit(); // a typed serial means a different, physical spa
   });
 
-  document.getElementById('saleDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('saleDate').value=azToday();
   syncTextFromDate('saleDate','saleDateText');
 });
 
@@ -864,6 +907,41 @@ function buildChips(containerId,values,onSelect,otherId) {
   });
 }
 
+// ── Shell / cabinet buttons for the chosen brand ──────────────────────────────
+function brandKey(s){return String(s||'').toLowerCase().replace(/[\s_-]+/g,'');}
+function colourBrand(){
+  if(!COLOUR_LISTS) return null;
+  var k=brandKey(document.getElementById('prodMake').value);
+  if(k==='endlesspool') k='endlesspools';
+  return Object.keys(COLOUR_LISTS.brands).find(function(b){return brandKey(b)===k;})||null;
+}
+// The brand's colours (all brands' until a known brand is entered), "Others" last.
+function coloursFor(part){
+  if(!COLOUR_LISTS) return part==='shell'?SHELL_COLORS:CABINET_COLORS;
+  var b=colourBrand();
+  return (b?COLOUR_LISTS.brands[b][part]:COLOUR_LISTS.all[part]).concat(['Others']);
+}
+// Standard (SKU List) name for a colour, e.g. "Tuscan Sun" → "Tuscan".
+function normColour(part,v){
+  var t=String(v||'').trim(), k=t.toLowerCase().replace(/\s+/g,' ');
+  var brandAliases=COLOUR_ALIASES[(colourBrand()||'')+'.'+part]||{};
+  return brandAliases[k]||(COLOUR_ALIASES['*']||{})[k]||t;
+}
+// Rebuilds both button rows for the current brand, keeping the choice if the
+// brand still has it ("Others" and its typed text are always kept).
+function renderColourChips(){
+  [['shell','shellChips','shellColorOther'],['cabinet','cabinetChips','cabinetColorOther']].forEach(function(p){
+    var part=p[0], el=document.getElementById(p[1]), list=coloursFor(part);
+    var cur=part==='shell'?selectedShell:selectedCabinet;
+    var set=function(v){ if(part==='shell') selectedShell=v; else selectedCabinet=v; };
+    el.innerHTML='';
+    buildChips(p[1],list,set,p[2]);
+    var keep=cur&&list.some(function(x){return x===cur;});
+    if(!keep&&cur){ set(''); }
+    el.querySelectorAll('.chip').forEach(function(c){c.classList.toggle('active',keep&&c.textContent===cur);});
+  });
+}
+
 // ── Make/Model autocomplete ───────────────────────────────────────────────────
 function allModels(make){if(!make||!MAKE_MODELS[make])return[];return Object.values(MAKE_MODELS[make]).flat();}
 function seriesForMake(make){if(!make||!MAKE_MODELS[make])return[];return Object.keys(MAKE_MODELS[make]).filter(function(s){return s!==''});}
@@ -885,10 +963,11 @@ function onMakeInput(){
   var q=document.getElementById('prodMake').value.trim().toLowerCase();
   fillDd('makeDd',Object.keys(MAKE_MODELS).filter(function(m){return!q||m.toLowerCase().includes(q)}),'selectMake');
   document.getElementById('prodModel').value='';document.getElementById('prodSeries').value='';updateSeriesDl('');
+  renderColourChips();
 }
 function showMakeDd(){clearTimeout(makeBT);var q=document.getElementById('prodMake').value.trim().toLowerCase();fillDd('makeDd',Object.keys(MAKE_MODELS).filter(function(m){return!q||m.toLowerCase().includes(q)}),'selectMake');}
 function hideMakeDd(){makeBT=setTimeout(function(){document.getElementById('makeDd').style.display='none'},160);}
-function selectMake(m){document.getElementById('prodMake').value=m;document.getElementById('makeDd').style.display='none';document.getElementById('prodModel').value='';document.getElementById('prodSeries').value='';updateSeriesDl(m);}
+function selectMake(m){document.getElementById('prodMake').value=m;document.getElementById('makeDd').style.display='none';document.getElementById('prodModel').value='';document.getElementById('prodSeries').value='';updateSeriesDl(m);renderColourChips();}
 function updateSeriesDl(make){var dl=document.getElementById('seriesDl');dl.innerHTML='';seriesForMake(make).forEach(function(s){var o=document.createElement('option');o.value=s;dl.appendChild(o)});}
 function onModelInput(){var make=document.getElementById('prodMake').value.trim();var q=document.getElementById('prodModel').value.trim().toLowerCase();var pool=make&&MAKE_MODELS[make]?allModels(make):Object.keys(MAKE_MODELS).flatMap(function(m){return allModels(m)});fillDd('modelDd',pool.filter(function(m){return!q||m.toLowerCase().includes(q)}).slice(0,30),'selectModel');}
 function showModelDd(){clearTimeout(modelBT);var make=document.getElementById('prodMake').value.trim();var q=document.getElementById('prodModel').value.trim().toLowerCase();var pool=make&&MAKE_MODELS[make]?allModels(make):Object.keys(MAKE_MODELS).flatMap(function(m){return allModels(m)});fillDd('modelDd',pool.filter(function(m){return!q||m.toLowerCase().includes(q)}).slice(0,30),'selectModel');}
@@ -1078,8 +1157,9 @@ function selectUnit(row){
   document.getElementById('spaSerial').textContent=row.serial_number||'Serial auto-filled';
   document.getElementById('invTrigger').value=(row.make||'')+' '+(row.model||'')+' - '+(row.availability==='Ordered'?'On order (Truck '+(row.truck_number||'—')+')':(row.serial_number||''));
   updateSeriesDl(row.make||'');
-  selectChipFromValue('shellChips',   SHELL_COLORS,   row.shell_color,   'shellColorOther',   function(v){selectedShell=v});
-  selectChipFromValue('cabinetChips', CABINET_COLORS, row.cabinet_color, 'cabinetColorOther', function(v){selectedCabinet=v});
+  renderColourChips(); // this spa's brand
+  selectChipFromValue('shellChips',   coloursFor('shell'),   normColour('shell',row.shell_color),     'shellColorOther',   function(v){selectedShell=v});
+  selectChipFromValue('cabinetChips', coloursFor('cabinet'), normColour('cabinet',row.cabinet_color), 'cabinetColorOther', function(v){selectedCabinet=v});
   document.getElementById('inclSpeaker').checked = row.speaker === 'Yes';
   refreshFinanceChoice();
   closeInvModal();
@@ -1264,6 +1344,7 @@ function collectData(){
   var salesmanOpt=salesmanEl&&salesmanEl.selectedIndex>-1?salesmanEl.options[salesmanEl.selectedIndex]:null;
   return{
     store:selectedStore,date:v('saleDate'),deliveryDate:v('deliveryDate'),
+    saleChannel:{channel:selectedChannel,location:selectedChannel==='showroom'?'':v('boothLocation')},
     salesman:salesmanOpt?salesmanOpt.textContent:'',
     salesmanUserId:v('salesman')?parseInt(v('salesman'),10):null,
     customer:{
@@ -1327,6 +1408,8 @@ async function goToPreview(){
   var data=collectData();
   if(!data.store){showToast('Please select a store location','error');return;}
   if(!data.customer.name){showToast('Customer name is required','error');return;}
+  if(!data.customer.city){showToast('City is required','error');document.getElementById('custCity').focus();return;}
+  if(!/^\d{5}$/.test(data.customer.zip||'')){showToast('Zip is required (5 digits)','error');document.getElementById('custZip').focus();return;}
   var ph=data.customer.phone, phoneLabels={cell:'Cell',home:'Home',work:'Work'}, badPhone=null;
   Object.keys(phoneLabels).forEach(function(k){ var n=phoneDigits(ph[k]).length; if(!badPhone&&n>0&&n!==10) badPhone=phoneLabels[k]; });
   if(badPhone){showToast(badPhone+' phone must be 10 digits (e.g. 602-112-2111)','error');return;}
@@ -1413,9 +1496,11 @@ async function goToPreview(){
   btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
 
   try{
+    // Photos are shrunk first (shrinkPhoto, js/util.js) — several full-size phone
+    // photos could otherwise go over the server's 20 MB limit. PDFs go as they are.
     var fd=new FormData();
-    var contractImg=document.getElementById('contractImg').files[0];
-    var chequeImg=document.getElementById('chequeImg').files[0];
+    var contractImg=await shrinkPhoto(document.getElementById('contractImg').files[0]);
+    var chequeImg=await shrinkPhoto(document.getElementById('chequeImg').files[0]);
     if(contractImg) fd.append('contractImage',contractImg);
     if(chequeImg)   fd.append('chequeImage',chequeImg);
 
@@ -1424,7 +1509,7 @@ async function goToPreview(){
       var fileInput=document.getElementById('extraImg'+i);
       var labelInput=document.getElementById('extraLabel'+i);
       if(fileInput&&fileInput.files[0]){
-        fd.append('extraImages',fileInput.files[0]);
+        fd.append('extraImages',await shrinkPhoto(fileInput.files[0]));
         extraImagesData.push(labelInput?labelInput.value.trim():'');
       }
     }
@@ -1492,10 +1577,13 @@ function recalcAll(){
   var coolzone = rdVal('coolzone')==='yes'   ? numVal('dtCoolzonePrice') : 0;
   var acc      = cbVal('dtAccIncl')          ? 0 : numVal('dtAccPrice');
 
-  var subtotal     = Math.round(spa+cover+steps+subpanel+waterSys+upgWater+startup+coolzone+acc);
+  // Money is kept to the cent (2 decimals) — whole-dollar rounding made
+  // prices with cents and the tax amount come out slightly wrong.
+  function cents(v){return Math.round(v*100)/100;}
+  var subtotal     = cents(spa+cover+steps+subpanel+waterSys+upgWater+startup+coolzone+acc);
   var taxPct       = parseFloat(document.getElementById('costTaxPct')?.value||0)||0;
-  var tax          = Math.round(subtotal * taxPct / 100);
-  var productTotal = subtotal + tax;
+  var tax          = cents(subtotal * taxPct / 100);
+  var productTotal = cents(subtotal + tax);
 
   // Service items (always post-tax, never Included)
   var crane    = cbVal('svcCrane')              ? numVal('craneFee')          : 0;
@@ -1504,16 +1592,18 @@ function recalcAll(){
   // as a customer-notification note only (see contract-detail.html / pdfGenerator.js).
   var spaRem   = rdVal('spaRemoval')==='yes'    ? numVal('dtSpaRemovalPrice') : 0;
   var fuel     = rdVal('fuelSurcharge')==='yes' ? numVal('dtFuelPrice')       : 0;
-  var serviceTotal = Math.round(crane+outTown+spaRem+fuel);
-  var discount     = rdVal('discount')==='yes'  ? numVal('dtDiscountPrice')   : 0;
-  var grandTotal   = Math.max(0, productTotal + serviceTotal - discount);
+  var serviceTotal = cents(crane+outTown+spaRem+fuel);
+  var discount     = rdVal('discount')==='yes'  ? cents(numVal('dtDiscountPrice')) : 0;
+  var grandTotal   = cents(Math.max(0, productTotal + serviceTotal - discount));
 
-  function setF(id,val){var el=document.getElementById(id);if(el)el.value=val>0?String(val):'';}
+  // Whole amounts stay as typed ("5000"); amounts with cents always show 2 decimals ("5000.50").
+  function money2(v){return v%1 ? v.toFixed(2) : String(v);}
+  function setF(id,val){var el=document.getElementById(id);if(el)el.value=val>0?money2(val):'';}
   setF('costSubtotal',    subtotal);
   setF('costTaxAmt',      tax);
   setF('costProductTotal',productTotal);
   setF('costServiceTotal',serviceTotal);
-  document.getElementById('costDiscountAmt').value=discount>0?('-'+discount):'';
+  document.getElementById('costDiscountAmt').value=discount>0?('-'+money2(discount)):'';
   setF('costGrandTotal',  grandTotal);
   recalcDuePrior();
 }

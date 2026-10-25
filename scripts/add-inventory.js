@@ -55,7 +55,7 @@ async function main() {
   if (!APPLY) { console.log('\nREPORT ONLY — nothing was changed. Re-run with --apply to add these units.'); return; }
 
   console.log('\nBacking up the database first…');
-  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js')], { stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js'), '--manual'], { stdio: 'inherit' });
   const result = applyAdd(db, plan);
   console.log(`Added ${result.added} units. Inventory now: ${db.prepare('SELECT COUNT(*) c FROM inventory').get().c} units.`);
 

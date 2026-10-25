@@ -51,7 +51,7 @@ location / {
     client_max_body_size 20M;
 }
 
-location /uploads/ {
-    alias /home/DHT/dht-app/uploads/;
-    expires 30d;
-}
+# NO "location /uploads/" block here. Uploaded files (contract PDFs, cheque
+# photos, signatures, receipts) must go through the Node app, which checks the
+# login and who may see each contract (middleware/contractFiles.js). An nginx
+# alias for /uploads/ served them to anyone on the internet without a login.

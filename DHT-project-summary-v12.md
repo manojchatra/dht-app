@@ -37,7 +37,7 @@ Contabo VPS (Ubuntu 24) — IP: 164.68.120.23
 │   └── uploads/        contracts/<contract#>/, inventory/<serial>/, warehouse-tmp/
 ├── /home/DHT/data/dht-app.db
 ├── /home/DHT/data/activity.log      ← append-only text audit trail
-├── /home/DHT/backups/db/            ← weekly SQLite backups (backup-db.js)
+├── /home/DHT/backups/db/            ← SQLite backups (backup-db.js): 14 nightly + 10 manual
 └── /home/DHT/web/.../public_html/   ← Static HTML pages + css/img/js/partials/
 ```
 
@@ -45,7 +45,7 @@ Contabo VPS (Ubuntu 24) — IP: 164.68.120.23
 - `location = /acknowledgement` → proxied to Node (hub page)
 - `location ~ ^/(delivery|acknowledgement)/[0-9]+$` → proxied to Node
 - `location /` → catch-all proxy to Node (all other routes, incl. `/auth/login`, API)
-- `location /uploads/` → `alias` directly to `/home/DHT/dht-app/uploads/` (nginx serves these, not Node)
+- **No** `location /uploads/` block: uploads are served by Node, which checks the login and who may see each contract's files (`middleware/contractFiles.js`). The old nginx alias served them to anyone without a login — removed Oct 2026.
 - Every proxied block sets `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` — required for the login rate-limiter (real client IP) and secure session cookies (real protocol); see Key Technical Learnings.
 
 **Deploying:** pages are edited in the repo's `public/` and uploaded to `public_html/` — no restart needed. Anything under `routes/`, `services/`, `utils/`, `db/`, `server.js` needs `pm2 restart dht-app` as root (logs everyone out — sessions are in-memory).
@@ -109,13 +109,14 @@ Users have `name`, `email`, `active`. Sales users are created from the **Sales**
 ```
 In Stock  → Assigned ────────────────→ Scheduled → Delivered  (terminal)
 Ordered   → To Be Ordered → Order Placed → Received → Scheduled → Delivered
-Any (not Delivered) → Cancelled → Assigned  (revert)
+Any (not Delivered) → Cancelled → Assigned  (revert — In Stock contracts only, for now)
 ```
 
 **Gates:**
 - **Order Placed** — only from TBO; requires Web Order # and Truck #.
-- **Received** — serial number + serial photo (warehouse flow also requires a SKU photo). In-Stock contracts skip Received.
-- **Scheduled** — serial number required, balance must be $0, date/time required; one booking per team per overlapping slot.
+- **Received** — only from Order Placed (a TBO contract always goes through Order Placed); admin on the status board or warehouse. Serial number + serial photo (warehouse flow also requires a SKU photo). In-Stock contracts skip Received.
+- **Scheduled** — only from Assigned, Received, or Scheduled (reschedule); serial number required, balance must be $0, date/time required; one booking per team per overlapping slot.
+- **Cancel** — admin: status dropdown on Assigned / Scheduled, ⋮ menu on TBO / Order Placed / Received (Order Placed warns that the factory order isn't cancelled). A cancelled TBO contract can't be reverted yet (restore-to-previous-status is on hold).
 - **Delivered** — serial required; terminal (no further changes).
 - Past delivery date on a new contract → contract saved straight to Delivered (historical entry), with a warning if a balance is owed.
 
@@ -158,7 +159,9 @@ The **customer record is the source of truth** for a customer's name, phone and 
 **DB-backed inventory** (`inventory` table, `routes/inventory-items.js`, pages `/inventory` and `/inventory/add`).
 
 - **Availability:** `In-stock`, `Ordered` (on order, no serial yet — has Web Order # / Truck #), `Hold`, `Sold`.
-- **Locations:** Warehouse, EMP Room, Phoenix / Goodyear / Chandler / Surprise / Tolleson Floor.
+- **Locations:** Warehouse, Back Room (formerly "EMP Room" — imports still accept "EMP"), Phoenix / Goodyear / Chandler / Surprise / Tolleson Floor, Costco, Walmart (booth displays).
+- **Colours** (`utils/colours.js`): the **SKU List** tab is the standard. New Contract's shell / cabinet buttons are that brand's SKU List colours (live, via `/api/inventory/colours`) plus extras for brands/colours the SKU List lacks (WLA, LifeSmart, HotSpring Driftwood/Gray/Mocha/Ash), with "Others" always available. Known variants are saved in SKU List spelling (Tuscan Sun → Tuscan, Nickel → Brushed Nickel, HotSpring Diamond → Diamond Weave, Caldera Taupe → Natural Taupe …). `scripts/normalize-colours.js` fixes existing inventory.
+- **Sold at** (`utils/saleChannel.js`): New Contract records Showroom (default) / Costco / Walmart / Other event + optional booth location, in `data.saleChannel`. The store still sets the contract number, tax, PDF header and review link (pick the delivering showroom for a booth sale). Shown on the contract card/detail/PDF, an "All channels" filter, staff emails and a "Sold At" column appended to the contract Sheet tabs. City and Zip are required.
 - **Add to Inventory:** *In Hand* (scan SKU + serial) or *On Order* (Web Order # + Truck #). SKU scan looks the product up in the **SKU List** Sheet tab (tolerates formatting differences, a trailing `.NN` suffix, and suggests a close match for 1–2 character typos) and auto-fills Make/Series/Model/Colors/Speaker.
 - **Barcode scanning** (`public/js/barcode-scanner.js`): Code 128 only, native `BarcodeDetector` where available (Android Chrome), self-hosted ZXing WASM polyfill elsewhere (iOS Safari). Strips the GS1 `]C1` prefix.
 - **Take Photo fallback:** every Scan button has a **Take Photo** button beside it (phone camera) for labels that won't scan — staff type the serial/SKU by hand and attach the photo.
@@ -179,6 +182,8 @@ The **customer record is the source of truth** for a customer's name, phone and 
 - Payment method details required when selected (cheque #, card last 4, finance lender) — client and server.
 - Grand Total must be > $0 (server-validated). Amount can't exceed the remaining balance.
 - Each payment generates a PDF receipt and updates Paid/Pending in whichever Sheet tab the contract's row is in.
+- **Void** (admin, reason required) — for a wrong amount, a duplicate, the wrong contract, or a bounced cheque / reversed card. The payment stays in Payment History crossed out with the reason, but no longer counts toward Total Paid, the balance, the scheduling check or the Sheet. Its receipt is regenerated stamped VOID. To correct an amount: void it, then record the right one. Logged as `PAYMENT_VOIDED`.
+- Default dates (payments, Mark Delivered, received date, date pickers, New Contract sale date) are today in **Arizona** time.
 
 ---
 
@@ -288,7 +293,7 @@ Provider: `smtp-relay.brevo.com:587` (STARTTLS). From: `deliveries@deserthottubs
 
 **Storage:** SQLite `activity_log` table + `/home/DHT/data/activity.log` text file.
 
-**Event types:** CONTRACT_CREATED, STATUS_CHANGED, SCHEDULED, ORDER_PLACED, MARK_RECEIVED, ACK_SUBMITTED, PAYMENT_RECORDED, FAILED_DELIVERY, CUSTOMER_LINKED, INVENTORY_RELEASED, INVENTORY_RECLAIM, PDF_SUBMITTED / PDF_ADMIN_COMPLETED (post-delivery feedback), and user management (USER_CREATED, USER_UPDATED, USER_DELETED, USER_ROLE_CHANGED, USER_PASSWORD_RESET, PASSWORD_CHANGED).
+**Event types:** CONTRACT_CREATED, STATUS_CHANGED, SCHEDULED, ORDER_PLACED, MARK_RECEIVED, ACK_SUBMITTED, PAYMENT_RECORDED, FAILED_DELIVERY, CUSTOMER_LINKED, PAYMENT_VOIDED, INVENTORY_RELEASED, INVENTORY_RECLAIM, PDF_SUBMITTED / PDF_ADMIN_COMPLETED (post-delivery feedback), and user management (USER_CREATED, USER_UPDATED, USER_DELETED, USER_ROLE_CHANGED, USER_PASSWORD_RESET, PASSWORD_CHANGED).
 
 **Timestamps:** All in MST (`America/Phoenix` — no DST in Arizona).
 
@@ -317,7 +322,7 @@ All time displays use `America/Phoenix` (MST, no DST):
 - `fmtSlot()` on acknowledgement hub
 - `deliveryView` slot display
 - FullCalendar `timeZone: 'America/Phoenix'`
-- Activity log timestamps stored as UTC, displayed as MST
+- Activity log timestamps stored as UTC, displayed converted to Arizona time (MST)
 - Scheduled datetimes in DB are naive MST strings — always interpreted as Phoenix time
 
 ---
@@ -364,7 +369,7 @@ All time displays use `America/Phoenix` (MST, no DST):
 
 | Script | Use |
 |---|---|
-| `backup-db.js` | Online SQLite backup to `backups/db/`, keeps last 8. Weekly Hestia cron; also run before any migration. |
+| `backup-db.js` | Online SQLite backup to `backups/db/`. Nightly (from `nightly-backup.sh`) keeps the last 14; `--manual` (run automatically by every `--apply` script, and by hand before any migration) writes `dht-app-manual-*.db`, last 10 kept separately. |
 | `migrate-customers.js` | One-time customer clean-up. No flag = report only. `--apply` splits wrongly merged customers, creates customers for contracts without one, formats phones, deletes customers with no contracts, numbers everyone. `--fix-phone DHT-C00006 cell 6021122111` fixes a reported number. `--sync-sheet` (re)writes every Customer Record row. |
 | `import-existing-inventory.js` | One-time import of the physical-stock sheet into the DB (quota-aware). |
 | `fix-stock-location.js` | One-off location correction for imported stock. |

@@ -4,8 +4,13 @@
  * directory outside public/public_html, and prunes old backups beyond the
  * retention window.
  *
- * Usage: node scripts/backup-db.js
+ * Usage: node scripts/backup-db.js            (nightly — from nightly-backup.sh)
+ *        node scripts/backup-db.js --manual   (a one-off, e.g. before a script's --apply)
  * Intended to be run on a schedule (via nightly-backup.sh from cron), not imported.
+ *
+ * Nightly and manual backups are kept separately (dht-app-<time>.db and
+ * dht-app-manual-<time>.db), each with its own limit, so a run of script
+ * backups never pushes out the nightly ones.
  */
 const path = require('path');
 const fs = require('fs');
@@ -13,21 +18,26 @@ const Database = require('better-sqlite3');
 
 const DB_PATH     = process.env.DB_PATH || path.join(__dirname, '../../data/dht-app.db');
 const BACKUP_DIR  = process.env.DB_BACKUP_DIR || path.join(__dirname, '../../backups/db');
-// Keep the last N backups — 14 = two weeks at the daily cadence run by
-// scripts/nightly-backup.sh. Override with DB_BACKUP_RETENTION.
-const RETENTION   = parseInt(process.env.DB_BACKUP_RETENTION, 10) || 14;
+const MANUAL      = process.argv.includes('--manual');
+// Keep the last N backups — 14 nightly = two weeks at the daily cadence run by
+// scripts/nightly-backup.sh; 10 manual. Override with DB_BACKUP_RETENTION /
+// DB_MANUAL_BACKUP_RETENTION.
+const RETENTION        = parseInt(process.env.DB_BACKUP_RETENTION, 10) || 14;
+const MANUAL_RETENTION = parseInt(process.env.DB_MANUAL_BACKUP_RETENTION, 10) || 10;
 
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
 function pruneOldBackups() {
+  const isManual = f => f.startsWith('dht-app-manual-');
+  const keep = MANUAL ? MANUAL_RETENTION : RETENTION;
   const files = fs.readdirSync(BACKUP_DIR)
-    .filter(f => f.startsWith('dht-app-') && f.endsWith('.db'))
+    .filter(f => f.startsWith('dht-app-') && f.endsWith('.db') && isManual(f) === MANUAL)
     .map(f => ({ name: f, mtime: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime);
 
-  for (const stale of files.slice(RETENTION)) {
+  for (const stale of files.slice(keep)) {
     fs.unlinkSync(path.join(BACKUP_DIR, stale.name));
     console.log('[backup-db] Pruned old backup:', stale.name);
   }
@@ -35,7 +45,7 @@ function pruneOldBackups() {
 
 async function main() {
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  const dest = path.join(BACKUP_DIR, `dht-app-${timestamp()}.db`);
+  const dest = path.join(BACKUP_DIR, `dht-app-${MANUAL ? 'manual-' : ''}${timestamp()}.db`);
 
   const db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
   try {

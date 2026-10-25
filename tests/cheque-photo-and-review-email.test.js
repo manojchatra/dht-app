@@ -37,6 +37,28 @@ describe('cheque photo on POST /api/payments', () => {
     expect(notifyPaymentRecorded).toHaveBeenCalledWith(expect.objectContaining({ chequeImagePath: row.cheque_image_path }));
   });
 
+  test('the photo is kept when the form sends a duplicate-protection key (the contract page always does)', async () => {
+    const agent = await loginAgent(ctx.app);
+    const { contractId } = await unpaidContract(agent);
+    const photo = await jpegBuffer();
+    const send = () => agent.post('/api/payments')
+      .field('contractId', String(contractId)).field('amount', '700').field('method', 'cheque')
+      .field('chequeNumber', '9001').field('idempotencyKey', `idem-photo-${contractId}`)
+      .attach('chequePhoto', photo, { filename: 'cheque.jpg', contentType: 'image/jpeg' });
+
+    const res = await send();
+    expect(res.status).toBe(200);
+    const row = ctx.db.prepare('SELECT cheque_image_path FROM payments WHERE id=?').get(res.body.paymentId);
+    expect(row.cheque_image_path).toBeTruthy();
+    expect(fs.existsSync(row.cheque_image_path)).toBe(true);
+
+    // A resend of the same attempt returns the same payment and keeps the first photo.
+    const again = await send();
+    expect(again.body.paymentId).toBe(res.body.paymentId);
+    expect(fs.existsSync(row.cheque_image_path)).toBe(true);
+    expect(ctx.db.prepare('SELECT COUNT(*) c FROM payments WHERE contract_id=?').get(contractId).c).toBe(1);
+  });
+
   test('a cheque payment with no photo still works (photo is optional)', async () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await unpaidContract(agent);

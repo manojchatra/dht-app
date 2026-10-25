@@ -41,6 +41,11 @@
   .payment-table{display:none !important}
   .pay-card{display:block !important}
 }
+.pay-voided .pay-amt{text-decoration:line-through;color:var(--text-muted) !important}
+.pay-voided td,.pay-card.pay-voided{opacity:.75}
+.pay-void-note{font-size:12px;color:var(--red);margin-top:4px}
+.pay-void-btn{color:var(--red)}
+.pay-void-link{font-size:12px;color:var(--red);background:none;border:none;cursor:pointer;margin:8px 0 0 12px;padding:0;font-family:inherit}
 .payment-table th{text-align:left;padding:7px 10px;font-size:11px;color:var(--text-muted);font-weight:600;border-bottom:2px solid var(--border)}
 .payment-table td{padding:8px 10px;border-bottom:1px solid var(--border)}
 .pay-method-chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--accent-bg);color:var(--accent);font-weight:500}
@@ -230,7 +235,7 @@ async function loadContract() {
 }
 
 function cbHtml(label, checked) {
-  return '<div class="cb-display"><span style="color:' + (checked ? 'var(--green)' : 'var(--text-light)') + ';font-weight:' + (checked ? '600' : '400') + '">' + (checked ? '\u2713' : '\u25cb') + ' ' + label + '</span></div>';
+  return '<div class="cb-display"><span style="color:' + (checked ? 'var(--green)' : 'var(--text-light)') + ';font-weight:' + (checked ? '600' : '400') + '">' + (checked ? '\u2713' : '\u25cb') + ' ' + escHtml(label) + '</span></div>';
 }
 function pKV(label, val) {
   return val ? '<div class="info-item"><label>' + label + '</label><span>' + escHtml(val) + '</span></div>' : '';
@@ -242,7 +247,7 @@ function fmtUSDate(iso) {
   return parseInt(p[1],10) + '-' + p[2] + '-' + p[0];
 }
 function pRow(item, opts, price, included) {
-  return '<tr><td>' + item + '</td><td style="font-size:12px;color:var(--text-muted)">' + (opts||'') + '</td><td class="price">' + (price ? '$'+price : '\u2014') + '</td><td class="incl">' + (included ? '\u2713' : '') + '</td></tr>';
+  return '<tr><td>' + escHtml(item) + '</td><td style="font-size:12px;color:var(--text-muted)">' + escHtml(opts||'') + '</td><td class="price">' + (price ? '$'+escHtml(price) : '\u2014') + '</td><td class="incl">' + (included ? '\u2713' : '') + '</td></tr>';
 }
 
 // Normalise old flat-data contracts to nested v3/v4 structure
@@ -332,25 +337,35 @@ function renderDetail(c) {
 
   let paymentsSection = '';
   if (c.payments && c.payments.length) {
+    // A voided payment stays listed, crossed out with the reason; it doesn't count toward Total Paid.
+    const voidNote = p => p.voided_at
+      ? '<div class="pay-void-note"><i class="fa-solid fa-ban"></i> Voided ' + escHtml(String(p.voided_at).slice(0,16)) + ' MST' + (p.voided_by ? ' by ' + escHtml(p.voided_by) : '') + ' \u2014 ' + escHtml(p.void_reason||'') + '</div>'
+      : '';
+    const voidBtn = (p, cls) => (isAdmin && !p.voided_at)
+      ? ' <button class="' + cls + '" onclick="voidPayment(' + p.id + ')" title="Void this payment"><i class="fa-solid fa-ban"></i>' + (cls === 'pay-void-link' ? ' Void' : '') + '</button>'
+      : '';
     const rows = c.payments.map(p =>
-      '<tr><td>' + (p.date||'\u2014') + '</td>' +
+      '<tr' + (p.voided_at ? ' class="pay-voided"' : '') + '><td>' + (p.date||'\u2014') + '</td>' +
       '<td><span class="pay-method-chip">' + (METHOD_LABELS[p.method]||p.method) + '</span></td>' +
-      '<td style="font-weight:600;color:var(--green)">$' + parseFloat(p.amount).toFixed(2) + '</td>' +
-      '<td style="color:var(--text-muted)">' + escHtml(p.notes||'\u2014') + '</td>' +
+      '<td class="pay-amt" style="font-weight:600;color:var(--green)">$' + parseFloat(p.amount).toFixed(2) + '</td>' +
+      '<td style="color:var(--text-muted)">' + escHtml(p.notes||'\u2014') + voidNote(p) + '</td>' +
       '<td style="color:var(--text-muted)">' + escHtml(p.recorded_by||'\u2014') + '</td>' +
       '<td style="white-space:nowrap"><a href="/api/payments/' + p.id + '/receipt" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i></a>' +
-        (p.cheque_image_url ? ' <a href="' + escHtml(p.cheque_image_url) + '" class="btn btn-secondary btn-sm" target="_blank" rel="noopener" title="Cheque photo"><i class="fa-solid fa-image"></i></a>' : '') + '</td>' +
+        (p.cheque_image_url ? ' <a href="' + escHtml(p.cheque_image_url) + '" class="btn btn-secondary btn-sm" target="_blank" rel="noopener" title="Cheque photo"><i class="fa-solid fa-image"></i></a>' : '') +
+        voidBtn(p, 'btn btn-secondary btn-sm pay-void-btn') + '</td>' +
       '</tr>'
     ).join('');
     paymentsSection = '<div class="detail-section"><h3><i class="fa-solid fa-clock-rotate-left"></i> Payment History</h3>' +
       '<table class="payment-table"><thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Notes</th><th>By</th><th>Receipt</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table>' +
       c.payments.map(function(p){return(
-        '<div class="pay-card">'+
-        '<div class="pay-card-top"><span class="pay-card-method">'+(METHOD_LABELS[p.method]||p.method)+'</span><span class="pay-card-amt">$'+parseFloat(p.amount).toFixed(2)+'</span></div>'+
+        '<div class="pay-card' + (p.voided_at ? ' pay-voided' : '') + '">'+
+        '<div class="pay-card-top"><span class="pay-card-method">'+(METHOD_LABELS[p.method]||p.method)+'</span><span class="pay-card-amt pay-amt">$'+parseFloat(p.amount).toFixed(2)+'</span></div>'+
         '<div class="pay-card-meta">'+(p.date||'—')+(p.notes?' &middot; '+escHtml(p.notes):'')+(p.recorded_by?' &middot; '+escHtml(p.recorded_by):'')+'</div>'+
+        voidNote(p)+
         '<a href="/api/payments/'+p.id+'/receipt" download style="font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px;display:inline-block"><i class=\'fa-solid fa-download\'></i> Receipt</a>'+
         (p.cheque_image_url ? ' <a href="'+escHtml(p.cheque_image_url)+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;margin:8px 0 0 12px;display:inline-block"><i class=\'fa-solid fa-image\'></i> Cheque photo</a>' : '')+
+        voidBtn(p, 'pay-void-link')+
         '</div>'
       );}).join('') +
       '</div>';
@@ -366,14 +381,14 @@ function renderDetail(c) {
         return '<a href="' + img.url + '" target="_blank" style="text-decoration:none">'
           + '<div class="img-thumb-wrap" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:var(--surface2)">'
           + '<i class="fa-solid fa-file-pdf" style="font-size:26px;color:#dc2626"></i>'
-          + '<div style="font-size:10px;color:var(--text-muted);text-align:center;padding:0 4px;line-height:1.3">' + (img.label||'PDF') + '</div>'
+          + '<div style="font-size:10px;color:var(--text-muted);text-align:center;padding:0 4px;line-height:1.3">' + escHtml(img.label||'PDF') + '</div>'
           + '<div style="font-size:10px;color:var(--accent);font-weight:500">Open</div>'
           + '</div></a>';
       }
       return '<div class="img-thumb-wrap" onclick="openLightbox(\'' + img.url + '\')">' +
-        '<img src="' + img.url + '" alt="' + (img.label||'Image') + '">' +
+        '<img src="' + escHtml(img.url) + '" alt="' + escHtml(img.label||'Image') + '">' +
         '<div class="img-overlay"><i class="fa-solid fa-expand"></i></div>' +
-        (img.label ? '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:10px;padding:3px 6px;text-align:center">' + img.label + '</div>' : '') +
+        (img.label ? '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:10px;padding:3px 6px;text-align:center">' + escHtml(img.label) + '</div>' : '') +
         '</div>';
     }).join('');
     imagesSection = '<div class="detail-section"><h3><i class="fa-solid fa-images"></i> Documents &amp; Images</h3><div class="img-grid">' + thumbs + '</div></div>';
@@ -396,10 +411,11 @@ function renderDetail(c) {
   if (window._userRole === 'admin') {
     fetch('/api/activity/' + c.id).then(function(r){return r.json();}).then(function(actLogs){
       if (!actLogs || !actLogs.length) return;
-      var C={SCHEDULED:'green',ACK_SUBMITTED:'green',MARK_RECEIVED:'green',PAYMENT_RECORDED:'green',FAILED_DELIVERY:'red'};
-      var IC={CONTRACT_CREATED:'fa-plus',CONTRACT_UPDATED:'fa-pen',STATUS_CHANGED:'fa-arrow-right',PAYMENT_RECORDED:'fa-dollar-sign',SCHEDULED:'fa-calendar-check',ACK_SUBMITTED:'fa-clipboard-check',EMAIL_SENT:'fa-envelope',MARK_RECEIVED:'fa-truck-arrow-right',CONTRACT_DELETED:'fa-trash',FAILED_DELIVERY:'fa-triangle-exclamation'};
+      var C={SCHEDULED:'green',ACK_SUBMITTED:'green',MARK_RECEIVED:'green',PAYMENT_RECORDED:'green',FAILED_DELIVERY:'red',PAYMENT_VOIDED:'red'};
+      var IC={CONTRACT_CREATED:'fa-plus',CONTRACT_UPDATED:'fa-pen',STATUS_CHANGED:'fa-arrow-right',PAYMENT_RECORDED:'fa-dollar-sign',PAYMENT_VOIDED:'fa-ban',SCHEDULED:'fa-calendar-check',ACK_SUBMITTED:'fa-clipboard-check',EMAIL_SENT:'fa-envelope',MARK_RECEIVED:'fa-truck-arrow-right',CONTRACT_DELETED:'fa-trash',FAILED_DELIVERY:'fa-triangle-exclamation'};
+      // created_at is stored in UTC — shown in Arizona time.
       function mkRow(l){
-        return '<div class="act-item"><div class="act-dot '+(C[l.event_type]||'')+'" ></div><div class="act-body"><div class="act-type"><i class="fa-solid '+(IC[l.event_type]||'fa-circle')+'" style="margin-right:4px"></i>'+l.event_type.replace(/_/g,' ')+'</div>'+(l.detail?'<div class="act-detail">'+escHtml(l.detail)+'</div>':'')+'<div class="act-meta">'+escHtml(l.actor||'system')+'&middot;'+(l.created_at||'').replace('T',' ').slice(0,16)+' MST</div></div></div>';
+        return '<div class="act-item"><div class="act-dot '+(C[l.event_type]||'')+'" ></div><div class="act-body"><div class="act-type"><i class="fa-solid '+(IC[l.event_type]||'fa-circle')+'" style="margin-right:4px"></i>'+l.event_type.replace(/_/g,' ')+'</div>'+(l.detail?'<div class="act-detail">'+escHtml(l.detail)+'</div>':'')+'<div class="act-meta">'+escHtml(l.actor||'system')+' &middot; '+escHtml(azDateTime(l.created_at))+' MST</div></div></div>';
       }
       var shown=actLogs.slice(0,5),hidden=actLogs.slice(5);
       var more=hidden.length?'<div id="actHidden" class="activity-hidden">'+hidden.map(mkRow).join('')+'</div><button onclick="toggleActHidden()" style="font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;margin-top:8px">Show '+hidden.length+' more</button>':'';
@@ -421,6 +437,7 @@ function renderDetail(c) {
     '<div class="detail-header">' +
       '<div><div class="contract-id">' + (c.contract_number||'\u2014') + '</div>' +
         (d.store ? '<span class="store-hl" style="margin-top:6px;display:inline-block"><i class="fa-solid fa-store"></i> ' + escHtml(d.store) + '</span>' : '') +
+        (soldAtLabel(d.saleChannel) ? ' <span class="store-hl" style="margin-top:6px;display:inline-block"><i class="fa-solid fa-tent"></i> Sold at ' + escHtml(soldAtLabel(d.saleChannel)) + '</span>' : '') +
       '</div>' +
       '<div style="text-align:right">' +
         financeIcon(c.linked_finance) + ' ' +
@@ -501,7 +518,7 @@ function renderDetail(c) {
       (de.accessories&&(de.accessories.items&&de.accessories.items.length||de.accessories.other) ? pRow('Accessories', [...(de.accessories.items||[]), de.accessories.other||''].filter(Boolean).join(', '), de.accessories.price, de.accessories.included) : '') +
       (de.spaRemoval&&de.spaRemoval.yes ? pRow('Spa Removal', '', de.spaRemoval.price, false) : '') +
       (de.fuelSurcharge&&de.fuelSurcharge.yes ? pRow('Fuel Surcharge', '', de.fuelSurcharge.price, false) : '') +
-      (de.discount&&de.discount.yes ? '<tr><td>Discount</td><td style="font-size:12px;color:var(--text-muted)">' + (de.discount.reason||'') + '</td><td class="price">-$' + (de.discount.amount||0) + '</td><td class="incl"></td></tr>' : '') +
+      (de.discount&&de.discount.yes ? '<tr><td>Discount</td><td style="font-size:12px;color:var(--text-muted)">' + escHtml(de.discount.reason||'') + '</td><td class="price">-$' + escHtml(de.discount.amount||0) + '</td><td class="incl"></td></tr>' : '') +
     '</tbody></table></div>' +
 
     '<div class="detail-section"><h3><i class="fa-solid fa-file-invoice-dollar"></i> Costing &amp; Payment</h3>' +
@@ -517,10 +534,10 @@ function renderDetail(c) {
         : '<div class="fully-paid-seal"><i class="fa-solid fa-circle-check"></i> FULLY PAID</div>') +
     '</div>' +
     '<div style="margin-top:12px">' +
-      (pa.cheque&&pa.cheque.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Cheque</strong>' + (pa.cheque.number ? '<span style=\"color:var(--text-muted);font-size:12px\">#' + pa.cheque.number + '</span>' : '') + '</span><strong style="color:var(--green)">$' + (pa.cheque.amount||'-') + '</strong></div>' : '') +
-      (pa.creditCard&&pa.creditCard.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Credit Card</strong>' + (pa.creditCard.lastFour?'<span style="color:var(--text-muted);font-size:12px">ending '+pa.creditCard.lastFour+'</span>':'') + '</span>' + (pa.creditCard.amount?'<strong style="color:var(--green)">$'+pa.creditCard.amount+'</strong>':'') + '</div>' : '') +
-      (pa.cash&&pa.cash.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Cash</strong></span><strong style="color:var(--green)">$' + (pa.cash.amount||'-') + '</strong></div>' : '') +
-      (pa.finance&&pa.finance.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Finance</strong>' + (pa.finance.plan ? '<span style=\"color:var(--text-muted);font-size:12px\">' + pa.finance.plan + '</span>' : '') + '</span><strong style="color:var(--green)">$' + (pa.finance.amount||'-') + '</strong></div>' : '') +
+      (pa.cheque&&pa.cheque.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Cheque</strong>' + (pa.cheque.number ? '<span style=\"color:var(--text-muted);font-size:12px\">#' + escHtml(pa.cheque.number) + '</span>' : '') + '</span><strong style="color:var(--green)">$' + escHtml(pa.cheque.amount||'-') + '</strong></div>' : '') +
+      (pa.creditCard&&pa.creditCard.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Credit Card</strong>' + (pa.creditCard.lastFour?'<span style="color:var(--text-muted);font-size:12px">ending '+escHtml(pa.creditCard.lastFour)+'</span>':'') + '</span>' + (pa.creditCard.amount?'<strong style="color:var(--green)">$'+escHtml(pa.creditCard.amount)+'</strong>':'') + '</div>' : '') +
+      (pa.cash&&pa.cash.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Cash</strong></span><strong style="color:var(--green)">$' + escHtml(pa.cash.amount||'-') + '</strong></div>' : '') +
+      (pa.finance&&pa.finance.selected ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--green);border-radius:3px;color:#fff;font-weight:700;font-size:11px">&#10003;</span><strong>Finance</strong>' + (pa.finance.plan ? '<span style=\"color:var(--text-muted);font-size:12px\">' + escHtml(pa.finance.plan) + '</span>' : '') + '</span><strong style="color:var(--green)">$' + escHtml(pa.finance.amount||'-') + '</strong></div>' : '') +
     '</div></div>' +
 
     paymentsSection + imagesSection +
@@ -568,6 +585,20 @@ function loadPostDeliveryFeedback(contractId) {
   }).catch(function(){});
 }
 
+// Admin: void a payment recorded by mistake or that didn't go through. It stays
+// listed, crossed out, and stops counting toward Total Paid and the balance.
+async function voidPayment(id) {
+  const reason = prompt('Void this payment?\n\nIt stays on record, crossed out, and no longer counts toward Total Paid or the balance. To correct an amount, void it and record the right one.\n\nReason (required):');
+  if (reason === null) return;
+  if (!reason.trim()) { showToast('A reason is required to void a payment', 'error'); return; }
+  try {
+    const r = await fetch('/api/payments/' + id + '/void', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({reason:reason.trim()})});
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Failed');
+    showToast('Payment voided — balance now $' + Number(j.newBalance).toFixed(2), 'success');
+    loadContract();
+  } catch(e) { showToast(e.message || 'Failed', 'error'); }
+}
+
 function paymentIdemStorageKey() { return 'dht-payment-idem:' + contractId; }
 function openPaymentModal() {
   // Reuse a key already sitting in sessionStorage for THIS contract (an
@@ -582,7 +613,7 @@ function openPaymentModal() {
     sessionStorage.setItem(paymentIdemStorageKey(), paymentIdempotencyKey);
   }
   document.getElementById('payAmount').value = '';
-  document.getElementById('payDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('payDate').value = azToday();
   syncTextFromDate('payDate','payDateText');
   document.getElementById('payNotes').value = '';
   document.getElementById('payMethod').value = 'cash';
@@ -722,13 +753,11 @@ async function submitDetailSerial() {
   const sn = document.getElementById('detailSerialInput').value.trim();
   if (!sn) { showToast('Serial number is required','error'); return; }
   try {
-    const r = await fetch('/api/contracts/'+contractId+'/serial',{
-      method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({serialNumber:sn})
-    });
-    const j = await r.json();
-    if (!r.ok) { showToast(j.error||'Failed','error'); return; }
+    const res = await assignSerial(contractId, sn);
+    if (res.cancelled) return; // back to the serial box
+    if (res.error) { showToast(res.error,'error'); return; }
     closeDetailSerial();
-    showToast('Serial number assigned','success');
+    showToast(res.linked ? 'Serial assigned — linked to the inventory item' : 'Serial number assigned','success');
     loadContract();
   } catch(e) { showToast(e.message||'Failed','error'); }
 }
@@ -771,7 +800,7 @@ async function openSendAckModal() {
     (j.adminEmails||[]).forEach(e => addRUnique(e, 'Admin'));
     (j.settingsRecipients||[]).forEach(e => addRUnique(e, 'Settings'));
     if (_ackRecipients.length === 0) listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px">No recipients found. Add emails in Settings or type below.</p>';
-  } catch(e) { listEl.innerHTML = '<p style="color:var(--red)">'+e.message+'</p>'; }
+  } catch(e) { listEl.innerHTML = '<p style="color:var(--red)">'+escHtml(e.message)+'</p>'; }
 }
 function closeSendAckModal() { document.getElementById('sendAckModal').classList.remove('open'); }
 function addAckRecipient() {

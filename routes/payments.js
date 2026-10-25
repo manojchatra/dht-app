@@ -9,7 +9,9 @@ const { generateReceiptPDF } = require('../utils/receiptGenerator');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyPaymentRecorded } = require('../utils/emailSender');
 const { withLock } = require('../utils/asyncLock');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, requireAdmin } = require('../middleware/auth');
+const { phoenixToday } = require('../utils/arizona');
+const { totalPaid: paidTotal, paidThrough } = require('../utils/paymentTotals');
 
 // Payment data is financial/customer data — only admin and sales have any
 // business reason to see it. Ownership (which salesman) is checked per
@@ -20,7 +22,7 @@ router.use(requireRole(['admin', 'sales']));
 // hit — re-derives totals live rather than trusting anything cached.
 function existingPaymentResponse(paymentId) {
   const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(paymentId);
-  const totalPaid = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(payment.contract_id).t;
+  const totalPaid = paidTotal(db, payment.contract_id);
   const contract = db.prepare('SELECT data FROM contracts WHERE id=?').get(payment.contract_id);
   const grandTotal = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
   const newBalance = Math.max(0, grandTotal - totalPaid);
@@ -28,6 +30,26 @@ function existingPaymentResponse(paymentId) {
 }
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
+
+// Builds a payment's receipt PDF and saves it in the contract folder as
+// receipt-<id>.pdf. Totals are as of that payment (not today's), and the
+// customer name comes from the customer record (or the contract form).
+async function buildReceipt(paymentId) {
+  const payment  = db.prepare('SELECT * FROM payments WHERE id=?').get(paymentId);
+  const contract = db.prepare('SELECT c.*, cu.name AS customer_name FROM contracts c LEFT JOIN customers cu ON c.customer_id=cu.id WHERE c.id=?').get(payment.contract_id);
+  const data = JSON.parse(contract.data || '{}');
+  contract.customer_name = contract.customer_name || data.customer?.name || '';
+  const totalPaid  = paidThrough(db, contract.id, payment.id);
+  const grandTotal = parseFloat(data?.costing?.grandTotal || 0);
+  const balance    = Math.max(0, Math.round((grandTotal - totalPaid) * 100) / 100);
+  const pdf = await generateReceiptPDF({ payment, contract, totalPaid, balance });
+  const buf = Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf);
+  const pdfDir = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
+  fs.mkdirSync(pdfDir, { recursive: true });
+  const pdfPath = path.join(pdfDir, `receipt-${payment.id}.pdf`);
+  fs.writeFileSync(pdfPath, buf);
+  return { buf, pdfPath, contract };
+}
 
 // Optional photo of the cheque, sent as multipart alongside the payment fields.
 // Plain JSON requests (no photo) pass straight through multer untouched.
@@ -75,9 +97,10 @@ router.post('/', withChequePhoto, async (req, res) => {
     // instead of validating/inserting again. Optional: omitted entirely by
     // older clients and the test suite, which behave exactly as before.
     if (idempotencyKey) {
-      discardUpload(); // a resend wouldn't need its own fresh photo even if one was attached
       const dup = db.prepare('SELECT id FROM payments WHERE idempotency_key=?').get(idempotencyKey);
-      if (dup) return res.json(existingPaymentResponse(dup.id));
+      // Only a true resend drops its photo (the first attempt already filed one).
+      // Discarding before this check threw away every cheque photo sent with a key.
+      if (dup) { discardUpload(); return res.json(existingPaymentResponse(dup.id)); }
     }
 
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
@@ -94,13 +117,14 @@ router.post('/', withChequePhoto, async (req, res) => {
     // utils/asyncLock.js.
     return await withLock('contract-payment:' + contractId, async () => {
 
-    const amt = parseFloat(amount);
+    // "1,500" / "$1,500" is 1500 (plain parseFloat would read 1).
+    const amt = parseFloat(String(amount ?? '').replace(/[$,\s]/g, ''));
     if (!Number.isFinite(amt) || amt <= 0) {
       discardUpload();
       return res.status(400).json({ error: 'Amount must be a positive number' });
     }
 
-    const totalPaidBefore = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t;
+    const totalPaidBefore = paidTotal(db, contractId);
     const grandTotalCheck = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
     const balanceBefore   = Math.max(0, grandTotalCheck - totalPaidBefore);
     if (amt > balanceBefore + 0.01) {
@@ -132,7 +156,7 @@ router.post('/', withChequePhoto, async (req, res) => {
         INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by,idempotency_key)
         VALUES (?,?,?,?,?,?,?,?)
       `).run(contractId, amt, method, chequeNumber||null,
-          date||new Date().toISOString().slice(0,10), notes||null, req.session.username, idempotencyKey||null);
+          date||phoenixToday(), notes||null, req.session.username, idempotencyKey||null);
     } catch (e) {
       if (idempotencyKey && /UNIQUE constraint failed/.test(e.message)) {
         discardUpload();
@@ -144,12 +168,12 @@ router.post('/', withChequePhoto, async (req, res) => {
 
     // Recalculate balance = grand_total - all payments recorded
     // Rounded to cents — plain float subtraction leaves e.g. 8767.09 - 8767 = 0.0900000000000145.
-    const totalPaid  = Math.round(db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t * 100) / 100;
+    const totalPaid  = paidTotal(db, contractId);
     const grandTotal = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
     const newBalance = Math.max(0, Math.round((grandTotal - totalPaid) * 100) / 100);
 
-    db.prepare('UPDATE contracts SET due_prior=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
-      .run(String(newBalance), contractId);
+    db.prepare('UPDATE contracts SET paid_amount=?,due_prior=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(String(totalPaid), String(newBalance), contractId);
 
     // Sync updated Paid/Pending to Google Sheets (non-fatal)
     try {
@@ -177,14 +201,7 @@ router.post('/', withChequePhoto, async (req, res) => {
     // Save receipt PDF to contract folder (non-fatal)
     let receiptPath = null;
     try {
-      const { generateReceiptPDF } = require('../utils/receiptGenerator');
-      const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(paymentId);
-      const pdfBuf  = await generateReceiptPDF({ payment, contract, totalPaid, balance: newBalance });
-      const buf     = Buffer.isBuffer(pdfBuf) ? pdfBuf : Buffer.from(pdfBuf);
-      const pdfDir  = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
-      fs.mkdirSync(pdfDir, { recursive: true });
-      receiptPath = path.join(pdfDir, `receipt-${paymentId}.pdf`);
-      fs.writeFileSync(receiptPath, buf);
+      receiptPath = (await buildReceipt(paymentId)).pdfPath;
     } catch(e) { console.error('[Receipt save failed — non-fatal]', e.message); }
 
     // Email notification: Admin, with the receipt PDF attached (non-fatal)
@@ -199,7 +216,7 @@ router.post('/', withChequePhoto, async (req, res) => {
     // Activity log + notification
     const _pc = db.prepare('SELECT contract_number,data FROM contracts WHERE id=?').get(contractId);
     if (_pc) {
-      const _amt = '$' + Math.round(amount).toLocaleString();
+      const _amt = '$' + Math.round(amt).toLocaleString();
       logActivity(db, {
         contractId, contractNum: _pc.contract_number,
         eventType: 'PAYMENT_RECORDED', actor: req.session.username||'system',
@@ -239,10 +256,67 @@ router.get('/contract/:contractId', (req, res) => {
     const payments = db.prepare(
       'SELECT * FROM payments WHERE contract_id=? ORDER BY date,created_at'
     ).all(req.params.contractId);
-    const totalPaid = payments.reduce((s,p) => s + p.amount, 0);
-    res.json({ payments, totalPaid });
+    res.json({ payments, totalPaid: paidTotal(db, req.params.contractId) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+});
+
+// ── Void a payment (admin) ────────────────────────────────────────────────────
+// For a payment recorded by mistake (wrong amount, twice, wrong contract) or
+// one that didn't go through (bounced cheque, reversed card). It stays on
+// record, crossed out with the reason, but no longer counts toward Total Paid
+// or the balance. To correct an amount: void it, then record the right one.
+router.post('/:id/void', requireAdmin, async (req, res) => {
+  const reason = String(req.body?.reason ?? '').trim();
+  if (!reason) return res.status(400).json({ error: 'A reason is required to void a payment.' });
+  try {
+    const found = db.prepare('SELECT contract_id FROM payments WHERE id=?').get(req.params.id);
+    if (!found) return res.status(404).json({ error: 'Payment not found' });
+    const contractId = found.contract_id;
+
+    // Same lock as recording a payment, so a void and a new payment on the
+    // same contract can't interleave their balance updates.
+    return await withLock('contract-payment:' + contractId, async () => {
+    const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(req.params.id);
+    if (payment.voided_at) return res.status(400).json({ error: 'This payment is already voided.' });
+    const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+
+    // voided_at is Arizona time (MST), as shown on the page and the receipt.
+    db.prepare("UPDATE payments SET voided_at=datetime('now','-7 hours'), voided_by=?, void_reason=? WHERE id=?")
+      .run(req.session.username || 'admin', reason, payment.id);
+
+    const totalPaid  = paidTotal(db, contractId);
+    const grandTotal = parseFloat(JSON.parse(contract.data || '{}')?.costing?.grandTotal || 0);
+    const newBalance = Math.max(0, Math.round((grandTotal - totalPaid) * 100) / 100);
+    db.prepare('UPDATE contracts SET paid_amount=?,due_prior=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(String(totalPaid), String(newBalance), contractId);
+
+    try {
+      const { updatePaymentInSheet } = require('../services/driveInventory');
+      await updatePaymentInSheet(contract.contract_number, totalPaid, newBalance);
+    } catch(e) { console.error('[Drive payment update failed — non-fatal]', e.message); }
+
+    // The saved receipt still shows it as a live payment — drop it; the next
+    // download is generated fresh, stamped VOID.
+    try { fs.unlinkSync(path.join(UPLOADS_DIR, 'contracts', contract.contract_number, `receipt-${payment.id}.pdf`)); } catch (e) { /* none saved */ }
+
+    const _amt = '$' + parseFloat(payment.amount).toFixed(2);
+    logActivity(db, {
+      contractId, contractNum: contract.contract_number,
+      eventType: 'PAYMENT_VOIDED', actor: req.session.username || 'system',
+      detail: `${_amt} via ${payment.method} of ${payment.date || '—'} voided — ${reason}`
+    });
+    addNotification(db, {
+      contractId, contractNum: contract.contract_number,
+      eventType: 'PAYMENT_VOIDED', color: 'red',
+      message: `${contract.contract_number} — Payment of ${_amt} voided (${reason})`
+    });
+
+    res.json({ success: true, totalPaid, newBalance });
+    }); // end withLock
+  } catch (err) {
+    console.error('Payment void error:', err);
+    res.status(500).json({ error: 'Failed to void payment' });
   }
 });
 
@@ -251,30 +325,15 @@ router.get('/:id/receipt', async (req, res) => {
   try {
     const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(req.params.id);
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
-    const contract = db.prepare('SELECT c.*, cu.name AS customer_name FROM contracts c LEFT JOIN customers cu ON c.customer_id=cu.id WHERE c.id=?').get(payment.contract_id);
+    const contract = db.prepare('SELECT contract_number, salesman_user_id FROM contracts WHERE id=?').get(payment.contract_id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
     if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {
       return res.status(403).json({ error: 'Forbidden — not your contract' });
     }
 
-    // Serve cached receipt if it exists
-    const pdfDir  = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
-    const pdfPath = path.join(pdfDir, 'receipt-' + payment.id + '.pdf');
-    if (fs.existsSync(pdfPath)) {
-      const buf = fs.readFileSync(pdfPath);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename="receipt-' + contract.contract_number + '-' + payment.id + '.pdf"');
-      res.setHeader('Content-Length', buf.length);
-      return res.end(buf);
-    }
-
-    // Generate, cache, then serve
-    const totalPaid = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(payment.contract_id).t;
-    const balance   = parseFloat(contract.due_prior || 0);
-    const pdfBuffer = await generateReceiptPDF({ payment, contract, totalPaid, balance });
-    const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
-    fs.mkdirSync(pdfDir, { recursive: true });
-    fs.writeFileSync(pdfPath, buf);
+    // Built fresh on every download (and the saved copy refreshed) — older
+    // saved copies could be missing the customer name.
+    const { buf } = await buildReceipt(payment.id);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="receipt-' + contract.contract_number + '-' + payment.id + '.pdf"');
     res.setHeader('Content-Length', buf.length);

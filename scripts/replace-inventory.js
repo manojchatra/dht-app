@@ -72,7 +72,7 @@ async function main() {
   if (!APPLY) { console.log('\nREPORT ONLY — nothing was changed. Re-run with --apply to replace the inventory.'); return; }
 
   console.log('\nBacking up the database first…');
-  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js')], { stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js'), '--manual'], { stdio: 'inherit' });
   const result = applyReplace(db, plan);
   console.log(`Inventory replaced: removed ${result.removed}, added ${result.added}, linked ${result.linked}, kept ${plan.keep.length}; photos carried over: ${result.photosKept}.`);
   await rewriteSheet();

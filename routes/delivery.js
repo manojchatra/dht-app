@@ -34,6 +34,7 @@ function getEmailRecipients() {
 const { generateAcknowledgementPDF } = require('../utils/acknowledgementPDF');
 const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered } = require('../utils/emailSender');
 const { moveToDelivered } = require('../services/driveInventory');
+const { deleteCalendarEvent } = require('../services/googleCalendar');
 const { buildDriveData } = require('./contracts');
 const { withLock } = require('../utils/asyncLock');
 
@@ -45,6 +46,18 @@ function requireDeliveryOrAdmin(req, res, next) {
     return res.status(403).json({ error: 'Access denied' });
   req.currentUser = user;
   next();
+}
+
+// Why this user can't save a delivery acknowledgement for this contract, or null.
+// Only a Scheduled contract with a serial, by the team it's booked for (or an
+// admin) — a wrong contract number must never mark a spa delivered (Delivered is final).
+const { statusName } = require('../utils/contractStatus');
+function ackBlockReason(c, user) {
+  if (c.status === 'delivered') return 'This contract has already been marked delivered.';
+  if (c.status !== 'scheduled') return `${c.contract_number} is ${statusName(c.status)}, not scheduled — check the contract number.`;
+  if (!String(c.serial_number || '').trim()) return `${c.contract_number} has no serial number — ask the office to assign it before delivery.`;
+  if (user.role === 'delivery' && c.delivery_team !== user.team) return `${c.contract_number} is scheduled for another delivery team.`;
+  return null;
 }
 
 // Multer for exception images (PNG/JPEG, max 2)
@@ -74,9 +87,9 @@ router.get('/contract/:id', requireDeliveryOrAdmin, (req, res) => {
 
     if (!contract) return res.status(404).json({ error: 'Not found' });
 
-    // Delivery role can only see their own team's contracts
-    if (req.currentUser.role === 'delivery' &&
-        contract.delivery_team && contract.delivery_team !== req.currentUser.team) {
+    // Delivery role can only see contracts booked for their own team (an
+    // unscheduled contract has no team, so it isn't theirs either).
+    if (req.currentUser.role === 'delivery' && contract.delivery_team !== req.currentUser.team) {
       return res.status(403).json({ error: 'Not assigned to your team' });
     }
 
@@ -126,6 +139,8 @@ router.get('/contract/:id', requireDeliveryOrAdmin, (req, res) => {
       crane:           sv.crane,
       salesman:        contract.salesman,
       has_acknowledgement: !!contract.acknowledgement_pdf,
+      // Shown on the acknowledgement form before anyone fills it in.
+      ack_blocked_reason: ackBlockReason(contract, req.currentUser),
     });
   } catch(e) {
     console.error('[Delivery contract GET]', e.message);
@@ -189,10 +204,9 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       // Re-check fresh, now that we hold the lock — `contract` above could be
       // stale if another request for this contract already ran while this
       // one was queued.
-      const fresh = db.prepare('SELECT status FROM contracts WHERE id=?').get(req.params.id);
-      if (fresh.status === 'delivered') {
-        return res.status(400).json({ error: 'This contract has already been marked delivered.' });
-      }
+      const fresh = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+      const blocked = ackBlockReason(fresh, req.currentUser);
+      if (blocked) return res.status(400).json({ error: blocked });
 
       const { customerNameTyped, deliveredBy, formDataJson } = req.body;
       if (!customerNameTyped?.trim()) return res.status(400).json({ error: 'Customer name is required' });
@@ -266,6 +280,15 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       db.prepare(`UPDATE contracts SET status='delivered', delivery_date=?,
         acknowledgement_pdf=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
         .run(today, pdfPath, contract.id);
+
+      // The delivery is done — take it off the Google Calendar, as Mark
+      // Delivered on the Status page does (non-fatal).
+      if (fresh.calendar_event_id) {
+        try {
+          await deleteCalendarEvent(fresh.calendar_event_id);
+          db.prepare('UPDATE contracts SET calendar_event_id=NULL WHERE id=?').run(contract.id);
+        } catch (e) { console.error('[Calendar delete on acknowledgement failed — non-fatal]', e.message); }
+      }
 
       // Add PDF + exception images to extra_images
       const existing = contract.extra_images ? JSON.parse(contract.extra_images) : [];

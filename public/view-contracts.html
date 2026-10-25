@@ -47,6 +47,7 @@
 .card-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
 .card-actions .btn{flex:1;justify-content:center}
 .card-img-row{display:flex;gap:6px;padding:0 16px 12px;overflow:hidden}
+.sold-at-pill{display:inline-block;font-size:10.5px;font-weight:600;border-radius:20px;padding:1px 8px;margin-left:4px;background:var(--secondary-bg);color:var(--yellow)}
 .card-img-thumb{width:44px;height:44px;object-fit:cover;border-radius:7px;border:1px solid var(--border);cursor:pointer;flex-shrink:0}
 .card-more-thumb{width:44px;height:44px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;font-family:var(--font);display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;flex-shrink:0;padding:0}
 .card-more-thumb:hover{border-color:var(--accent);color:var(--accent)}
@@ -84,6 +85,7 @@
   <div class="filter-bar">
     <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search customer, serial, make…" oninput="filterCards()"></div>
     <select id="storeFilter" onchange="filterCards()"><option value="">All regions</option><option>Phoenix</option><option>Goodyear</option><option>Chandler</option><option>Surprise</option><option>Tolleson</option></select>
+    <select id="channelFilter" onchange="filterCards()"><option value="">All channels</option><option value="showroom">Showroom</option><option value="costco">Costco</option><option value="walmart">Walmart</option><option value="event">Other event</option></select>
     <select id="statusFilter" onchange="filterCards()"><option value="">All statuses</option><option value="assigned">Assigned</option><option value="tbo">To Be Ordered</option><option value="order_placed">Order Placed</option><option value="received">Received</option><option value="scheduled">Scheduled</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select>
     <select id="payFilter" onchange="filterCards()"><option value="">All payments</option><option value="pending">Pending</option><option value="paid">Fully Paid</option></select>
     <select id="yearFilter" onchange="filterCards()"><option value="">All years</option></select>
@@ -259,7 +261,7 @@ const STATUS_LABEL={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order 
 
 // URL query param -> filter control id. Filters are mirrored into the URL so a
 // filtered view can be bookmarked/shared and survives a page refresh.
-const FILTER_PARAMS={q:'searchInput',region:'storeFilter',status:'statusFilter',pay:'payFilter',year:'yearFilter',brand:'brandFilter',salesman:'salesmanFilter'};
+const FILTER_PARAMS={q:'searchInput',region:'storeFilter',channel:'channelFilter',status:'statusFilter',pay:'payFilter',year:'yearFilter',brand:'brandFilter',salesman:'salesmanFilter'};
 let filtersRestored=false;
 
 async function loadContracts(){
@@ -322,6 +324,7 @@ function renderStats(c){
 function filterCards(){
   const q=document.getElementById('searchInput').value.toLowerCase();
   const store=document.getElementById('storeFilter').value;
+  const channel=document.getElementById('channelFilter').value;
   const status=document.getElementById('statusFilter').value;
   const pay=document.getElementById('payFilter').value;
   const year=document.getElementById('yearFilter').value;
@@ -331,6 +334,7 @@ function filterCards(){
     const hay=[c.customer_name,c.serial_number,c.make,c.model,c.contract_number,c.salesman].join(' ').toLowerCase();
     if(q&&!hay.includes(q))return false;
     if(store&&c.store!==store)return false;
+    if(channel&&(c.sale_channel||'showroom')!==channel)return false;
     if(status&&c.status!==status)return false;
     if(pay==='pending'&&!(parseFloat(c.due_prior||0)>0))return false;
     if(pay==='paid'&&parseFloat(c.due_prior||0)>0)return false;
@@ -384,13 +388,15 @@ function buildCard(c){
       ? `<a href="${u}" target="_blank" class="card-pdf-thumb" title="View PDF"><i class="fa-solid fa-file-pdf"></i></a>`
       : `<img src="${u}" class="card-img-thumb" onclick="openGallery(cardPhotos[${c.id}],${photos.indexOf(u)})" alt="Image">`
   ).join('')}${moreTile}</div>`:'';
-  const adminMenu=isAdmin?`<hr><button class="danger" onclick="confirmDelete(${c.id},\`${escHtml(c.customer_name||'').replace(/\`/g,"'")}\`)"><i class="fa-solid fa-trash"></i> Delete Contract</button>`:' ';
+  // The name travels in a data attribute (read back as plain text) — putting it
+  // inside the onclick's JavaScript let a customer name run as code.
+  const adminMenu=isAdmin?`<hr><button class="danger" data-name="${escHtml(c.customer_name||'')}" onclick="confirmDelete(${c.id},this.dataset.name)"><i class="fa-solid fa-trash"></i> Delete Contract</button>`:' ';
   const spaLine=[c.make,c.model].filter(Boolean).join(' ');
   return `<div class="contract-card${hasPending?' pending-pay':''}">
     <div class="card-top">
       <div class="card-top-row1"><span class="contract-num">${escHtml(c.contract_number||'Draft')}</span><span style="display:flex;align-items:center;gap:6px">${financeIcon(c.linked_finance)}<span class="badge ${BADGE[c.status]||'badge-assigned'}">${STATUS_LABEL[c.status]||c.status}</span></span></div>
       <div class="cust-name">${escHtml(c.customer_name||'Unknown Customer')}</div>
-      <div class="store-sub">${escHtml(c.store||'—')}</div>
+      <div class="store-sub">${escHtml(c.store||'—')}${soldAtLabel({channel:c.sale_channel,location:c.sale_location})?` <span class="sold-at-pill" title="Sold at">${escHtml(soldAtLabel({channel:c.sale_channel,location:c.sale_location}))}</span>`:''}</div>
       <div class="cust-sub">${escHtml(c.customer_email||'')}${c.customer_phone?' · '+escHtml(c.customer_phone):''}</div>
     </div>
     <div class="card-body">
@@ -422,7 +428,7 @@ function buildCard(c){
 function openPaymentModal(contractId,balance){
   paymentContractId=contractId;currentBalance=balance;
   document.getElementById('payAmount').value='';
-  document.getElementById('payDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('payDate').value=azToday();
   syncTextFromDate('payDate','payDateText');
   document.getElementById('payNotes').value='';
   document.getElementById('payMethod').value='cash';
@@ -539,7 +545,7 @@ let deleteInFlight=false;
 function confirmDelete(id,name){
   deleteTarget=id;
   deleteInFlight=false;
-  document.getElementById('deleteMsg').innerHTML='Delete contract for <strong>'+name+'</strong>? This cannot be undone.';
+  document.getElementById('deleteMsg').innerHTML='Delete contract for <strong>'+escHtml(name)+'</strong>? This cannot be undone.';
   document.getElementById('deleteModal').classList.add('open');
   const btn=document.getElementById('deleteConfirmBtn');
   btn.disabled=false; document.getElementById('deleteCancelBtn').disabled=false;

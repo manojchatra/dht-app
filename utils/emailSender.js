@@ -8,6 +8,7 @@ const nodemailer = require('nodemailer');
 const fs         = require('fs');
 const path       = require('path');
 const db         = require('../db/database');
+const { saleChannelLabel, isBoothSale } = require('./saleChannel');
 
 function smtpConfigured() {
   return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -112,6 +113,13 @@ function getSalesmanEmail(contract) {
 
 const footer = '\n\n— Desert Hot Tubs';
 
+// "Sold at: Costco – Gilbert" for a booth sale, nothing for a showroom sale.
+function soldAtLines(contract) {
+  let sc = null;
+  try { sc = JSON.parse(contract.data || '{}').saleChannel; } catch (e) { /* no channel */ }
+  return isBoothSale(sc) ? [`Sold at: ${saleChannelLabel(sc)}`] : [];
+}
+
 // A — contract created as To Be Ordered → salesperson + admin
 async function notifyContractCreatedTBO({ contract, customerName }) {
   const to = [getSalesmanEmail(contract), ...getAdminRecipients()];
@@ -123,6 +131,7 @@ async function notifyContractCreatedTBO({ contract, customerName }) {
     `Customer: ${customerName || ''}`,
     `Make / Model: ${contract.make || ''} / ${contract.model || ''}`,
     `Store: ${contract.store || ''}`,
+    ...soldAtLines(contract),
   ].join('\n') + footer;
   await sendEmail({ to, subject, text });
 }
@@ -141,6 +150,7 @@ async function notifyContractCreatedOnOrder({ contract, customerName }) {
     `Web Order #: ${contract.web_order_number || ''}`,
     `Truck #: ${contract.truck_number || ''}`,
     `Store: ${contract.store || ''}`,
+    ...soldAtLines(contract),
   ].join('\n') + footer;
   await sendEmail({ to, subject, text });
 }

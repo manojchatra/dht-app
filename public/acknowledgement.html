@@ -481,6 +481,16 @@ async function loadContract() {
   document.getElementById('roSerial').textContent = contractData.serial_number||'—';
   document.getElementById('roColors').textContent = (contractData.shell_color||'')+(contractData.cabinet_color?' / '+contractData.cabinet_color:'');
   if (contractData.water_care_system) buildParts(contractData.water_care_system);
+  // Only a Scheduled contract with a serial, for this user's team, can be
+  // acknowledged — say why up front instead of after the form is filled in.
+  if (contractData.ack_blocked_reason) {
+    var note = document.createElement('div');
+    note.style.cssText = 'background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:10px;padding:12px 14px;margin:0 0 16px;font-size:14px;font-weight:500';
+    note.innerHTML = '<i class="fa-solid fa-ban"></i> ' + escHtml(contractData.ack_blocked_reason);
+    var firstCard = document.querySelector('.section-card');
+    if (firstCard) firstCard.parentNode.insertBefore(note, firstCard);
+    ['btnSave','btnEmail'].forEach(function(id){ var b=document.getElementById(id); if(b) b.disabled=true; });
+  }
 }
 
 // ── Sidebar: delivery role hides it ──────────────────────────────────────────
@@ -627,26 +637,8 @@ async function doSubmit(sendEmail, recipients) {
 var MAX_DELIV_PHOTOS = 10;
 var delivPhotos = new Array(MAX_DELIV_PHOTOS).fill(null);
 
-// Shrinks a camera photo before upload (same 2000px / JPEG 80% the server uses),
-// so 10 full-size phone photos stay well under the server's upload limit.
-// Falls back to the original file if the browser can't decode it.
-function shrinkPhoto(file) {
-  return new Promise(function(resolve){
-    var url = URL.createObjectURL(file), img = new Image();
-    img.onload = function(){
-      URL.revokeObjectURL(url);
-      var scale = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
-      var c = document.createElement('canvas');
-      c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      c.toBlob(function(b){
-        resolve(b && b.size < file.size ? new File([b], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type:'image/jpeg' }) : file);
-      }, 'image/jpeg', 0.8);
-    };
-    img.onerror = function(){ URL.revokeObjectURL(url); resolve(file); };
-    img.src = url;
-  });
-}
+// Photos are shrunk before upload (shrinkPhoto, js/util.js) so 10 full-size
+// phone photos stay well under the server's upload limit.
 
 function buildDelivPhotoGrid() {
   var grid = document.getElementById('delivPhotoGrid');

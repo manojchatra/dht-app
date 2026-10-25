@@ -9,6 +9,7 @@ const { google } = require('googleapis');
 const path = require('path');
 const fs   = require('fs');
 const { pickOrderedItemRow } = require('./inventorySheetMatch');
+const { withLock } = require('../utils/asyncLock');
 
 const CACHE_PATH     = path.join(__dirname, '../../data/inventory_cache.json');
 const CACHE_TTL_MS   = 5 * 60 * 1000;
@@ -19,33 +20,36 @@ const INVENTORY_TAB  = 'Inventory';
 const ASSIGNED_HEADERS = [
   'Contract ID','Contract Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Sales Man','Customer','Address','Zip','Cover','Steps',
-  'Water Care','Accessories','Paid','Pending','Status','Schedule Date & Time'
+  'Water Care','Accessories','Paid','Pending','Status','Schedule Date & Time','Sold At'
 ];
-const TBO_HEADERS = [
+// "Sold At" (showroom / Costco / Walmart booth — utils/saleChannel.js) is always the
+// LAST column of a contract tab: appended, never inserted, so no existing column moves.
+const TBO_CORE_HEADERS = [
   'Contract ID','Contract Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Sales Man','Customer','Address','Zip','Cover','Steps',
   'Water Care','Accessories','Paid','Pending','Status'
 ];
+const TBO_HEADERS = TBO_CORE_HEADERS.concat(['Sold At']);
 // Order Placed carries everything TBO does, plus the two fields collected when
 // a TBO card is moved here. Web Order Number/Truck Number are appended (not
 // inserted) so Paid/Pending/Status keep the same column indices as TBO's —
 // PAYMENT_COLS below depends on that.
-const ORDER_PLACED_HEADERS = TBO_HEADERS.concat(['Web Order Number','Truck Number']);
+const ORDER_PLACED_HEADERS = TBO_CORE_HEADERS.concat(['Web Order Number','Truck Number','Sold At']);
 const DELIVERED_HEADERS = [
   'Contract ID','Contract Date','Delivery Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Sales Man','Customer','Address','Zip','Cover','Steps',
-  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number'
+  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number','Sold At'
 ];
 const CANCELLED_HEADERS = [
   'Contract ID','Contract Date','Cancelled Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Sales Man','Customer','Address','Zip','Cover','Steps',
-  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number'
+  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number','Sold At'
 ];
 
 const RECEIVED_HEADERS = [
   'Contract ID','Contract Date','Received Date','Make','Model','Year','Shell','Cabinet',
   'Serial Number','Serial Photo URL','Sales Man','Customer','Address','Zip','Cover','Steps',
-  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number'
+  'Water Care','Accessories','Paid','Pending','Status','Web Order Number','Truck Number','Sold At'
 ];
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -64,9 +68,31 @@ function getAuth() {
 function getSheets() { return google.sheets({ version:'v4', auth:getAuth() }); }
 
 // ── Tab management ────────────────────────────────────────────────────────────
+// Once per tab per process: an existing tab whose header row is an older, shorter
+// version of `headers` (a column appended since, e.g. "Sold At") gets the missing
+// header cells written. A header row that doesn't match is left alone.
+const _headersChecked = new Set();
+async function extendHeaders(sheets, tabName, headers) {
+  if (_headersChecked.has(tabName)) return;
+  _headersChecked.add(tabName);
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${tabName}!1:1` });
+    const row = ((res.data.values || [])[0] || []).map(v => String(v || '').trim());
+    if (!row.length || row.length >= headers.length) return;
+    if (row.some((v, i) => v !== headers[i])) return;
+    const from = String.fromCharCode(65 + row.length), to = String.fromCharCode(64 + headers.length);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID, range: `${tabName}!${from}1:${to}1`,
+      valueInputOption: 'RAW', requestBody: { values: [headers.slice(row.length)] },
+    });
+    console.log(`[Drive] Added header(s) to ${tabName}: ${headers.slice(row.length).join(', ')}`);
+  } catch (e) { console.warn('[Drive] Header check failed for', tabName, '—', e.message); }
+}
+
 async function ensureTab(sheets, tabName, headers) {
   const meta   = await sheets.spreadsheets.get({ spreadsheetId:SPREADSHEET_ID });
   const exists = meta.data.sheets.some(s => s.properties.title === tabName);
+  if (exists) await extendHeaders(sheets, tabName, headers);
   if (!exists) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
@@ -172,11 +198,11 @@ function buildAssignedRow(d, status, scheduleDatetime) {
     d.shellColor||'', d.cabinetColor||'', d.serialNumber||'',
     d.salesman||'', d.customerName||'', d.address||'', d.zip||'',
     d.cover||'', d.steps||'', d.waterCare||'', d.accessories||'',
-    d.paid||'', d.pending||'', status||'Assigned', scheduleDatetime||''
+    d.paid||'', d.pending||'', status||'Assigned', scheduleDatetime||'', d.soldAt||''
   ];
 }
 
-function buildTBORow(d, status) {
+function buildTBOCoreRow(d, status) {
   return [
     d.contractNumber, d.contractDate, d.make||'', d.model||'', d.year||'',
     d.shellColor||'', d.cabinetColor||'', d.serialNumber||'',
@@ -186,8 +212,12 @@ function buildTBORow(d, status) {
   ];
 }
 
+function buildTBORow(d, status) {
+  return buildTBOCoreRow(d, status).concat([d.soldAt||'']);
+}
+
 function buildOrderPlacedRow(d, status) {
-  return buildTBORow(d, status||'Order Placed').concat([d.webOrderNumber||'', d.truckNumber||'']);
+  return buildTBOCoreRow(d, status||'Order Placed').concat([d.webOrderNumber||'', d.truckNumber||'', d.soldAt||'']);
 }
 
 function buildDeliveredRow(d, deliveryDate) {
@@ -196,7 +226,7 @@ function buildDeliveredRow(d, deliveryDate) {
     d.make||'', d.model||'', d.year||'', d.shellColor||'', d.cabinetColor||'',
     d.serialNumber||'', d.salesman||'', d.customerName||'', d.address||'', d.zip||'',
     d.cover||'', d.steps||'', d.waterCare||'', d.accessories||'',
-    d.paid||'', d.pending||'', 'Delivered', d.webOrderNumber||'', d.truckNumber||''
+    d.paid||'', d.pending||'', 'Delivered', d.webOrderNumber||'', d.truckNumber||'', d.soldAt||''
   ];
 }
 
@@ -206,7 +236,7 @@ function buildCancelledRow(d, cancelledDate) {
     d.make||'', d.model||'', d.year||'', d.shellColor||'', d.cabinetColor||'',
     d.serialNumber||'', d.salesman||'', d.customerName||'', d.address||'', d.zip||'',
     d.cover||'', d.steps||'', d.waterCare||'', d.accessories||'',
-    d.paid||'', d.pending||'', 'Cancelled', d.webOrderNumber||'', d.truckNumber||''
+    d.paid||'', d.pending||'', 'Cancelled', d.webOrderNumber||'', d.truckNumber||'', d.soldAt||''
   ];
 }
 
@@ -217,7 +247,7 @@ function buildReceivedRow(d, receivedDate, serialPhotoUrl) {
     d.serialNumber||'', serialPhotoUrl||'',
     d.salesman||'', d.customerName||'', d.address||'', d.zip||'',
     d.cover||'', d.steps||'', d.waterCare||'', d.accessories||'',
-    d.paid||'', d.pending||'', 'Received', d.webOrderNumber||'', d.truckNumber||''
+    d.paid||'', d.pending||'', 'Received', d.webOrderNumber||'', d.truckNumber||'', d.soldAt||''
   ];
 }
 
@@ -670,21 +700,19 @@ async function revertToAssigned(contractNumber, contractData) {
   console.warn('[Drive] Contract not found in Cancelled for revert:', contractNumber);
 }
 
-// Update serial number in TBO tab
+// Update the serial number wherever the contract's row is (Assign SI. No).
+// Serial is column 8 on TBO / Order Placed / Assigned, column 9 on Received.
 async function updateTBOSerial(contractNumber, serialNumber) {
   const sheets = getSheets();
-  const rowIndex = await findRowByContractId(sheets, 'TBO', contractNumber);
-  if (rowIndex < 0) {
-    // Try Assigned (if already scheduled)
-    const assignedRow = await findRowByContractId(sheets, 'Assigned', contractNumber);
-    if (assignedRow > 0) {
-      await updateCell(sheets, 'Assigned', assignedRow, 8, serialNumber); // Serial col 8
-      console.log('[Drive] Updated serial in Assigned:', contractNumber, serialNumber);
+  for (const [tab, col] of [['TBO', 8], ['Order Placed', 8], ['Received', 9], ['Assigned', 8]]) {
+    const rowIndex = await findRowByContractId(sheets, tab, contractNumber);
+    if (rowIndex > 0) {
+      await updateCell(sheets, tab, rowIndex, col, serialNumber);
+      console.log('[Drive] Updated serial in', tab + ':', contractNumber, serialNumber);
+      return;
     }
-    return;
   }
-  await updateCell(sheets, 'TBO', rowIndex, 8, serialNumber); // Serial col 8
-  console.log('[Drive] Updated serial in TBO:', contractNumber, serialNumber);
+  console.warn('[Drive] Contract not found for serial update:', contractNumber);
 }
 
 // Legacy updateRowStatus (kept for backward compatibility)
@@ -813,12 +841,25 @@ async function readPaymentFromSheet(contractNumber) {
   return null;
 }
 
-module.exports = {
-  searchInventory, getInventory, getLastSynced, invalidateCache,
+// Every Sheet change finds a row (by contract number / serial), then edits or
+// deletes it BY ROW NUMBER. Two changes at once could shift rows under each
+// other and hit the wrong contract's row, so all changes go through one queue,
+// one at a time. A call that hangs is given up after 60 s so it can't hold up
+// the rest (callers already treat Sheet failures as non-fatal). Functions here
+// call each other by their local names, never through these wrappers, so the
+// queue can't wait on itself.
+const SHEET_CALL_TIMEOUT_MS = 60000;
+function oneAtATime(fn) {
+  return (...args) => withLock('google-sheet', () => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Sheet update ${fn.name} timed out`)), SHEET_CALL_TIMEOUT_MS);
+    Promise.resolve().then(() => fn(...args)).then(
+      v => { clearTimeout(timer); resolve(v); },
+      e => { clearTimeout(timer); reject(e); });
+  }));
+}
+const changes = {
   deleteInventoryRow,
-  getSkuList, lookupSku,
-  appendInventoryItem, updateInventoryItemField, deleteInventoryItem, inventoryItemExistsInSheet,
-  rewriteInventoryItemsTab,
+  appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
   markInventoryItemReceivedInSheet, deleteOrderedInventoryItem,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
@@ -826,7 +867,19 @@ module.exports = {
   moveToOrderPlaced,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
-  updateReceivedSerial, updatePaymentInSheet, readPaymentFromSheet,
+  updateReceivedSerial, updatePaymentInSheet,
   deleteContractRowFromSheet,
   upsertCustomerRecordRow, deleteCustomerRecordRow,
+};
+for (const k of Object.keys(changes)) changes[k] = oneAtATime(changes[k]);
+
+module.exports = {
+  // Reads — no queue.
+  searchInventory, getInventory, getLastSynced, invalidateCache,
+  getSkuList, lookupSku, inventoryItemExistsInSheet, readPaymentFromSheet,
+  // Whole-tab rewrite: run only by the stock-import scripts (their own process,
+  // so the app's queue doesn't apply), and it can take longer than the timeout.
+  rewriteInventoryItemsTab,
+  ...changes,
+  _oneAtATime: oneAtATime, // for tests
 };

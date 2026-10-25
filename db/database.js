@@ -334,6 +334,32 @@ if (!paymentCols.includes('idempotency_key')) {
   console.log('[DB] payments.idempotency_key column added');
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency_key ON payments(idempotency_key)');
+// Voided payments (admin, with a reason) stay on record but stop counting —
+// see utils/paymentTotals.js.
+for (const col of ['voided_at', 'voided_by', 'void_reason']) {
+  if (!paymentCols.includes(col)) {
+    db.exec(`ALTER TABLE payments ADD COLUMN ${col} TEXT`);
+    console.log(`[DB] payments.${col} column added`);
+  }
+}
+// One-time: paid_amount used to be set only at signing. Bring it in line with
+// the payments recorded since (voided ones excluded) — kept current from now on.
+// Contracts with no payment rows at all (older data) are left as they are.
+if (!db.prepare("SELECT 1 FROM settings WHERE key='paid_amount_synced'").get()) {
+  const rows = db.prepare(`SELECT c.id, c.paid_amount,
+      (SELECT COALESCE(SUM(amount),0) FROM payments p WHERE p.contract_id=c.id AND p.voided_at IS NULL) AS paid
+    FROM contracts c WHERE EXISTS (SELECT 1 FROM payments p WHERE p.contract_id=c.id)`).all();
+  const upd = db.prepare('UPDATE contracts SET paid_amount=? WHERE id=?');
+  let n = 0;
+  db.transaction(() => {
+    for (const r of rows) {
+      const paid = String(Math.round(r.paid * 100) / 100);
+      if (parseFloat(r.paid_amount) !== parseFloat(paid)) { upd.run(paid, r.id); n++; }
+    }
+  })();
+  db.prepare("INSERT INTO settings (key,value) VALUES ('paid_amount_synced', datetime('now'))").run();
+  if (n) console.log(`[DB] paid_amount brought up to date on ${n} contract(s)`);
+}
 
 // Customer number (DHT-C00001) — allocated from settings.customer_sequence so a
 // number is never reused, even after its customer is deleted. Numbering of

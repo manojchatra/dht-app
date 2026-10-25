@@ -53,7 +53,7 @@ async function main() {
   if (!APPLY) { console.log('\nREPORT ONLY — nothing was changed. Re-run with --apply to switch.'); return; }
 
   console.log('\nBacking up the database first…');
-  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js')], { stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js'), '--manual'], { stdio: 'inherit' });
   relinkOrdered(db, c.id, to.id);
   logActivity(db, { contractId: c.id, contractNum: c.contract_number, eventType: 'ORDER_PLACED', actor: 'admin-script',
     detail: `Re-linked on-order stock: Truck ${from?.truck_number || '—'} / WO ${from?.web_order_number || '—'} → Truck ${to.truck_number || '—'} / WO ${to.web_order_number || '—'}` });

@@ -19,6 +19,8 @@ async function signature() {
 }
 
 async function submitAck(agent, contractId, photos) {
+  // Only a Scheduled contract (with a serial) can be acknowledged.
+  ctx.db.prepare("UPDATE contracts SET status='scheduled', delivery_team='team_a' WHERE id=? AND status<>'delivered'").run(contractId);
   const sig = await signature();
   let req = agent.post(`/api/delivery/acknowledgement/${contractId}`)
     .field('customerNameTyped', 'Jane Test')

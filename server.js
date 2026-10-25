@@ -39,8 +39,11 @@ const { requireAuth } = require('./middleware/auth');
 const uploadsDir = path.join(__dirname, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 // Uploaded files are per-customer/contract data (PDFs, signatures, cheque
-// photos, receipts) — never serve them without authentication.
-app.use('/uploads', requireAuth, express.static(uploadsDir));
+// photos, receipts) — never serve them without authentication, and a
+// contract's files only to someone allowed to see that contract (see
+// contractFileAccess). NOTE: nginx must NOT serve /uploads/ itself (no
+// "location /uploads/" alias) — that would skip both checks.
+app.use('/uploads', requireAuth, require('./middleware/contractFiles').contractFileAccess, express.static(uploadsDir));
 app.use('/css', express.static(path.join(__dirname, 'public/css')));
 app.use('/img', express.static(path.join(__dirname, 'public/img')));
 app.use('/js',  express.static(path.join(__dirname, 'public/js')));
@@ -69,7 +72,8 @@ app.use('/api/settings',     requireAuth, require('./routes/settings-api'));
 app.use('/api/delivery',     requireAuth, require('./routes/delivery'));
 app.use('/api/post-delivery', requireAuth, require('./routes/post-delivery'));
 app.use('/api/customers',    requireAuth, require('./routes/customers'));
-app.get('/api/activity/:contractId', requireAuth, (req,res) => {
+// Contract history — admins only (the contract page only shows it to admins).
+app.get('/api/activity/:contractId', requireAuth, require('./middleware/auth').requireAdmin, (req,res) => {
   const db = require('./db/database');
   try {
     const logs = db.prepare('SELECT * FROM activity_log WHERE contract_id=? ORDER BY id DESC LIMIT 50').all(req.params.contractId);

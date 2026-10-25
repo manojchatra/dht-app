@@ -14,10 +14,14 @@
  */
 
 const { normalizeMake } = require('../utils/makes');
+const { normalizeColour } = require('../utils/colours');
 
 // The sheet's free-text "Availability" column is really the location.
 const LOCATION_MAP = [
-  { match: 'emp',      value: 'EMP Room' },
+  { match: 'emp',      value: 'Back Room' }, // "EMP Room" is the Back Room's old name
+  { match: 'back room', value: 'Back Room' },
+  { match: 'costco',   value: 'Costco' },
+  { match: 'walmart',  value: 'Walmart' },
   { match: 'phoenix',  value: 'Phoenix Floor' },
   { match: 'tolleson', value: 'Tolleson Floor' },
   { match: 'chandler', value: 'Chandler Floor' },
@@ -57,7 +61,7 @@ function planInventorySync(sheetRows, dbRows) {
       plan.add.push({
         serialNumber: serial,
         make: normalizeMake(cell(row, 'Make')), series: cell(row, 'Series'), model: cell(row, 'Model'),
-        shellColor: cell(row, 'Shell'), cabinetColor: cell(row, 'Cabinet'),
+        shellColor: normalizeColour(row['Make'], 'shell', cell(row, 'Shell')), cabinetColor: normalizeColour(row['Make'], 'cabinet', cell(row, 'Cabinet')),
         steps: cell(row, 'Steps'), cover: cell(row, 'Cover'),
         location: loc.value, availability: 'In-stock',
       });

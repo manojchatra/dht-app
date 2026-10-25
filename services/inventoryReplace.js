@@ -21,8 +21,9 @@
  */
 
 const { normalizeMake } = require('../utils/makes');
+const { normalizeColour } = require('../utils/colours');
 
-const LOCATIONS = ['Warehouse', 'EMP Room', 'Phoenix Floor', 'Goodyear Floor', 'Chandler Floor', 'Surprise Floor', 'Tolleson Floor'];
+const LOCATIONS = ['Warehouse', 'Back Room', 'Phoenix Floor', 'Goodyear Floor', 'Chandler Floor', 'Surprise Floor', 'Tolleson Floor', 'Costco', 'Walmart'];
 const FINANCE = ['DHT Owned', 'Bank Owned'];
 
 const text = v => String(v ?? '').trim();
@@ -31,7 +32,7 @@ const key = s => text(s).toLowerCase();
 function mapLocation(raw) {
   const v = text(raw);
   if (!v) return { value: '', known: true };
-  if (/^emp\b/i.test(v)) return { value: 'EMP Room', known: true };
+  if (/^emp\b/i.test(v)) return { value: 'Back Room', known: true }; // "EMP Room" is the Back Room's old name
   const hit = LOCATIONS.find(l => l.toLowerCase() === v.toLowerCase());
   return hit ? { value: hit, known: true } : { value: v, known: false };
 }
@@ -50,7 +51,7 @@ function parseSheetRows(rows) {
       return {
         rowNumber, serial,
         make: normalizeMake(r['Make']), series: text(r['Series']), model: text(r['Model']), year: text(r['Year']),
-        shellColor: text(r['Shell Color']), cabinetColor: text(r['Cabinet Color']),
+        shellColor: normalizeColour(r['Make'], 'shell', r['Shell Color']), cabinetColor: normalizeColour(r['Make'], 'cabinet', r['Cabinet Color']),
         sku: text(r['SKU Number']), steps: text(r['Steps']), cover: text(r['Cover']), speaker: text(r['Speaker']),
         finance: FINANCE.includes(finance) ? finance : '', financeRaw: finance,
         location: loc.value, locationKnown: loc.known,

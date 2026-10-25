@@ -52,7 +52,7 @@ if (c.status !== 'tbo') console.log(`  Note: contract is "${c.status}", not To B
 if (!APPLY) { console.log('\nREPORT ONLY — nothing was changed. Re-run with --apply to save.'); process.exit(0); }
 
 console.log('\nBacking up the database first…');
-execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js')], { stdio: 'inherit' });
+execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js'), '--manual'], { stdio: 'inherit' });
 for (const ch of changes) p[ch.field] = ch.value;
 db.prepare('UPDATE contracts SET make=?, model=?, data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
   .run(p.make || c.make || '', p.model || c.model || '', JSON.stringify(data), c.id);

@@ -9,9 +9,13 @@ const METHOD_LABELS = { cash:'Cash', cheque:'Cheque', credit_card:'Credit Card',
 async function generateReceiptPDF({ payment, contract, totalPaid, balance }) {
   const data = JSON.parse(contract.data || '{}');
   const grandTotal = parseFloat(data?.costing?.grandTotal || 0);
+  // A voided payment's receipt: stamped VOID with the reason, and no running
+  // totals (it doesn't count toward them).
+  const voided = !!payment.voided_at;
 
   const docDef = {
     pageSize: 'A5',
+    watermark: voided ? { text: 'VOID', color: '#c53030', opacity: 0.25, bold: true } : undefined,
     pageMargins: [40, 40, 40, 40],
     defaultStyle: { font: 'Roboto', fontSize: 10 },
     content: [
@@ -57,7 +61,16 @@ async function generateReceiptPDF({ payment, contract, totalPaid, balance }) {
 
       { canvas: [{ type: 'line', x1:0, y1:0, x2:355, y2:0, lineWidth:0.5, lineColor:'#eee' }], margin:[0,0,0,10] },
 
-      {
+      voided ? {
+        table: {
+          widths: ['*', 100],
+          body: [
+            [{ text:'This Payment (voided)', color:'#666' }, { text:`$${parseFloat(payment.amount).toFixed(2)}`, alignment:'right', decoration:'lineThrough' }],
+          ]
+        },
+        layout: 'noBorders',
+        margin: [0,0,0,8],
+      } : {
         table: {
           widths: ['*', 100],
           body: [
@@ -71,9 +84,12 @@ async function generateReceiptPDF({ payment, contract, totalPaid, balance }) {
         margin: [0,0,0,12],
       },
 
-      balance <= 0
-        ? { text:'✓ FULLY PAID', fontSize:14, bold:true, color:'#276749', alignment:'center', margin:[0,8,0,0] }
-        : {},
+      voided
+        ? { text: `VOIDED ${String(payment.voided_at).slice(0,10)}${payment.voided_by ? ' by ' + payment.voided_by : ''} — ${payment.void_reason || ''}`,
+            fontSize:10, bold:true, color:'#c53030', alignment:'center', margin:[0,8,0,0] }
+        : balance <= 0
+          ? { text:'✓ FULLY PAID', fontSize:14, bold:true, color:'#276749', alignment:'center', margin:[0,8,0,0] }
+          : {},
 
       { canvas: [{ type: 'line', x1:0, y1:0, x2:355, y2:0, lineWidth:1, lineColor:'#ddd' }], margin:[0,12,0,8] },
       { text:'Thank you for your payment.', fontSize:9, color:'#666', alignment:'center' },

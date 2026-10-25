@@ -4,7 +4,7 @@
  * payment data exposed here — see routes/contracts.js for the full view
  * admin/sales use). Also the two-photo "mark received" flow, separate
  * from the existing single-photo POST /api/contracts/:id/received so
- * that flow (used today by admin/sales from the status board) isn't
+ * that flow (used by admin from the status board) isn't
  * touched.
  */
 const express = require('express');
@@ -21,6 +21,7 @@ const { notifyReceived } = require('../utils/emailSender');
 const { buildDriveData } = require('./contracts');
 const { syncCustomerRecord } = require('../services/customers');
 const { receiveSerialConflict, receiveReservedUnit } = require('../services/orderedStock');
+const { phoenixToday } = require('../utils/arizona');
 
 router.use(requireRole(['admin', 'warehouse']));
 
@@ -117,7 +118,7 @@ router.post('/:id/receive', (req, res) => {
       if (serialClash) return res.status(409).json({ error: serialClash });
       const serialPhotoPath = await finalizePhoto(req.files.serialPhoto[0], serial, 'serial-photo');
       const skuPhotoPath    = await finalizePhoto(req.files.skuPhoto[0],    serial, 'sku-photo');
-      const actualDate = receivedDate || new Date().toISOString().slice(0,10);
+      const actualDate = receivedDate || phoenixToday();
 
       // Update contract: status, serial number, and extra_images (matches the
       // existing single-photo flow's convention so contract-detail.html's

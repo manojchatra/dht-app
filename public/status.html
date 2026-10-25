@@ -407,12 +407,15 @@ function buildCard(c) {
       menuItems.push('<button onclick="openReschedule('+c.id+')" style="color:inherit"><i class="fa-solid fa-calendar" style="color:#553c9a"></i> Reschedule</button>');
       menuItems.push('<a href="/delivery/'+c.id+'" style="display:flex;align-items:center;gap:8px;padding:9px 14px;color:var(--text);text-decoration:none;font-size:13px;font-family:var(--font)"><i class="fa-solid fa-clipboard-check"></i> Acknowledgement Form</a>');
     }
-    if (isReceived) {
-      menuItems.push('<a href="/delivery/'+c.id+'" style="display:flex;align-items:center;gap:8px;padding:9px 14px;color:var(--text);text-decoration:none;font-size:13px;font-family:var(--font)"><i class="fa-solid fa-clipboard-check"></i> Acknowledgement Form</a>');
-    }
-    if (isCancelled)
+    // Revert to Assigned is only right for In Stock contracts; restoring a
+    // cancelled To Be Ordered one to its earlier status isn't built yet.
+    var canRevert = isCancelled && c.product_status === 'instock';
+    if (canRevert)
       menuItems.push('<button onclick="revertToAssigned('+c.id+')"><i class="fa-solid fa-rotate-left" style="color:var(--accent)"></i> Revert to Assigned</button>');
     menuItems.push('<a href="/contracts/'+c.id+'" style="display:flex;align-items:center;gap:8px;padding:9px 14px;color:var(--text);text-decoration:none;font-size:13px;font-family:var(--font)"><i class="fa-solid fa-eye"></i> View Contract</a>');
+    // Assigned / Scheduled cancel from the status dropdown.
+    if (isTBO || isOrderPlaced || isReceived)
+      menuItems.push('<button onclick="cancelContract('+c.id+')" style="color:var(--red)"><i class="fa-solid fa-ban"></i> Cancel Contract</button>');
   }
 
   var threeDotsMenu = menuItems.length
@@ -445,14 +448,12 @@ function buildCard(c) {
               + '<button class="btn btn-success btn-sm" onclick="openDeliverModal('+c.id+')"><i class="fa-solid fa-truck-ramp-box"></i> Deliver</button>'
               + threeDotsMenu;
     } else if (isCancelled) {
-      actions = '<button class="btn btn-secondary btn-sm" onclick="revertToAssigned('+c.id+')"><i class="fa-solid fa-rotate-left"></i> Revert to Assigned</button>'
+      actions = (canRevert ? '<button class="btn btn-secondary btn-sm" onclick="revertToAssigned('+c.id+')"><i class="fa-solid fa-rotate-left"></i> Revert to Assigned</button>' : '')
               + threeDotsMenu;
     }
   } else if (isSales) {
     if (isAssigned) {
       actions = '<button class="btn btn-secondary btn-sm" onclick="openSlotModal('+c.id+')"><i class="fa-solid fa-calendar-check"></i> Schedule</button>';
-    } else if (isTBO) {
-      actions = '<button class="btn btn-secondary btn-sm" onclick="openReceivedModal('+c.id+')"><i class="fa-solid fa-truck-arrow-right"></i> Mark Received</button>';
     } else if (isReceived) {
       actions = '<button class="btn btn-secondary btn-sm" onclick="openSlotModal('+c.id+')"><i class="fa-solid fa-calendar-check"></i> Schedule</button>';
     } else if (isScheduled) {
@@ -516,7 +517,7 @@ async function applyStatus(id, status, extra) {
 // ── Slot picker modal ─────────────────────────────────────────────────────────
 function openSlotModal(id) {
   slotContractId=id;
-  document.getElementById('slotDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('slotDate').value=azToday();
   syncTextFromDate('slotDate','slotDateText');
   document.getElementById('slotStart').value='08:00';
   document.getElementById('slotDuration').value='120';
@@ -547,7 +548,7 @@ function openReschedule(id) {
   const data = _schedData[id] || {};
   const currentDt = data.dt || '', currentDur = data.dur || 120;
   document.getElementById('currentSchedDisplay').textContent = currentDt ? formatSlot(currentDt, currentDur) : 'Not set';
-  document.getElementById('reschedDate').value = currentDt ? currentDt.slice(0,10) : new Date().toISOString().slice(0,10);
+  document.getElementById('reschedDate').value = currentDt ? currentDt.slice(0,10) : azToday();
   syncTextFromDate('reschedDate','reschedDateText');
   document.getElementById('reschedStart').value = currentDt ? currentDt.slice(11,16) : '08:00';
   document.getElementById('reschedDuration').value = String(currentDur);
@@ -622,7 +623,7 @@ async function submitOrderPlaced(){
 // ── Received modal ────────────────────────────────────────────────────────────
 function openReceivedModal(id){
   receivedContractId=id;
-  document.getElementById('receivedDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('receivedDate').value=azToday();
   syncTextFromDate('receivedDate','receivedDateText');
   document.getElementById('receivedSerial').value='';
   document.getElementById('receivedPhoto').value='';
@@ -659,7 +660,7 @@ async function submitReceived(){
 // ── Deliver modal ─────────────────────────────────────────────────────────────
 function openDeliverModal(id){
   deliverContractId=id;
-  document.getElementById('deliverDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('deliverDate').value=azToday();
   syncTextFromDate('deliverDate','deliverDateText');
   document.getElementById('deliverModal').classList.add('open');
 }
@@ -682,16 +683,20 @@ async function submitSerial(){
   const sn=document.getElementById('serialInput').value.trim();
   if(!sn){showToast('Serial number is required','error');return;}
   try{
-    const r=await fetch('/api/contracts/'+serialContractId+'/serial',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({serialNumber:sn})});
-    const j=await r.json();if(!r.ok){showToast(j.error||'Failed','error');return;}
-    closeSerialModal();showToast('Serial number assigned','success');
+    const res=await assignSerial(serialContractId,sn);
+    if(res.cancelled) return; // back to the serial box
+    if(res.error){showToast(res.error,'error');return;}
+    closeSerialModal();showToast(res.linked?'Serial assigned — linked to the inventory item':'Serial number assigned','success');
     allContracts=await fetch('/api/contracts').then(r=>r.json());renderGrid();
   }catch(e){showToast(e.message||'Failed','error');}
 }
 
 // ── Cancel / Revert ───────────────────────────────────────────────────────────
 async function cancelContract(id){
-  if(!confirm('Cancel this contract?'))return;
+  const c=allContracts.find(x=>x.id===id)||{};
+  const msg='Cancel '+(c.contract_number||'this contract')+(c.customer_name?' — '+c.customer_name:'')+'?'
+    +(c.status==='order_placed'?'\n\nThis doesn\'t cancel the order with the factory.':'');
+  if(!confirm(msg))return;
   try{
     const r=await fetch('/api/contracts/'+id+'/status',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'cancelled'})});
     const j=await r.json();if(!r.ok){showToast(j.error||'Failed','error');return;}

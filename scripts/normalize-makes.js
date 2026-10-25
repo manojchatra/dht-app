@@ -61,7 +61,7 @@ if (!invFix.length && !conFix.length) process.exit(0);
 if (!APPLY) { console.log('REPORT ONLY — nothing was changed. Re-run with --apply to fix.'); process.exit(0); }
 
 console.log('Backing up the database first…');
-execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js')], { stdio: 'inherit' });
+execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js'), '--manual'], { stdio: 'inherit' });
 db.transaction(() => {
   for (const r of invFix) db.prepare('UPDATE inventory SET make=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(fix.get(String(r.make).trim()), r.id);
   for (const r of conFix) {

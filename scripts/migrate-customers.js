@@ -25,7 +25,7 @@
  *   4. Deletes customers with no contracts (left behind by deleted contracts).
  *   5. Gives every customer without one a DHT-C number (oldest first).
  *
- * Back up first:  node scripts/backup-db.js
+ * Back up first:  node scripts/backup-db.js --manual
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });

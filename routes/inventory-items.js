@@ -11,6 +11,7 @@ const router  = express.Router();
 const db      = require('../db/database');
 const { compressAndGate } = require('../utils/imageUtils');
 const { normalizeMake } = require('../utils/makes');
+const { normalizeColour } = require('../utils/colours');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const {
   lookupSku, appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
@@ -102,8 +103,10 @@ router.post('/', (req, res) => {
   uploadPhotos(req, res, async (err) => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     try {
-      const { series, model, shellColor, cabinetColor, serialNumber, skuNumber, speaker, webOrderNumber, truckNumber } = req.body;
+      const { series, model, serialNumber, skuNumber, speaker, webOrderNumber, truckNumber } = req.body;
       const make = normalizeMake(req.body.make); // one spelling per brand (utils/makes.js)
+      const shellColor   = normalizeColour(make, 'shell', req.body.shellColor);     // SKU List names (utils/colours.js)
+      const cabinetColor = normalizeColour(make, 'cabinet', req.body.cabinetColor);
       const year = String(req.body.year || '').trim(), line = String(req.body.line || '').trim(), bay = String(req.body.bay || '').trim();
       const hasSerial = serialNumber && serialNumber.trim();
       const hasOrderInfo = webOrderNumber && webOrderNumber.trim() && truckNumber && truckNumber.trim();
@@ -196,8 +199,12 @@ router.patch('/:id', async (req, res) => {
     }
     const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(req.params.id);
     if (!item) return res.status(404).json({ error: 'Not found' });
-    if (item.availability === 'Ordered' && item.contract_id && req.body.availability !== undefined && req.body.availability !== 'Ordered') {
-      return res.status(400).json({ error: 'This on-order spa is reserved for a contract — its availability changes when the contract is received or cancelled.' });
+    // A spa linked to a contract (sold, or on-order reserved) keeps its availability
+    // until that contract releases it (cancel / delete) — otherwise it could be set
+    // back to In-stock while still sold, and sold a second time.
+    if (item.contract_id && req.body.availability !== undefined && req.body.availability !== item.availability) {
+      const c = db.prepare('SELECT contract_number FROM contracts WHERE id=?').get(item.contract_id);
+      return res.status(400).json({ error: `Linked to ${c ? c.contract_number : 'a contract'} — cancel the contract to release it.` });
     }
 
     const updates = [];

@@ -11,6 +11,8 @@ function loginAgent(app, { username = 'sales', password = 'sales123' } = {}) {
 // A valid 1x1 PNG — stands in for the customer signature drawn on the form.
 const SIGNATURE_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
+let serialSeq = 100;
+
 /** Minimal valid create-contract payload; override fields per test via deep-ish merge. */
 function contractFormData(overrides = {}) {
   const base = {
@@ -30,7 +32,9 @@ function contractFormData(overrides = {}) {
     },
     product: {
       status: 'instock',
-      serialNumber: 'ZZTEST-SERIAL-100',
+      // Unique per contract — a spa can't be sold twice, so a shared serial
+      // would make every In Stock contract after the first one fail.
+      serialNumber: `ZZTEST-SERIAL-${++serialSeq}`,
       make: 'TestMake',
       model: 'TestModel',
       year: '2026',

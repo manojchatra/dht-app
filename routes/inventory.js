@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
-const { getInventory, getLastSynced } = require('../services/driveInventory');
+const { getInventory, getLastSynced, getSkuList } = require('../services/driveInventory');
+const { buildColourLists, ALIASES } = require('../utils/colours');
 const { findOrderedMatches } = require('../services/orderedStock');
 
 // Keyword → substring match against the DB `location` column (case-insensitive).
 const STORE_MAP = {
-  emp: 'emp room',
+  backroom: 'back room',
+  emp: 'back room', // old name of the Back Room (bookmarked links)
+  costco: 'costco',
+  walmart: 'walmart',
   phoenix: 'phoenix',
   goodyear: 'goodyear',
   chandler: 'chandler',
@@ -34,8 +38,9 @@ router.get('/search', (req, res) => {
     const onOrderOnly = storeFilter === 'onorder'; // the modal's "On order" filter
     const withOrdered = req.query.includeOrdered === '1' && (!storeFilter || onOrderOnly);
 
+    // Never offer a spa that's linked to a contract, whatever its availability says.
     let rows = db.prepare(`SELECT * FROM inventory
-      WHERE ${onOrderOnly ? '0' : "availability = 'In-stock'"} ${withOrdered ? "OR (availability = 'Ordered' AND contract_id IS NULL)" : ''}
+      WHERE contract_id IS NULL AND (${onOrderOnly ? '0' : "availability = 'In-stock'"} ${withOrdered ? "OR availability = 'Ordered'" : ''})
       ORDER BY (availability = 'Ordered'), created_at DESC`).all();
 
     if (storeFilter && !onOrderOnly) {
@@ -56,6 +61,15 @@ router.get('/search', (req, res) => {
     console.error('Inventory search error:', err.message);
     res.status(500).json({ error: 'Failed to search inventory', detail: err.message });
   }
+});
+
+// GET /api/inventory/colours — shell / cabinet colour buttons per brand for New
+// Contract: the SKU List's colours (5-minute cache) + utils/colours.js extras,
+// plus the alias map so the page can match an inventory spa's colour to its button.
+router.get('/colours', async (req, res) => {
+  let rows = [];
+  try { rows = await getSkuList(); } catch (e) { console.warn('[Colours] SKU List unavailable — using the built-in snapshot:', e.message); }
+  res.json({ ...buildColourLists(rows), aliases: ALIASES });
 });
 
 // GET /api/inventory/ordered-matches?make=Caldera&model=Vanto — unreserved

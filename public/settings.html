@@ -232,7 +232,7 @@ async function loadSettings() {
     renderReviewUrls();
   } catch(e) {
     const el = document.getElementById('taxRatesContainer');
-    if (el) el.innerHTML = '<p style="color:var(--red);font-size:13px">Error: ' + e.message + '</p>';
+    if (el) el.innerHTML = '<p style="color:var(--red);font-size:13px">Error: ' + escHtml(e.message) + '</p>';
     console.error('Settings load error:', e);
   }
 }

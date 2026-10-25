@@ -81,9 +81,9 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
     <select id="availFilter" onchange="renderInventory()"><option value="">All availability</option><option value="In-stock">In-stock</option><option value="Hold">Hold</option><option value="Sold">Sold</option><option value="Ordered">Ordered</option></select>
     <select id="locFilter" onchange="renderInventory()">
       <option value="">All locations</option>
-      <option>EMP Room</option><option>Phoenix Floor</option><option>Tolleson Floor</option>
+      <option>Back Room</option><option>Phoenix Floor</option><option>Tolleson Floor</option>
       <option>Chandler Floor</option><option>Surprise Floor</option><option>Goodyear Floor</option>
-      <option>Warehouse</option>
+      <option>Warehouse</option><option>Costco</option><option>Walmart</option>
     </select>
   </div>
 
@@ -133,7 +133,7 @@ function showToast(msg,type='success'){
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
 }
 
-const LOCATIONS=['EMP Room','Phoenix Floor','Tolleson Floor','Chandler Floor','Surprise Floor','Goodyear Floor','Warehouse'];
+const LOCATIONS=['Back Room','Phoenix Floor','Tolleson Floor','Chandler Floor','Surprise Floor','Goodyear Floor','Warehouse','Costco','Walmart'];
 let allItems=[];
 let pendingChanges={}; // id -> {field: newValue, ...} — not yet saved to the server
 

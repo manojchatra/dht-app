@@ -33,7 +33,7 @@ describe('sync inventory from the stock sheet', () => {
     const plan = sync().planInventorySync(sheet(), ctx.db.prepare('SELECT * FROM inventory').all());
 
     expect(plan.add.map(a => a.serialNumber)).toEqual(['SYNC-NEW']);
-    expect(plan.add[0].location).toBe('EMP Room');
+    expect(plan.add[0].location).toBe('Back Room');
     expect(plan.move).toEqual([expect.objectContaining({ serialNumber: 'SYNC-MOVE', from: 'Warehouse', to: 'Chandler Floor' })]);
     expect(plan.notInSheet.map(u => u.serialNumber)).toContain('SYNC-GONE');
     expect(plan.noSerial).toBe(1);
@@ -48,7 +48,7 @@ describe('sync inventory from the stock sheet', () => {
     const result = await sync().applyInventorySync(ctx.db, plan, { appendInventoryItem, updateInventoryItemField, delayMs: 0 });
 
     expect(result).toMatchObject({ added: 1, moved: 1 });
-    expect(unit('SYNC-NEW')).toMatchObject({ availability: 'In-stock', location: 'EMP Room', make: 'NewMake' });
+    expect(unit('SYNC-NEW')).toMatchObject({ availability: 'In-stock', location: 'Back Room', make: 'NewMake' });
     expect(unit('SYNC-MOVE').location).toBe('Chandler Floor');
     expect(unit('SYNC-SOLD')).toMatchObject({ availability: 'Sold', location: 'Warehouse' });
     expect(unit('SYNC-GONE')).toMatchObject({ availability: 'In-stock' });

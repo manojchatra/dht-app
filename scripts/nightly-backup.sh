@@ -2,7 +2,8 @@
 # Nightly backup for the DHT portal — run as root from cron, e.g.:
 #   30 2 * * *  bash /home/DHT/dht-app/scripts/nightly-backup.sh
 #
-#  1. Database → $BACKUP_ROOT/db/ (scripts/backup-db.js, keeps the last 14).
+#  1. Database → $BACKUP_ROOT/db/ (scripts/backup-db.js, keeps the last 14 nightly;
+#     backups made by scripts are dht-app-manual-*.db, kept separately — last 10).
 #  2. Sundays (or first run): uploads + activity log → $BACKUP_ROOT/files/uploads-YYYY-MM-DD.tar.gz
 #     (keeps 2 — full copies of every photo are large, so not kept daily on this disk).
 #  3. Sundays (or first run): .env + nginx/Hestia config → $BACKUP_ROOT/config/ (secrets, mode 600, keeps 8).

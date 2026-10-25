@@ -54,7 +54,7 @@ console.log(`\n${plan.length} fix(es) ready${problems ? `, ${problems} skipped` 
 if (!APPLY || !plan.length) { console.log(APPLY ? 'Nothing to save.' : 'REPORT ONLY — nothing was changed. Re-run with --apply to save.'); process.exit(0); }
 
 console.log('Backing up the database first…');
-execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js')], { stdio: 'inherit' });
+execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js'), '--manual'], { stdio: 'inherit' });
 db.transaction(() => {
   for (const f of plan) db.prepare(`UPDATE inventory SET ${f.col}=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(f.to, f.id);
 })();

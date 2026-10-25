@@ -55,7 +55,7 @@ async function main() {
   if (!APPLY) { console.log('\nREPORT ONLY — nothing was changed. Re-run with --apply to convert.'); return; }
 
   console.log('\nBacking up the database first…');
-  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js')], { stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(__dirname, 'backup-db.js'), '--manual'], { stdio: 'inherit' });
   const { removed, released } = convertToOnOrder(db, c.id, to.id);
   logActivity(db, { contractId: c.id, contractNum: c.contract_number, eventType: 'ORDER_PLACED', actor: 'admin-script',
     detail: `Linked on-order stock — Truck ${to.truck_number || '—'} / WO ${to.web_order_number || '—'}` +

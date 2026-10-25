@@ -27,7 +27,7 @@ async function main() {
     process.exit(1);
   }
 
-  const totalPaid  = db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE contract_id=?').get(contractId).t;
+  const totalPaid  = require(path.join(__dirname, '../utils/paymentTotals')).totalPaid(db, contractId);
   const data       = JSON.parse(contract.data || '{}');
   const grandTotal = parseFloat(data.costing?.grandTotal || contract.grand_total || 0);
   const expectedPending = Math.max(0, grandTotal - totalPaid);

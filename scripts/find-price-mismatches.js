@@ -14,8 +14,10 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../data/dht-app.
 const db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
 const money = v => parseFloat(String(v ?? '').replace(/[$,]/g, '')) || 0;
 
+// Voided payments don't count (the column appears once the app has restarted on this version).
+const hasVoid = db.prepare('PRAGMA table_info(payments)').all().some(c => c.name === 'voided_at');
 const rows = db.prepare(`SELECT c.id, c.contract_number, c.status, c.date, c.created_at, c.data,
-    COALESCE((SELECT SUM(amount) FROM payments p WHERE p.contract_id = c.id), 0) AS paid
+    COALESCE((SELECT SUM(amount) FROM payments p WHERE p.contract_id = c.id${hasVoid ? ' AND p.voided_at IS NULL' : ''}), 0) AS paid
   FROM contracts c ORDER BY c.id`).all();
 
 const hits = [];

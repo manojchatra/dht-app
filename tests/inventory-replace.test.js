@@ -75,14 +75,14 @@ describe('replace inventory from a new stock sheet', () => {
 
     expect(result).toEqual({ removed: 3, added: 5, linked: 1, photosKept: 1 });
     expect(unit('PHOTO-1')).toMatchObject({ availability: 'In-stock', serial_photo_path: '/x/serial.jpg', sku_photo_path: '/x/sku.jpg' });
-    expect(unit('NO-UNIT-1')).toMatchObject({ availability: 'Sold', contract_id: noUnit, created_by_contract_id: noUnit, location: 'EMP Room', finance: 'Bank Owned' });
+    expect(unit('NO-UNIT-1')).toMatchObject({ availability: 'Sold', contract_id: noUnit, created_by_contract_id: noUnit, location: 'Back Room', finance: 'Bank Owned' });
     expect(unit('Special Order')).toBeUndefined();
     expect(unit('KEEP-LINKED')).toEqual(linkedBefore);
     expect(unit('KEEP-LINKED').contract_id).toBe(linkedContractId);
     expect(unit('KEEP-BY-SERIAL')).toBeTruthy();
     expect(unit('OLD-INSTOCK')).toBeUndefined();
     expect(unit('OLD-HOLD')).toBeUndefined();
-    expect(unit('NEW-1')).toMatchObject({ availability: 'In-stock', year: '2025', location: 'EMP Room', finance: 'Bank Owned' });
+    expect(unit('NEW-1')).toMatchObject({ availability: 'In-stock', year: '2025', location: 'Back Room', finance: 'Bank Owned' });
     expect(unit('NEW-2')).toMatchObject({ location: 'Chandler Floor', line: 'L3', bay: 'B7' });
     const noSerial = ctx.db.prepare("SELECT model, availability, truck_number FROM inventory WHERE serial_number IS NULL ORDER BY model").all();
     expect(noSerial).toEqual([

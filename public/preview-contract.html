@@ -104,10 +104,10 @@ function fmtUSDate(iso){
   return parseInt(p[1],10)+'-'+p[2]+'-'+p[0];
 }
 function pcb(label,checked){
-  return '<span class="'+(checked?'pcb-yes':'pcb-no')+'">'+(checked?'\u2713':'\u25cb')+' '+label+'</span> ';
+  return '<span class="'+(checked?'pcb-yes':'pcb-no')+'">'+(checked?'\u2713':'\u25cb')+' '+escHtml(label)+'</span> ';
 }
 function pRow(item,opts,price,included){
-  return '<tr><td>'+item+'</td><td style="font-size:11px;color:var(--text-muted)">'+(opts||'')+'</td><td class="price">'+(price?'$'+price:'\u2014')+'</td><td class="incl">'+(included?'\u2713':'')+'</td></tr>';
+  return '<tr><td>'+escHtml(item)+'</td><td style="font-size:11px;color:var(--text-muted)">'+escHtml(opts||'')+'</td><td class="price">'+(price?'$'+escHtml(price):'\u2014')+'</td><td class="incl">'+(included?'\u2713':'')+'</td></tr>';
 }
 
 function renderPreview(d){
@@ -120,6 +120,7 @@ function renderPreview(d){
   var html='';
 
   if(d.store) html+='<span class="store-hl"><i class="fa-solid fa-store"></i> '+escHtml(d.store)+'</span>';
+  if(soldAtLabel(d.saleChannel)) html+=' <span class="store-hl"><i class="fa-solid fa-tent"></i> Sold at '+escHtml(soldAtLabel(d.saleChannel))+'</span>';
   html+='<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;display:flex;gap:16px;flex-wrap:wrap">';
   html+='<span>Date: <strong>'+(d.date?fmtUSDate(d.date):'\u2014')+'</strong></span>';
   html+='<span>Salesman: <strong>'+escHtml(d.salesman||'\u2014')+'</strong></span>';
@@ -152,7 +153,7 @@ function renderPreview(d){
 
   html+='<div class="preview-section"><h3>Service</h3><div style="font-size:13px;line-height:2">';
   html+=pcb('In-Town Delivery',sv.inTownDelivery)+pcb('Crane',sv.crane);
-  if(sv.crane&&sv.craneFee) html+='<span style="font-size:12px;color:var(--text-muted)">Fee: $'+sv.craneFee+'</span> ';
+  if(sv.crane&&sv.craneFee) html+='<span style="font-size:12px;color:var(--text-muted)">Fee: $'+escHtml(sv.craneFee)+'</span> ';
   if(sv.outOfTownDelivery) html+=pcb('Out-of-Town Delivery ($'+(sv.outOfTownDeliveryFee||'\u2014')+')',true);
   if(sv.outOfTownWarranty) html+=pcb('Out-of-Town Warranty \u2014 Customer has been notified of Out of Town warranty.',true);
   html+='</div></div>';
@@ -180,7 +181,7 @@ function renderPreview(d){
   if(de.accessories&&(de.accessories.items&&de.accessories.items.length||de.accessories.other)) html+=pRow('Accessories',[...(de.accessories.items||[]),de.accessories.other||''].filter(Boolean).join(', '),de.accessories.price,de.accessories.included);
   if(de.spaRemoval&&de.spaRemoval.yes) html+=pRow('Spa Removal','',de.spaRemoval.price,false);
   if(de.fuelSurcharge&&de.fuelSurcharge.yes) html+=pRow('Fuel Surcharge','',de.fuelSurcharge.price,false);
-  if(de.discount&&de.discount.yes) html+='<tr><td>Discount</td><td style="font-size:11px;color:var(--text-muted)">'+escHtml(de.discount.reason||'')+'</td><td class="price">-$'+(de.discount.amount||0)+'</td><td class="incl"></td></tr>';
+  if(de.discount&&de.discount.yes) html+='<tr><td>Discount</td><td style="font-size:11px;color:var(--text-muted)">'+escHtml(de.discount.reason||'')+'</td><td class="price">-$'+escHtml(de.discount.amount||0)+'</td><td class="incl"></td></tr>';
   html+='</tbody></table></div>';
 
   html+='<div class="preview-section"><h3>Costing &amp; Payment</h3><div style="max-width:300px;margin-left:auto;font-size:13px">';
@@ -190,12 +191,12 @@ function renderPreview(d){
   if(co.serviceTotal) html+='<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Service Total</span><span>$'+co.serviceTotal+'</span></div>';
   if(co.discountAmount) html+='<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Discount</span><span>-$'+co.discountAmount+'</span></div>';
   html+='</div><div class="totals-box"><div class="grand">Grand Total: $'+(co.grandTotal||'\u2014')+'</div></div>';
-  if(hasPending) html+='<div class="pending-box"><i class="fa-solid fa-triangle-exclamation"></i> Due Prior to Delivery: $'+pa.duePriorToDelivery+'</div>';
+  if(hasPending) html+='<div class="pending-box"><i class="fa-solid fa-triangle-exclamation"></i> Due Prior to Delivery: $'+escHtml(pa.duePriorToDelivery)+'</div>';
   html+='<div style="margin-top:12px;font-size:13px;line-height:1.9">';
-  if(pa.cheque&&pa.cheque.selected) html+='<strong style="color:var(--green)">\u2713 Cheque #'+pa.cheque.number+' - $'+(pa.cheque.amount||'\u2014')+'</strong><br>';
-  if(pa.creditCard&&pa.creditCard.selected) html+='<strong style="color:var(--green)">\u2713 Credit Card' + (pa.creditCard.lastFour?' (ending '+pa.creditCard.lastFour+')':'') + (pa.creditCard.amount?' - $'+pa.creditCard.amount:'') + '</strong><br>';
-  if(pa.cash&&pa.cash.selected) html+='<strong style="color:var(--green)">\u2713 Cash - $'+(pa.cash.amount||'\u2014')+'</strong><br>';
-  if(pa.finance&&pa.finance.selected) html+='<strong style="color:var(--green)">\u2713 Finance - $'+(pa.finance.amount||'\u2014')+'</strong><br>';
+  if(pa.cheque&&pa.cheque.selected) html+='<strong style="color:var(--green)">\u2713 Cheque #'+escHtml(pa.cheque.number)+' - $'+escHtml(pa.cheque.amount||'\u2014')+'</strong><br>';
+  if(pa.creditCard&&pa.creditCard.selected) html+='<strong style="color:var(--green)">\u2713 Credit Card' + (pa.creditCard.lastFour?' (ending '+escHtml(pa.creditCard.lastFour)+')':'') + (pa.creditCard.amount?' - $'+escHtml(pa.creditCard.amount):'') + '</strong><br>';
+  if(pa.cash&&pa.cash.selected) html+='<strong style="color:var(--green)">\u2713 Cash - $'+escHtml(pa.cash.amount||'\u2014')+'</strong><br>';
+  if(pa.finance&&pa.finance.selected) html+='<strong style="color:var(--green)">\u2713 Finance - $'+escHtml(pa.finance.amount||'\u2014')+'</strong><br>';
   html+='</div></div>';
 
   // Customer signature (data URL captured on the form — only ever an image/png data URL)
