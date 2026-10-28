@@ -83,14 +83,21 @@ router.get('/ordered-matches', (req, res) => {
   res.json({ results: findOrderedMatches(db, req.query.make, req.query.model) });
 });
 
-// GET /api/inventory/serial-exists?serial=XYZ — { exists } — New Contract shows
-// the DHT/Bank Owned choice only for a serial that isn't in inventory yet
-// (saving that contract creates the unit).
+// GET /api/inventory/serial-exists?serial=XYZ — { exists, available, unit, linkedTo }
+// New Contract: a typed serial that's a free In-stock spa (available) is offered
+// in a popup — confirming fills Make / Model / colours from inventory; one that's
+// sold or not In-stock is refused there and then. The DHT/Bank Owned choice is
+// shown only for a serial that isn't in inventory yet (saving creates the unit).
 router.get('/serial-exists', (req, res) => {
   const serial = String(req.query.serial || '').trim();
   if (!serial) return res.json({ exists: false });
-  const row = db.prepare('SELECT 1 FROM inventory WHERE upper(trim(serial_number)) = upper(trim(?))').get(serial);
-  res.json({ exists: !!row });
+  const unit = db.prepare(`SELECT i.id, i.serial_number, i.make, i.series, i.model, i.year, i.shell_color, i.cabinet_color,
+      i.location, i.availability, i.speaker, i.contract_id, c.contract_number AS linked_to
+    FROM inventory i LEFT JOIN contracts c ON c.id = i.contract_id
+    WHERE upper(trim(i.serial_number)) = upper(trim(?))`).get(serial);
+  if (!unit) return res.json({ exists: false });
+  const { contract_id, linked_to, ...fields } = unit;
+  res.json({ exists: true, available: !contract_id && unit.availability === 'In-stock', linkedTo: linked_to || null, unit: fields });
 });
 
 // POST /api/inventory/refresh — force re-download of the OLD Sheets Inventory

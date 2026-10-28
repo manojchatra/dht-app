@@ -40,7 +40,7 @@ function confirmDialog(message, opts) {
     ov.style.zIndex = '300'; // above the modal that opened it
     ov.innerHTML = '<div class="modal-box" style="max-width:420px" role="dialog" aria-modal="true">'
       + '<h2 style="font-size:15px;font-weight:600;margin-bottom:10px">' + escHtml(opts.title || 'Please confirm') + '</h2>'
-      + '<p style="font-size:13px;line-height:1.5;margin-bottom:16px">' + escHtml(message) + '</p>'
+      + '<p style="font-size:13px;line-height:1.5;margin-bottom:16px;white-space:pre-line">' + escHtml(message) + '</p>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
       + '<button type="button" class="btn btn-secondary" data-act="no">' + escHtml(opts.cancelText || 'Cancel') + '</button>'
       + '<button type="button" class="btn btn-primary" data-act="yes">' + escHtml(opts.okText || 'Proceed') + '</button>'

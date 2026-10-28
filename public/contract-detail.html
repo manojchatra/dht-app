@@ -428,7 +428,7 @@ function renderDetail(c) {
       '<a href="/api/contracts/' + c.id + '/pdf" class="btn btn-secondary" download><i class="fa-solid fa-download"></i> Download PDF</a>' +
       '<button class="btn btn-success" onclick="openPaymentModal()"' + (balDue<=0 ? ' disabled style="opacity:.4" title="Contract is fully paid"' : '') + '><i class="fa-solid fa-money-bill-wave"></i> Record Payment</button>' +
       '<button class="btn btn-secondary" onclick="openDetailAddImage()"><i class="fa-solid fa-image"></i> Add Image</button>' +
-      ((c.status==='tbo'||c.status==='scheduled') ? '<button class="btn btn-secondary" onclick="openDetailSerial()"><i class="fa-solid fa-barcode"></i> Assign SI. No</button>' : '') +
+      ((c.status==='tbo'||c.status==='assigned'||c.status==='scheduled') ? '<button class="btn btn-secondary" onclick="openDetailSerial()"><i class="fa-solid fa-barcode"></i> Assign SI. No</button>' : '') +
       (isAdmin && c.status==='delivered' && c.acknowledgement_pdf ? '<button class="btn btn-secondary" onclick="openSendAckModal()"><i class="fa-solid fa-paper-plane"></i> Send Acknowledgement</button>' : '') +
       '<button class="btn btn-secondary" disabled style="opacity:.4"><i class="fa-solid fa-envelope"></i> Send Email</button>' +
       (isAdmin ? '<button class="btn btn-danger" onclick="document.getElementById(\'deleteModal\').classList.add(\'open\')"><i class="fa-solid fa-trash"></i> Delete</button>' : '') +

@@ -387,6 +387,11 @@ router.post('/', uploadFields, async (req, res) => {
     if (!String(product?.make || '').trim() || !String(product?.model || '').trim()) {
       return res.status(400).json({ error: 'Spa Make and Model are required' });
     }
+    // Availability Status starts unselected on New Contract — it must be chosen
+    // (a pre-selected "In Stock" let To Be Ordered sales through as In Stock).
+    if (!String(product?.status || '').trim()) {
+      return res.status(400).json({ error: 'Availability Status is required (In Stock or To Be Ordered)' });
+    }
     if (!String(customer?.city || '').trim()) return res.status(400).json({ error: 'City is required' });
     if (!/^\d{5}$/.test(String(customer?.zip || '').trim())) return res.status(400).json({ error: 'Zip is required (5 digits)' });
     // Store sets the contract number (no store gave "XX"); every contract has a salesperson.
@@ -491,6 +496,12 @@ router.post('/', uploadFields, async (req, res) => {
         return res.status(409).json({ error: `Spa ${u.serial_number} is "${u.availability}" in inventory, not In-stock — it can't be sold.` });
       }
       if (u) stockUnit = u; else createStockUnit = true;
+    }
+    // An In Stock sale names its spa — picked in Inventory Search or its serial
+    // typed — or nothing marks it Sold and it can be sold again. (Old sales
+    // entered after delivery are exempt.)
+    if (product.status === 'instock' && !orderedUnit && !isBackEntry && !stockSerial) {
+      return res.status(400).json({ error: 'An In Stock sale needs its spa: pick it in Inventory Search or type its serial number.' });
     }
 
     // Phones: 10 digits, stored as 602-112-2111, at least one required.

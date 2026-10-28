@@ -211,10 +211,10 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div class="card-header"><i class="fa-solid fa-hot-tub-person"></i>Product</div>
     <label class="lbl" style="margin-bottom:8px">Availability Status *</label>
     <div class="status-group">
-      <button class="status-btn active" data-status="instock">In Stock</button>
+      <button class="status-btn" data-status="instock">In Stock</button>
       <button class="status-btn" data-status="tbo">To Be Ordered</button>
     </div>
-    <div id="floorModelRow" style="margin-bottom:14px">
+    <div id="floorModelRow" style="margin-bottom:14px;display:none">
       <label class="lbl">Floor Model Location</label>
       <select id="floorModel">
         <option value="">All locations</option>
@@ -254,7 +254,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div style="margin-bottom:14px">
       <label class="lbl">Serial Number</label>
       <input type="text" id="prodSerial" placeholder="IIN26D1261148" maxlength="50" style="max-width:280px">
-      <p class="helper" id="spaSerialHint">Auto-filled from inventory search, editable</p>
+      <p class="helper" id="spaSerialHint">Filled in when you pick a spa in Inventory Search — or type it, and it is checked against inventory</p>
     </div>
     <div style="margin-bottom:14px;display:none" id="prodFinanceWrap">
       <label class="lbl">Finance</label>
@@ -794,7 +794,9 @@ const MAKE_MODELS={
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let selectedStore='', selectedStatus='instock', selectedChannel='showroom';
+// Availability Status starts unselected — the salesperson has to choose In Stock
+// or To Be Ordered (a pre-selected In Stock let To Be Ordered sales through).
+let selectedStore='', selectedStatus='', selectedChannel='showroom';
 let selectedShell='', selectedCabinet='', selectedCover='';
 let searchTimer=null, makeBT=null, modelBT=null;
 let extraImgCount=0;
@@ -1122,6 +1124,38 @@ function refreshFinanceChoice(){
   },400);
 }
 document.getElementById('prodSerial').addEventListener('input',refreshFinanceChoice);
+
+// A serial typed by hand is checked against inventory when the field is left:
+//  - a free In-stock spa → popup showing it (make, model, colours, location);
+//    Use this spa fills everything from inventory (no typing mismatches) and
+//    makes it an In Stock sale; Cancel clears the serial to re-enter it;
+//  - sold to another contract, or not In-stock → refused, serial cleared;
+//  - not in inventory → kept (saving adds it as a new Sold unit).
+// A serial filled by picking a spa in Inventory Search isn't asked about again.
+var confirmedSerial='';
+async function checkTypedSerial(){
+  var input=document.getElementById('prodSerial');
+  var serial=(input.value||'').trim();
+  if(!serial || serial.toUpperCase()===confirmedSerial.toUpperCase()) return;
+  var j;
+  try{ j=await fetch('/api/inventory/serial-exists?serial='+encodeURIComponent(serial)).then(function(r){return r.json();}); }
+  catch(e){ return; } // the server checks again on save
+  if((input.value||'').trim()!==serial || !j || !j.exists) return;
+  var u=j.unit||{};
+  var reenter=function(){ input.value=''; confirmedSerial=''; refreshFinanceChoice(); input.focus(); };
+  if(!j.available){
+    showToast(j.linkedTo ? 'Serial '+u.serial_number+' is already sold to '+j.linkedTo+'.'
+                         : 'Spa '+u.serial_number+' is "'+(u.availability||'')+'" in inventory, not In-stock — it can\'t be sold.','error');
+    reenter(); return;
+  }
+  var what=[u.make,u.series,u.model,u.year].filter(Boolean).join(' ');
+  var colours='Shell: '+(u.shell_color||'—')+' · Cabinet: '+(u.cabinet_color||'—');
+  var ok=await confirmDialog(u.serial_number+' is in inventory:\n'+what+'\n'+colours+'\nLocation: '+(u.location||'—')
+    +'\n\nUse this spa? Make, model and colours are filled in from inventory.', {title:'Spa found in inventory', okText:'Use this spa', cancelText:'Re-enter'});
+  if(!ok){ reenter(); return; }
+  selectUnit(Object.assign({}, u, {availability:'In-stock'}));
+}
+document.getElementById('prodSerial').addEventListener('change',checkTypedSerial);
 document.getElementById('deliveryDate').addEventListener('change',refreshFinanceChoice);
 document.getElementById('deliveryDateText').addEventListener('blur',refreshFinanceChoice); // typed dates update the hidden field without a change event
 document.querySelectorAll('[data-status]').forEach(function(b){ b.addEventListener('click',refreshFinanceChoice); });
@@ -1144,11 +1178,11 @@ function selectUnit(row){
     var note=document.getElementById('orderedNote');
     note.innerHTML='<i class="fa-solid fa-truck-fast"></i> On order — Truck '+escHtml(row.truck_number||'—')+', Web Order # '+escHtml(row.web_order_number||'—')+'. Reserved for this customer when you save; no new order is placed.';
     note.style.display='block';
-  } else if(selectedOrderedUnitId){
-    // switching from an on-order pick (which set To Be Ordered) to a physical spa
-    clearOrderedUnit();
+  } else if(selectedStatus!=='instock'){
+    // A spa in hand is an In Stock sale (also clears an earlier on-order pick).
     document.querySelector('.status-btn[data-status="instock"]').click();
   }
+  confirmedSerial=row.serial_number||'';
   document.getElementById('prodMake').value=row.make||'';
   document.getElementById('prodSeries').value=row.series||'';
   document.getElementById('prodModel').value=row.model||'';
@@ -1418,6 +1452,19 @@ async function goToPreview(){
   if(!data.service.inTownDelivery && !data.service.outOfTownDelivery){showToast('Please select In-Town or Out-of-Town Delivery','error');return;}
   if(data.service.crane && !data.service.craneFee){showToast('Please enter a Crane fee','error');return;}
   if(data.service.outOfTownDelivery && !data.service.outOfTownDeliveryFee){showToast('Please enter an Out-of-Town Delivery fee','error');return;}
+
+  if(!selectedStatus){
+    showToast('Choose Availability Status: In Stock or To Be Ordered','error');
+    document.querySelector('.status-group').scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
+  var _dd=document.getElementById('deliveryDate').value;
+  var _backEntry=_dd && _dd<azToday(); // an old sale entered after delivery
+  if(selectedStatus==='instock' && !selectedOrderedUnitId && !_backEntry && !(data.product.serialNumber||'').trim()){
+    showToast('An In Stock sale needs its spa: pick it in Inventory Search or type its serial number','error');
+    var sEl=document.getElementById('prodSerial'); sEl.scrollIntoView({behavior:'smooth',block:'center'}); sEl.focus();
+    return;
+  }
 
   if(!data.product.make||!data.product.model){
     showToast('Spa Make and Model are required','error');

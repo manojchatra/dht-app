@@ -173,7 +173,7 @@ describe('inventory unit for a serial typed on the contract', () => {
     const agent = await admin();
     const p = product();
     await createContract(agent, { product: p });
-    expect((await agent.get('/api/inventory/serial-exists').query({ serial: p.serialNumber })).body).toEqual({ exists: true });
+    expect((await agent.get('/api/inventory/serial-exists').query({ serial: p.serialNumber })).body).toMatchObject({ exists: true, available: false });
     expect((await agent.get('/api/inventory/serial-exists').query({ serial: 'NOPE-123' })).body).toEqual({ exists: false });
   });
 });

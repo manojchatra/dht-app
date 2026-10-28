@@ -400,7 +400,7 @@ function buildCard(c) {
   // Three-dot menu items
   var menuItems = [];
   if (isAdmin) {
-    if (isScheduled)
+    if (isScheduled || isAssigned) // Assigned: an In Stock sale saved without its serial
       menuItems.push('<button onclick="openSerialModal('+c.id+')"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign SI. No</button>');
     if (isScheduled) {
       _schedData[c.id] = { dt: c.scheduled_datetime||'', dur: c.scheduled_duration||120, team: c.delivery_team||'team_a' };
