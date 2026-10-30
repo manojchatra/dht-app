@@ -346,6 +346,10 @@ async function generateContractPDF(contract) {
             {label:'EWStep',on:de.steps&&de.steps.type==='EWStep'},
             {label:'PolyStep',on:de.steps&&de.steps.type==='PolyStep'},
             {label:'DuraStep',on:de.steps&&de.steps.type==='DuraStep'},
+            // "Other steps" typed on New Contract is saved as the type — shown
+            // ticked, as a typed Other lift is on the cover row.
+            ...(de.steps&&de.steps.type&&!['HLStep','EWStep','PolyStep','DuraStep'].includes(de.steps.type)
+              ? [{label:de.steps.type,on:true}] : []),
           ])],margin:[3,5,3,5]},
           {text:de.steps&&de.steps.price?'$'+de.steps.price:'\u2014',fontSize:8,alignment:'right',margin:[3,5,3,5]},
           {stack:[includedBadge(de.steps&&de.steps.included)],margin:[3,3,3,3]},

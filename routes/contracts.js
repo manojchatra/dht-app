@@ -6,7 +6,7 @@ const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
 const db      = require('../db/database');
-const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/googleCalendar');
+const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarEventExists } = require('../services/googleCalendar');
 const { compressImage, compressAndGate } = require('../utils/imageUtils');
 const { logActivity, addNotification }   = require('../utils/activityLogger');
 const {
@@ -28,6 +28,10 @@ const { cleanSaleChannel, saleChannelLabel } = require('../utils/saleChannel');
 const { withLock } = require('../utils/asyncLock');
 const { phoenixToday } = require('../utils/arizona');
 const { statusName } = require('../utils/contractStatus');
+const { teamName } = require('../utils/teams');
+const { zoneForZip } = require('../utils/deliveryZones');
+// Delivery zone of a zip, for the portal calendar's colours (same as Google's).
+const zoneFields = zip => { const z = zoneForZip(zip); return { zone_name: z.name, zone_color: z.hex, zone_text_color: z.text }; };
 const { totalPaid: paidTotal } = require('../utils/paymentTotals');
 const {
   normalizeContractPhones, nextCustomerNumber,
@@ -262,6 +266,7 @@ router.get('/', (req, res) => {
           typeof item === 'string' ? { url: toUrlPath(item), label:'' } : { url: toUrlPath(item.path), label: item.label||'' }
         ) : [],
       total_paid: paidTotal(db, r.id),
+      ...zoneFields(r.customer_zip), // calendar colour by delivery zone
     }));
     res.json(contracts);
   } catch (err) {
@@ -819,6 +824,7 @@ function buildDriveData(contract, customer, formData) {
     if (cover.coverType && cover.coverType.length) parts.push(cover.coverType.join('/'));
     if (cover.brand) parts.push(cover.brand);
     if (cover.lift && cover.lift !== 'none') parts.push(cover.lift);
+    if (cover.otherLift) parts.push(cover.otherLift); // typed "Other lift"
     return parts.join(', ');
   }
   const cu = d.customer || {};
@@ -853,6 +859,30 @@ function buildDriveData(contract, customer, formData) {
     truckNumber:    contract.truck_number || '',
     soldAt:         saleChannelLabel(d.saleChannel),
   };
+}
+
+// The contract's Google Calendar event, brought in line with the contract:
+// time, team colour, title (S/N) and description (serial, steps, cover). A
+// saved event that was deleted in Google stays "cancelled" under the same id —
+// updating it succeeds but it stays invisible (DHT2609CH00054) — so only a live
+// event is updated; otherwise a new one is made and its id saved. Non-fatal.
+async function syncCalendarEvent(contractId) {
+  const c = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+  if (!c || c.status !== 'scheduled' || !c.scheduled_datetime) return;
+  const data = JSON.parse(c.data || '{}');
+  let live = false;
+  if (c.calendar_event_id) {
+    try { live = await calendarEventExists(c.calendar_event_id); }
+    catch (e) { live = true; console.error('[Calendar check failed — updating the saved event]', e.message); }
+  }
+  if (live) {
+    try { await updateCalendarEvent(c.calendar_event_id, c, data); } catch (e) { console.error('[Calendar update failed]', e.message); }
+  } else {
+    try {
+      const eventId = await createCalendarEvent(c, data);
+      if (eventId) db.prepare('UPDATE contracts SET calendar_event_id=? WHERE id=?').run(eventId, c.id);
+    } catch (e) { console.error('[Calendar create failed]', e.message); }
+  }
 }
 
 // ── Update status ─────────────────────────────────────────────────────────────
@@ -912,6 +942,12 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     }
     if (status === 'cancelled' && contract.status === 'cancelled') {
       return res.status(400).json({ error: 'Contract is already cancelled.' });
+    }
+    // Any other status it already has (e.g. Apply clicked several times on
+    // "Assigned") — nothing to do, and nothing logged. Scheduled → Scheduled
+    // is a reschedule, so it's allowed.
+    if (status === contract.status && status !== 'scheduled') {
+      return res.status(400).json({ error: `Contract is already ${statusName(status)}.` });
     }
 
     // Order Placed: only reachable from TBO, and requires both fields — unless
@@ -978,7 +1014,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
           const exStart = new Date(ex.scheduled_datetime + '-07:00').getTime();
           const exEnd   = exStart + (ex.scheduled_duration||120)*60000;
           if (startMs < exEnd && endMs > exStart) {
-            const teamLabel = teamVal==='team_a'?'Clear Choice Team':'Installation Team';
+            const teamLabel = teamName(teamVal);
             return res.status(400).json({
               error: teamLabel+' is already booked at this time ('+ex.contract_number+'). Choose a different slot or team.'
             });
@@ -1031,17 +1067,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         } else {
           await updateToScheduled(contract.contract_number, scheduledDatetime, driveData);
         }
-        // Google Calendar: create new event or update existing
-        const updatedContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
-        const calData = JSON.parse(updatedContract.data || '{}');
-        if (contract.calendar_event_id) {
-          try { await updateCalendarEvent(contract.calendar_event_id, updatedContract, calData); } catch(e) { console.error('[Calendar update failed]', e.message); }
-        } else {
-          try {
-            const eventId = await createCalendarEvent(updatedContract, calData);
-            if (eventId) db.prepare('UPDATE contracts SET calendar_event_id=? WHERE id=?').run(eventId, req.params.id);
-          } catch(e) { console.error('[Calendar create failed]', e.message); }
-        }
+        await syncCalendarEvent(req.params.id);
       } else if (status === 'delivered') {
         const actualDelivery = deliveryDate || today;
         driveData.serialNumber = contract.serial_number || '';
@@ -1077,7 +1103,7 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     const _cnum   = contract.contract_number;
     const _cuname = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
     if (status === 'scheduled') {
-      const _team  = req.body.deliveryTeam==='team_a'?'Clear Choice Team':'Installation Team';
+      const _team  = teamName(req.body.deliveryTeam);
       const _slot  = scheduledDatetime ? new Date(scheduledDatetime + '-07:00').toLocaleString('en-US',{timeZone:'America/Phoenix',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
       logActivity(db, { contractId: req.params.id, contractNum: _cnum, eventType: 'SCHEDULED',
         actor: _actor, detail: `Team: ${_team} | Slot: ${_slot}` });
@@ -1199,6 +1225,10 @@ router.patch('/:id/serial', requireAdmin, async (req, res) => {
     try {
       await updateTBOSerial(contract.contract_number, serial);
     } catch(e) { console.error('[Drive serial update failed]', e.message, e.stack); }
+    // A Scheduled delivery's calendar event shows the serial (title S/N and
+    // description) — it must never keep the old one, or the crew could load the
+    // wrong spa.
+    await syncCalendarEvent(contract.id);
     if (linkUnit) {
       try {
         await updateInventoryItemField(linkUnit.serial_number, 'availability', 'Sold');

@@ -481,6 +481,10 @@ async function loadContract() {
   document.getElementById('roSerial').textContent = contractData.serial_number||'—';
   document.getElementById('roColors').textContent = (contractData.shell_color||'')+(contractData.cabinet_color?' / '+contractData.cabinet_color:'');
   if (contractData.water_care_system) buildParts(contractData.water_care_system);
+  // Steps Model starts as the steps on the contract (including an "Other"
+  // name typed there); the crew can still change it to what was delivered.
+  var stepsEl = document.getElementById('stepsModel');
+  if (stepsEl && !stepsEl.value && contractData.steps_type) stepsEl.value = contractData.steps_type;
   // Only a Scheduled contract with a serial, for this user's team, can be
   // acknowledged — say why up front instead of after the form is filled in.
   if (contractData.ack_blocked_reason) {

@@ -43,4 +43,31 @@ async function applyCalendarResync(db, plan, cal) {
   return result;
 }
 
-module.exports = { planCalendarResync, applyCalendarResync };
+// --refresh: every Scheduled delivery's live event is rewritten from the
+// contract (title S/N, description serial / steps / cover, time, colour) — for
+// events made before Assign SI. No and reschedules kept them up to date.
+// Missing or deleted events are created, as above.
+// cal = { createCalendarEvent, updateCalendarEvent, calendarEventExists }
+async function applyCalendarRefresh(db, plan, cal) {
+  const result = { updated: [], created: [], failed: [] };
+  const save = db.prepare('UPDATE contracts SET calendar_event_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+  for (const { contract } of plan) {
+    try {
+      const data = JSON.parse(contract.data || '{}');
+      if (contract.calendar_event_id && await cal.calendarEventExists(contract.calendar_event_id)) {
+        await cal.updateCalendarEvent(contract.calendar_event_id, contract, data);
+        result.updated.push(contract.contract_number);
+        continue;
+      }
+      const eventId = await cal.createCalendarEvent(contract, data);
+      if (!eventId) throw new Error('calendar not configured');
+      save.run(eventId, contract.id);
+      result.created.push(contract.contract_number);
+    } catch (e) {
+      result.failed.push(`${contract.contract_number}: ${e.message}`);
+    }
+  }
+  return result;
+}
+
+module.exports = { planCalendarResync, applyCalendarResync, applyCalendarRefresh };

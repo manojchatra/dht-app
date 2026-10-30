@@ -421,6 +421,9 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
           <label class="cb-item"><input type="radio" name="steps" value="EWStep"> EWStep</label>
           <label class="cb-item"><input type="radio" name="steps" value="PolyStep"> PolyStep</label>
           <label class="cb-item"><input type="radio" name="steps" value="DuraStep"> DuraStep</label>
+          <!-- Other steps (as Other lift on the cover): saved as the steps model,
+               so the PDF, acknowledgement, calendar and Sheet all show it. -->
+          <input type="text" id="stepsOther" placeholder="Other steps..." maxlength="50" style="width:120px;margin-left:4px">
         </div>
       </div>
       <input type="text" id="dtStepsPrice" placeholder="$" oninput="recalcAll()">
@@ -861,6 +864,15 @@ document.addEventListener('DOMContentLoaded',function(){
       document.getElementById('floorModelRow').style.display=selectedStatus==='instock'?'block':'none';
       if(selectedStatus==='instock') clearOrderedUnit();
     });
+  });
+
+  // Matching Steps is one choice: typing Other steps clears the buttons, and
+  // picking a button clears Other steps.
+  document.getElementById('stepsOther').addEventListener('input',function(e){
+    if(e.target.value.trim()) document.querySelectorAll('[name=steps]').forEach(function(r){r.checked=false;});
+  });
+  document.querySelectorAll('[name=steps]').forEach(function(r){
+    r.addEventListener('change',function(){ document.getElementById('stepsOther').value=''; });
   });
 
   document.querySelectorAll('[name=gated]').forEach(function(r){
@@ -1415,7 +1427,7 @@ function collectData(){
     details:{
       spaPrice:v('dtSpaPrice'),
       cover:{coverType:mc('.cover-type'),brand:mc('.cover-brand').join(', '),lift:mc('.cover-lift').join(', '),otherLift:v('coverLiftOther'),price:v('dtCoverPrice'),included:cb('#dtCoverIncl')},
-      steps:{type:rd('steps'),price:v('dtStepsPrice'),included:cb('#dtStepsIncl')},
+      steps:{type:v('stepsOther')||rd('steps'),price:v('dtStepsPrice'),included:cb('#dtStepsIncl')},
       subpanel:{provided:rd('subpanel')==='yes',amperage:rd('subpanelAmp'),price:v('dtSubpanelPrice'),included:cb('#dtSubpanelIncl')},
       waterCareSystem:{type:rd('waterCareSystem'),price:v('dtWaterSysPrice'),included:cb('#dtWaterSysIncl')},
       upgradedWaterCare:{autoDosing:cb('#wcAutoDosing'),fwssIq:cb('#wcFwssIq'),price:v('dtUpgradedWaterPrice'),included:cb('#dtUpgradedWaterIncl')},

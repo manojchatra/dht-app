@@ -8,8 +8,12 @@ const { google } = require('googleapis');
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
 const TZ = 'America/Phoenix';
 
-// Team A = Lavender (1), Team B = Banana (5)
-const TEAM_COLOR_IDS = { team_a: '1', team_b: '5' };
+// Event colour = the delivery zone of the contract's delivery zip (East Valley
+// blue, Central orange, West yellow, Out of Town green — utils/deliveryZones.js).
+// The team is in the description instead (it used to be the colour).
+const { zoneForZip } = require('../utils/deliveryZones');
+const { teamName } = require('../utils/teams');
+const zoneOf = data => zoneForZip(((data || {}).customer || {}).zip);
 
 function getCalendar() {
   const auth = new google.auth.GoogleAuth({
@@ -41,6 +45,7 @@ function buildDescription(contract, data) {
   const de = data.details  || {};
   const lines = [
     'Contract: ' + contract.contract_number,
+    'Zone:     ' + zoneOf(data).name,
     'Customer: ' + (cu.name || ''),
     'Address:  ' + [(cu.address||''), (cu.city||''), (cu.zip||'')].filter(Boolean).join(', '),
     'Phone:    ' + (cu.phone?.cell || cu.phone?.home || ''),
@@ -51,14 +56,15 @@ function buildDescription(contract, data) {
     '',
     'Steps:      ' + (de.steps?.type || ''),
     'Water Care: ' + (de.waterCareSystem?.type || ''),
-    'Cover:      ' + [(de.cover?.coverType||[]).join('/'), de.cover?.brand, de.cover?.lift].filter(Boolean).join(' - '),
+    'Cover:      ' + [(de.cover?.coverType||[]).join('/'), de.cover?.brand, de.cover?.lift, de.cover?.otherLift].filter(Boolean).join(' - '),
     '',
     'Salesman: ' + (contract.salesman || ''),
+    'Team:     ' + teamName(contract.delivery_team),
   ];
   return lines.join('\n');
 }
 
-// ── Event title: Name · Make Model · S/N (no contract number) ────────────────
+// ── Event title: Name · Make Model · S/N (no contract number; team in the description) ──
 function buildSummary(contract, data) {
   const cu   = data.customer || {};
   const name = cu.name || contract.customer_name || '';
@@ -83,7 +89,7 @@ async function createCalendarEvent(contract, data) {
       description: buildDescription(contract, data),
       start:       { dateTime: startNaive, timeZone: TZ },
       end:         { dateTime: endNaive,   timeZone: TZ },
-      colorId:     TEAM_COLOR_IDS[contract.delivery_team] || '1',
+      colorId:     zoneOf(data).googleColorId,
     }
   });
   console.log('[Calendar] Event created:', res.data.id);
@@ -95,15 +101,21 @@ async function updateCalendarEvent(eventId, contract, data) {
   if (!calendarConfigured() || !eventId) return;
   const startNaive = contract.scheduled_datetime;
   const endNaive    = addMinutesPhoenix(startNaive, contract.scheduled_duration || 120);
+  const cu = (data || {}).customer || {};
 
+  // Everything the crew reads is rewritten — title (S/N), description (serial,
+  // steps, cover) and location — not just the time: a serial changed with
+  // Assign SI. No must never leave the old one on the calendar.
   await getCalendar().events.patch({
     calendarId: CALENDAR_ID,
     eventId,
     requestBody: {
-      summary: buildSummary(contract, data || {}),
+      summary:     buildSummary(contract, data || {}),
+      description: buildDescription(contract, data || {}),
+      location:    [(cu.address||''), (cu.city||''), (cu.zip||'')].filter(Boolean).join(', '),
       start:   { dateTime: startNaive, timeZone: TZ },
       end:     { dateTime: endNaive,   timeZone: TZ },
-      colorId: TEAM_COLOR_IDS[contract.delivery_team] || '1',
+      colorId: zoneOf(data).googleColorId,
     }
   });
   console.log('[Calendar] Event updated:', eventId);
@@ -147,4 +159,5 @@ async function checkCalendarAccess() {
   return { calendarId: CALENDAR_ID, account: process.env.GOOGLE_CLIENT_EMAIL, accessRole: acl ? acl.data.accessRole : 'unknown' };
 }
 
-module.exports = { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarConfigured, calendarEventExists, checkCalendarAccess };
+module.exports = { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarConfigured, calendarEventExists, checkCalendarAccess,
+  _buildDescription: buildDescription, _buildSummary: buildSummary }; // for tests

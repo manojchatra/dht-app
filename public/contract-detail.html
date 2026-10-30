@@ -508,7 +508,7 @@ function renderDetail(c) {
     '<div class="detail-section"><h3><i class="fa-solid fa-list"></i> Details &amp; Line Items</h3>' +
     '<table class="line-items-table"><thead><tr><th>Item</th><th>Options</th><th style="text-align:right">Price</th><th style="text-align:center">Incl.</th></tr></thead><tbody>' +
       pRow('Spa ' + (pr.make||'') + ' ' + (pr.model||'') + (pr.serialNumber?' ('+pr.serialNumber+')':''), '', de.spaPrice, de.spaIncluded) +
-      pRow('U.L. Cover', [(de.cover&&de.cover.coverType||[]).join('/'), de.cover&&de.cover.brand, de.cover&&de.cover.lift].filter(Boolean).join(' - '), de.cover&&de.cover.price, de.cover&&de.cover.included) +
+      pRow('U.L. Cover', [(de.cover&&de.cover.coverType||[]).join('/'), de.cover&&de.cover.brand, de.cover&&de.cover.lift, de.cover&&de.cover.otherLift].filter(Boolean).join(' - '), de.cover&&de.cover.price, de.cover&&de.cover.included) +
       pRow('Steps', de.steps&&de.steps.type||'', de.steps&&de.steps.price, de.steps&&de.steps.included) +
       pRow('Subpanel', (de.subpanel&&de.subpanel.provided?'Yes':'No') + (de.subpanel&&de.subpanel.amperage?' '+de.subpanel.amperage+' Amp':''), de.subpanel&&de.subpanel.price, de.subpanel&&de.subpanel.included) +
       pRow('Water Care System', de.waterCareSystem&&de.waterCareSystem.type||'', de.waterCareSystem&&de.waterCareSystem.price, de.waterCareSystem&&de.waterCareSystem.included) +

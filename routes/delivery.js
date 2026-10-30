@@ -52,6 +52,7 @@ function requireDeliveryOrAdmin(req, res, next) {
 // Only a Scheduled contract with a serial, by the team it's booked for (or an
 // admin) — a wrong contract number must never mark a spa delivered (Delivered is final).
 const { statusName } = require('../utils/contractStatus');
+const { zoneForZip } = require('../utils/deliveryZones');
 function ackBlockReason(c, user) {
   if (c.status === 'delivered') return 'This contract has already been marked delivered.';
   if (c.status !== 'scheduled') return `${c.contract_number} is ${statusName(c.status)}, not scheduled — check the contract number.`;
@@ -134,7 +135,7 @@ router.get('/contract/:id', requireDeliveryOrAdmin, (req, res) => {
         de.upgradedWaterCare?.fwssIq    ? 'FWSS/IQ'    : '',
       ].filter(Boolean).join(' + '),
       steps_type:      de.steps?.type || '',
-      cover_type:      [(de.cover?.coverType||[]).join('/'), de.cover?.brand, de.cover?.lift].filter(Boolean).join(' - '),
+      cover_type:      [(de.cover?.coverType||[]).join('/'), de.cover?.brand, de.cover?.lift, de.cover?.otherLift].filter(Boolean).join(' - '),
       in_town_delivery: sv.inTownDelivery,
       crane:           sv.crane,
       salesman:        contract.salesman,
@@ -195,14 +196,16 @@ router.get('/calendar', requireDeliveryOrAdmin, (req, res) => {
         c.scheduled_datetime, c.scheduled_duration, c.delivery_team,
         COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name,
         COALESCE(json_extract(c.data,'$.customer.address'), cu.address) AS address,
-        COALESCE(json_extract(c.data,'$.customer.city'), cu.city) AS city
+        COALESCE(json_extract(c.data,'$.customer.city'), cu.city) AS city,
+        COALESCE(json_extract(c.data,'$.customer.zip'), cu.zip) AS zip
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.status = 'scheduled' AND c.scheduled_datetime IS NOT NULL
         ${scopedToTeam ? "AND (c.delivery_team = ? OR COALESCE(c.delivery_team,'') = '')" : ''}
       ORDER BY c.scheduled_datetime
     `).all(...(scopedToTeam ? [req.currentUser.team] : []));
-    res.json(rows);
+    // Zone colour as on the Google event (utils/deliveryZones.js).
+    res.json(rows.map(r => { const z = zoneForZip(r.zip); return { ...r, zone_name: z.name, zone_color: z.hex, zone_text_color: z.text }; }));
   } catch(e) {
     console.error('[Delivery calendar]', e.message);
     res.status(500).json({ error: 'Failed to load the calendar' });

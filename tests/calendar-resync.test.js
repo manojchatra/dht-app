@@ -78,4 +78,23 @@ describe('resync scheduled deliveries onto a new calendar', () => {
     expect(result.failed[0]).toMatch(/403 Forbidden/);
     expect(result.created).toHaveLength(1);
   });
+
+  test('refresh rewrites every live event from its contract and recreates missing ones', async () => {
+    ctx.db.prepare("UPDATE contracts SET calendar_event_id='live-1', serial_number='CHANGED-SN' WHERE id=?").run(futureId);
+    ctx.db.prepare("UPDATE contracts SET calendar_event_id='gone-2' WHERE id=?").run(pastId);
+    const cal = {
+      calendarEventExists: jest.fn(async id => id === 'live-1'),
+      updateCalendarEvent: jest.fn().mockResolvedValue(),
+      createCalendarEvent: jest.fn().mockResolvedValue('new-event-r'),
+    };
+    const plan = svc().planCalendarResync(ctx.db).filter(p => [futureId, pastId].includes(p.contract.id));
+
+    const result = await svc().applyCalendarRefresh(ctx.db, plan, cal);
+
+    expect(result).toMatchObject({ failed: [] });
+    expect(result.updated).toHaveLength(1);
+    expect(result.created).toHaveLength(1);
+    expect(cal.updateCalendarEvent).toHaveBeenCalledWith('live-1', expect.objectContaining({ id: futureId, serial_number: 'CHANGED-SN' }), expect.any(Object));
+    expect(eventId(pastId)).toBe('new-event-r');
+  });
 });

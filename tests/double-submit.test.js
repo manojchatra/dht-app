@@ -151,9 +151,12 @@ describe('status-change repeat guards', () => {
   });
 
   test('two concurrent scheduling requests for the same contract do not both create a calendar event', async () => {
-    const { createCalendarEvent } = require('../services/googleCalendar');
+    const { createCalendarEvent, calendarEventExists } = require('../services/googleCalendar');
     createCalendarEvent.mockClear();
     createCalendarEvent.mockResolvedValue('evt-123');
+    // The event the first request created is live on the calendar (a missing or
+    // deleted one would be replaced — see tests/calendar-reschedule.test.js).
+    calendarEventExists.mockImplementation(async id => id === 'evt-123');
     const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
     const { contractId } = await createContract(agent, {
       product: { status: 'instock', serialNumber: 'ZZSCHED-RACE-1', make: 'TestMake', model: 'TestModel', year: '2026', shellColor: 'Grey', cabinetColor: 'Espresso' },
@@ -169,5 +172,6 @@ describe('status-change repeat guards', () => {
     expect(createCalendarEvent).toHaveBeenCalledTimes(1); // not 2 — the lock serialized create-vs-update
     const row = ctx.db.prepare('SELECT calendar_event_id FROM contracts WHERE id=?').get(contractId);
     expect(row.calendar_event_id).toBe('evt-123');
+    calendarEventExists.mockReset(); calendarEventExists.mockResolvedValue(false);
   });
 });

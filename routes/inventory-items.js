@@ -68,9 +68,17 @@ async function finalizeInventoryPhoto(tmpFile, serialNumber, label) {
 // ── GET / — list all items, non-Sold first, Sold at the bottom ───────────────
 router.get('/', (req, res) => {
   try {
+    // A spa linked to a contract (Sold, or on-order stock Reserved) carries that
+    // contract's number and customer — the page shows "Sold · Jane Smith ·
+    // DHT2610PH00066" (a link to the contract for admin, plain text for warehouse).
     const rows = db.prepare(`
-      SELECT i.*, c.contract_number AS reserved_contract_number FROM inventory i
-      LEFT JOIN contracts c ON c.id = i.contract_id AND i.availability = 'Ordered'
+      SELECT i.*,
+        c.id AS linked_contract_id, c.contract_number AS linked_contract_number,
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS linked_customer_name,
+        CASE WHEN i.availability = 'Ordered' THEN c.contract_number END AS reserved_contract_number
+      FROM inventory i
+      LEFT JOIN contracts c ON c.id = i.contract_id
+      LEFT JOIN customers cu ON cu.id = c.customer_id
       ORDER BY (i.availability = 'Sold') ASC, i.created_at DESC
     `).all();
     const items = rows.map(r => ({

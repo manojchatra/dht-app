@@ -77,7 +77,7 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
   </div>
 
   <div class="inv-toolbar">
-    <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search make, model, serial, SKU…" oninput="renderInventory()"></div>
+    <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search make, model, serial, SKU, customer, contract…" oninput="renderInventory()"></div>
     <select id="availFilter" onchange="renderInventory()"><option value="">All availability</option><option value="In-stock">In-stock</option><option value="Hold">Hold</option><option value="Sold">Sold</option><option value="Ordered">Ordered</option></select>
     <select id="locFilter" onchange="renderInventory()">
       <option value="">All locations</option>
@@ -156,7 +156,9 @@ function filterItems(){
     if(avail && it.availability!==avail) return false;
     if(loc && it.location!==loc) return false;
     if(q){
-      const hay=[it.make,it.series,it.model,it.year,it.serial_number,it.sku_number,it.line,it.bay].join(' ').toLowerCase();
+      // Also the customer name / contract number of a Sold or Reserved spa.
+      const hay=[it.make,it.series,it.model,it.year,it.serial_number,it.sku_number,it.line,it.bay,
+        it.linked_customer_name,it.linked_contract_number].join(' ').toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -170,9 +172,20 @@ function isAdmin(){ return window._userRole==='admin'; }
 // Line/Bay (where the unit sits) can also be set by warehouse staff — server allows only those two.
 function canEditLocationRef(){ return isAdmin() || window._userRole==='warehouse'; }
 
+// "Jane Smith · DHT2610PH00066" for a spa linked to a contract: a link that
+// opens the contract in a new tab for admin; plain text for warehouse (who
+// can't open contracts).
+function linkedContract(it){
+  var label=[it.linked_customer_name,it.linked_contract_number].filter(Boolean).join(' · ');
+  if(!isAdmin()) return '<strong>'+escHtml(label)+'</strong>';
+  return '<a href="/contracts/'+encodeURIComponent(it.linked_contract_id)+'" target="_blank" rel="noopener" title="Open the contract in a new tab" style="font-weight:600;color:var(--accent)">'+escHtml(label)+'</a>';
+}
 function availSelect(it){
-  // On-order stock reserved by a contract: fixed until that contract is received or cancelled.
-  if(it.reserved_contract_number) return '<span title="Reserved for '+escHtml(it.reserved_contract_number)+'">Ordered · <strong>Reserved '+escHtml(it.reserved_contract_number)+'</strong></span>';
+  // Linked to a contract — fixed until that contract is cancelled or deleted
+  // (the server refuses an availability change): on-order stock Reserved for
+  // it, or a Sold spa.
+  if(it.reserved_contract_number) return '<span>Ordered · Reserved · '+linkedContract(it)+'</span>';
+  if(it.availability==='Sold' && it.linked_contract_number) return '<span>Sold · '+linkedContract(it)+'</span>';
   if(!isAdmin()) return '<span>'+escHtml(it.availability||'—')+'</span>';
   const opts=['In-stock','Hold','Sold','Ordered'];
   return '<select onchange="markDirty('+it.id+',\'availability\',this.value)">'+

@@ -14,6 +14,9 @@
 <script src="/js/util.js"></script>
 <style>
 .page-header{flex-shrink:0}
+.zone-key{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--text-muted);margin-top:6px}
+.zone-key span{display:inline-flex;align-items:center;gap:6px}
+.zone-key i{width:12px;height:12px;border-radius:3px;display:inline-block}
 #calendarWrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; box-shadow:var(--shadow); flex:1; display:flex; flex-direction:column; min-height:0; }
 #calendar { flex:1; min-height:0; }
 .fc { font-family:var(--font); font-size:13px; height:100%; }
@@ -70,7 +73,15 @@
 <div id="sidebar-root"></div>
 <script src="/js/sidebar.js"></script>
 <main class="main">
-  <div class="page-header"><h1>Delivery Calendar</h1></div>
+  <div class="page-header"><h1>Delivery Calendar</h1>
+    <!-- Delivery zone colours (same on Google Calendar) — utils/deliveryZones.js -->
+    <div class="zone-key">
+      <span><i style="background:#039BE5"></i>East Valley</span>
+      <span><i style="background:#F4511E"></i>Central Valley</span>
+      <span><i style="background:#F6BF26"></i>West Valley</span>
+      <span><i style="background:#0B8043"></i>Out of Town</span>
+    </div>
+  </div>
   <div id="calendarWrap">
     <div id="calendar"></div>
   </div>
@@ -117,8 +128,10 @@ async function loadCalendar() {
   const contracts = await fetch(userRole === 'delivery' ? '/api/delivery/calendar' : '/api/contracts').then(r=>r.json()).catch(()=>[]);
   const filtered = (Array.isArray(contracts) ? contracts : []).filter(c=>c.status==='scheduled'&&c.scheduled_datetime);
 
-  const TEAM_COLORS = { team_a:'#673116', team_b:'#059669' };
-  const TEAM_BORDERS = { team_a:'#4a230f', team_b:'#047857' };
+  // Colour = delivery zone of the delivery zip (East blue, Central orange, West
+  // yellow, Out of Town green) — the same as the Google Calendar event; the
+  // server sends it (utils/deliveryZones.js). The team is shown in the text.
+  const TEAM_NAMES = { team_a:'Classic Spa', team_b:'Installation' };
 
   const events = filtered.map(c => {
     const dur   = parseInt(c.scheduled_duration||120);
@@ -128,9 +141,12 @@ async function loadCalendar() {
       title: (c.contract_number||'')+'|'+(c.customer_name||'')+'|'+(c.make||'')+' '+(c.model||'')+'|'+(c.serial_number||'')+'|'+(c.salesman||'')+'|'+(c.address||'')+(c.city?', '+c.city:''),
       start: c.scheduled_datetime,
       end:   addMinutesPhoenix(c.scheduled_datetime, dur),
-      backgroundColor: TEAM_COLORS[c.delivery_team] || '#673116',
-      borderColor:     TEAM_BORDERS[c.delivery_team] || '#4a230f',
+      backgroundColor: c.zone_color || '#0B8043',
+      borderColor:     c.zone_color || '#0B8043',
+      textColor:       c.zone_text_color || '#ffffff',
       extendedProps: {
+        team: TEAM_NAMES[c.delivery_team] || '',
+        zone: c.zone_name || '',
         contractNumber: c.contract_number,
         customerName:   c.customer_name,
         make:  c.make, model: c.model,
@@ -173,11 +189,12 @@ async function loadCalendar() {
       if (view === 'dayGridMonth') {
         return { html: '<div class="event-month"><span style="font-weight:600;font-size:11px;cursor:pointer">'+escHtml(p.contractNumber||'')+'</span><span class="ev-name"> · '+escHtml(p.customerName||'')+'</span></div>' };
       } else if (view === 'timeGridWeek') {
-        return { html: '<div class="event-time"><span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span><span class="ev-model">'+escHtml(p.customerName||'')+'</span><span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span></div>' };
+        return { html: '<div class="event-time"><span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span>'+(p.team?'<span class="ev-model">'+escHtml(p.team)+'</span>':'')+'<span class="ev-model">'+escHtml(p.customerName||'')+'</span><span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span></div>' };
       } else {
         // Day view — full detail
         return { html: '<div class="event-day" style="padding:3px">'
           +'<span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span>'
+          +((p.team||p.zone)?'<span class="ev-sal">'+escHtml([p.team,p.zone].filter(Boolean).join(' · '))+'</span>':'')
           +'<span class="ev-name">'+escHtml(p.customerName||'')+'</span>'
           +'<span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span>'
           +(p.serial?'<span class="ev-serial">S/N: '+escHtml(p.serial)+'</span>':'')
