@@ -20,7 +20,10 @@ const {
 
 // 'warehouse' isn't a creatable role yet (lands in Stage 5) — included here
 // now so this gate doesn't need a follow-up edit once it is.
-router.use(requireRole(['admin', 'warehouse']));
+// Sales may only read the list (GET /) — view-only page, Finance left out.
+const adminOrWarehouse = requireRole(['admin', 'warehouse']);
+router.use((req, res, next) =>
+  (req.method === 'GET' && req.path === '/' && req.session.role === 'sales') ? next() : adminOrWarehouse(req, res, next));
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -73,7 +76,7 @@ router.get('/', (req, res) => {
     // DHT2610PH00066" (a link to the contract for admin, plain text for warehouse).
     const rows = db.prepare(`
       SELECT i.*,
-        c.id AS linked_contract_id, c.contract_number AS linked_contract_number,
+        c.id AS linked_contract_id, c.contract_number AS linked_contract_number, c.salesman_user_id AS linked_salesman_user_id,
         COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS linked_customer_name,
         CASE WHEN i.availability = 'Ordered' THEN c.contract_number END AS reserved_contract_number
       FROM inventory i
@@ -81,11 +84,20 @@ router.get('/', (req, res) => {
       LEFT JOIN customers cu ON cu.id = c.customer_id
       ORDER BY (i.availability = 'Sold') ASC, i.created_at DESC
     `).all();
-    const items = rows.map(r => ({
-      ...r,
-      sku_photo_url:    toUrlPath(r.sku_photo_path),
-      serial_photo_url: toUrlPath(r.serial_photo_path),
-    }));
+    const isSales = req.session.role === 'sales';
+    const items = rows.map(({ linked_salesman_user_id, ...r }) => {
+      const item = {
+        ...r,
+        sku_photo_url:    toUrlPath(r.sku_photo_path),
+        serial_photo_url: toUrlPath(r.serial_photo_path),
+      };
+      // Sales: no Finance; a contract id (the page's link) only for their own contracts.
+      if (isSales) {
+        delete item.finance;
+        if (linked_salesman_user_id !== req.session.userId) item.linked_contract_id = null;
+      }
+      return item;
+    });
     res.json(items);
   } catch (err) {
     console.error('Inventory list error:', err);

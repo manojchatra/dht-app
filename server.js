@@ -49,8 +49,10 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 // photos, receipts) — never serve them without authentication, and a
 // contract's files only to someone allowed to see that contract (see
 // contractFileAccess). NOTE: nginx must NOT serve /uploads/ itself (no
-// "location /uploads/" alias) — that would skip both checks.
-app.use('/uploads', requireAuth, require('./middleware/contractFiles').contractFileAccess, express.static(uploadsDir));
+// "location /uploads/" alias) — that would skip both checks. ?thumb=1 on a
+// photo answers with a small card thumbnail (middleware/thumbnails.js).
+app.use('/uploads', requireAuth, require('./middleware/contractFiles').contractFileAccess,
+  require('./middleware/thumbnails').thumbnails(uploadsDir), express.static(uploadsDir));
 app.use('/css', express.static(path.join(__dirname, 'public/css')));
 app.use('/img', express.static(path.join(__dirname, 'public/img')));
 app.use('/js',  express.static(path.join(__dirname, 'public/js')));
@@ -107,6 +109,7 @@ app.get('/contracts', requireAuth, serve('view-contracts.html'));
 app.get('/contracts/new',  requireAuth, serve('create-contract.html'));
 app.get('/contracts/view',  requireAuth, serve('view-contracts.html'));
 app.get('/contracts/preview', requireAuth, serve('preview-contract.html'));
+app.get('/contracts/:id/edit', requireAuth, serve('create-contract.html')); // New Contract's form in edit mode (js/contract-edit.js)
 app.get('/contracts/:id',  requireAuth, serve('contract-detail.html'));
 app.get('/status',    requireAuth, serve('status.html'));
 app.get('/inventory',     requireAuth, serve('inventory-list.html'));

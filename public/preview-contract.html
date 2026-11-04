@@ -164,7 +164,7 @@ function renderPreview(d){
   html+='</div></div>';
 
   html+='<div class="preview-section"><h3>Miscellaneous</h3><div style="font-size:13px;line-height:2">';
-  if(mi.monthlyCleanings) html+=pcb('Monthly Cleanings'+(mi.cleaningPrice?' ($'+mi.cleaningPrice+')':''),true);
+  if(mi.monthlyCleanings) html+=pcb('Monthly Cleanings'+(cleaningText(mi)?' ('+cleaningText(mi)+')':''),true);
   html+='<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Note: '+escHtml(mi.notes||'No Note Available')+'</div>';
   html+='</div></div>';
 

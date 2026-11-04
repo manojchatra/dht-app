@@ -73,7 +73,7 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
 <main class="main">
   <div class="page-header">
     <h1>Inventory</h1>
-    <a href="/inventory/add" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add to Inventory</a>
+    <a href="/inventory/add" class="btn btn-primary sales-hide"><i class="fa-solid fa-plus"></i> Add to Inventory</a>
   </div>
 
   <div class="inv-toolbar">
@@ -92,13 +92,14 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
       <thead><tr>
         <th>Make</th><th>Series</th><th>Model</th><th>Year</th><th>Shell</th><th>Cabinet</th>
         <th>Serial Number</th><th>SKU Number</th><th>Availability</th><th>Location</th><th>Line</th><th>Bay</th>
-        <th>Steps</th><th>Cover</th><th>Finance</th><th>Speaker</th>
-        <th>Web Order Number</th><th>Truck Number</th><th>Photos</th><th>Actions</th>
+        <th>Steps</th><th>Cover</th><th class="no-sales">Finance</th><th>Speaker</th>
+        <th>Web Order Number</th><th>Truck Number</th><th>Photos</th><th class="no-sales">Actions</th>
       </tr></thead>
       <tbody id="invTbody"><tr><td colspan="20" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
     </table>
   </div>
   <div class="inv-cards" id="invCards"></div>
+  <div class="list-footer" id="listFooter" style="display:none;margin-top:12px"></div>
 </main>
 
 <div class="modal-overlay" id="photoModal">
@@ -171,13 +172,16 @@ function filterItems(){
 function isAdmin(){ return window._userRole==='admin'; }
 // Line/Bay (where the unit sits) can also be set by warehouse staff — server allows only those two.
 function canEditLocationRef(){ return isAdmin() || window._userRole==='warehouse'; }
+// Sales: view-only — no Finance, no Actions (the server sends no Finance either).
+function isSales(){ return window._userRole==='sales'; }
 
 // "Jane Smith · DHT2610PH00066" for a spa linked to a contract: a link that
-// opens the contract in a new tab for admin; plain text for warehouse (who
-// can't open contracts).
+// opens the contract in a new tab for admin, and for sales on their own
+// contracts (the server sends linked_contract_id only for those); plain text
+// for warehouse and for another salesperson's contract.
 function linkedContract(it){
   var label=[it.linked_customer_name,it.linked_contract_number].filter(Boolean).join(' · ');
-  if(!isAdmin()) return '<strong>'+escHtml(label)+'</strong>';
+  if(!(isAdmin() || (isSales() && it.linked_contract_id))) return '<strong>'+escHtml(label)+'</strong>';
   return '<a href="/contracts/'+encodeURIComponent(it.linked_contract_id)+'" target="_blank" rel="noopener" title="Open the contract in a new tab" style="font-weight:600;color:var(--accent)">'+escHtml(label)+'</a>';
 }
 function availSelect(it){
@@ -218,12 +222,13 @@ function textField(it,field,editable){
 }
 function photoCell(it){
   var out='';
-  if(it.sku_photo_url) out+='<img class="photo-thumb" src="'+it.sku_photo_url+'" title="SKU photo" onclick="openPhoto(\''+it.sku_photo_url+'\')" style="margin-right:4px">';
-  if(it.serial_photo_url) out+='<img class="photo-thumb" src="'+it.serial_photo_url+'" title="Serial photo" onclick="openPhoto(\''+it.serial_photo_url+'\')">';
+  if(it.sku_photo_url) out+='<img class="photo-thumb" loading="lazy" src="'+thumbUrl(it.sku_photo_url)+'" title="SKU photo" onclick="openPhoto(\''+it.sku_photo_url+'\')" style="margin-right:4px">';
+  if(it.serial_photo_url) out+='<img class="photo-thumb" loading="lazy" src="'+thumbUrl(it.serial_photo_url)+'" title="Serial photo" onclick="openPhoto(\''+it.serial_photo_url+'\')">';
   if(!it.sku_photo_url && !it.serial_photo_url) out='<span class="no-photo">—</span>';
   return out;
 }
 function actionsCell(it){
+  if(isSales()) return '';
   const dirty = canEditLocationRef() && !!pendingChanges[it.id];
   var out='<button type="button" id="save-'+it.id+'" class="btn-row-save" style="display:'+(dirty?'inline-block':'none')+'" onclick="saveRow('+it.id+')" title="Save changes"><i class="fa-solid fa-floppy-disk"></i></button>';
   if(it.availability==='Ordered' && !it.reserved_contract_number){
@@ -235,15 +240,23 @@ function actionsCell(it){
   return out;
 }
 
+// 50 rows at a time (listFooter in util.js). A new search or filter starts
+// again at the first 50; a save or delete keeps what was already shown.
+let shownCount=LIST_PAGE, shownKey='';
 function renderInventory(){
-  const items=filterItems();
+  const all=filterItems();
   const tbody=document.getElementById('invTbody');
   const cards=document.getElementById('invCards');
-  if(!items.length){
+  const key=['searchInput','availFilter','locFilter'].map(function(id){return document.getElementById(id).value.trim();}).join('|');
+  if(key!==shownKey){ shownCount=LIST_PAGE; shownKey=key; }
+  listFooter(document.getElementById('listFooter'),shownCount,all.length,'items',
+    function(){shownCount+=LIST_PAGE;renderInventory();},function(){shownCount=all.length;renderInventory();});
+  if(!all.length){
     tbody.innerHTML='<tr><td colspan="20" style="text-align:center;color:var(--text-muted);padding:20px">No inventory items found</td></tr>';
     cards.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No inventory items found</p></div>';
     return;
   }
+  const items=all.slice(0,shownCount);
   tbody.innerHTML=items.map(function(it){
     const dirty = !!pendingChanges[it.id];
     return '<tr id="row-'+it.id+'" class="'+(it.availability==='Sold'?'sold-row ':'')+(dirty?'row-dirty':'')+'">'
@@ -261,12 +274,12 @@ function renderInventory(){
       +'<td>'+textField(it,'bay',canEditLocationRef())+'</td>'
       +'<td>'+textField(it,'steps')+'</td>'
       +'<td>'+textField(it,'cover')+'</td>'
-      +'<td>'+financeSelect(it)+'</td>'
+      +(isSales()?'':'<td>'+financeSelect(it)+'</td>')
       +'<td>'+speakerSelect(it)+'</td>'
       +'<td>'+escHtml(it.web_order_number||'')+'</td>'
       +'<td>'+escHtml(it.truck_number||'')+'</td>'
       +'<td>'+photoCell(it)+'</td>'
-      +'<td class="actions-cell">'+actionsCell(it)+'</td>'
+      +(isSales()?'':'<td class="actions-cell">'+actionsCell(it)+'</td>')
       +'</tr>';
   }).join('');
 
@@ -285,7 +298,7 @@ function renderInventory(){
       +(isAdmin()?'<div><label>Year</label>'+textField(it,'year')+'</div>':'')
       +'<div><label>Steps</label>'+textField(it,'steps')+'</div>'
       +'<div><label>Cover</label>'+textField(it,'cover')+'</div>'
-      +'<div><label>Finance</label>'+financeSelect(it)+'</div>'
+      +(isSales()?'':'<div><label>Finance</label>'+financeSelect(it)+'</div>')
       +'<div><label>Speaker</label>'+speakerSelect(it)+'</div>'
       +(it.web_order_number?'<div><label>Web Order #</label>'+escHtml(it.web_order_number)+'</div>':'')
       +(it.truck_number?'<div><label>Truck #</label>'+escHtml(it.truck_number)+'</div>':'')
@@ -392,7 +405,10 @@ async function submitReceiveModal(){
 // Deferred until sidebar.js's auth check sets window._userRole, so the
 // admin-only delete button in actionsCell() is never computed before it's known
 // (same convention as view-contracts.html / status.html / contract-detail.html).
-window._onAuthReady = loadInventory;
+window._onAuthReady = function(){
+  if(isSales()) document.querySelectorAll('th.no-sales').forEach(function(th){ th.style.display='none'; });
+  loadInventory();
+};
 </script>
 </body>
 </html>

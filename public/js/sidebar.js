@@ -143,6 +143,11 @@ async function initSidebar() {
     }
   }
 
+  // Sales: Inventory is view-only — Add to Inventory goes back to the list.
+  if (u.role === 'sales' && window.location.pathname.startsWith('/inventory/add')) {
+    window.location.href = '/inventory'; return;
+  }
+
   // Set before _onAuthReady() — pages (e.g. delivery-view.html) read this
   // inside their own _onAuthReady to make role-specific UI decisions.
   // calendar.html specifically needs _userTeam to filter events down to a
@@ -173,6 +178,8 @@ async function initSidebar() {
   // one navigates away, briefly renders the destination page, then this
   // same script's redirect block above (or the destination page's own auth
   // check) bounces them back, showing as a blank-flash-then-reload.
+  if (['admin', 'warehouse', 'sales'].includes(u.role)) document.querySelectorAll('.inventory-nav').forEach(el => { el.style.display = ''; });
+  if (u.role === 'sales') document.querySelectorAll('.sales-hide').forEach(el => { el.style.display = 'none'; });
   if (u.role === 'warehouse') document.querySelectorAll('.warehouse-hide').forEach(el => { el.style.display = 'none'; });
   if (u.role === 'delivery')  document.querySelectorAll('.delivery-hide').forEach(el => { el.style.display = 'none'; });
 }

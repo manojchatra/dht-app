@@ -37,6 +37,7 @@ const { moveToDelivered } = require('../services/driveInventory');
 const { deleteCalendarEvent } = require('../services/googleCalendar');
 const { buildDriveData } = require('./contracts');
 const { withLock } = require('../utils/asyncLock');
+const { totalPaid: paidTotal } = require('../utils/paymentTotals');
 
 // Auth middleware — delivery or admin
 function requireDeliveryOrAdmin(req, res, next) {
@@ -234,8 +235,10 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       // Re-check fresh, now that we hold the lock — `contract` above could be
       // stale if another request for this contract already ran while this
       // one was queued.
-      const fresh = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
-      const blocked = ackBlockReason(fresh, req.currentUser);
+      // Everything below uses this fresh copy — the PDF and the image list too
+      // (an edit saved while this waited would otherwise be written over).
+      const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+      const blocked = ackBlockReason(contract, req.currentUser);
       if (blocked) return res.status(400).json({ error: blocked });
 
       const { customerNameTyped, deliveredBy, formDataJson } = req.body;
@@ -255,6 +258,8 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       const exFiles = req.files?.exceptionImages || [];
       if (exceptions && exFiles.length === 0)
         return res.status(400).json({ error: 'At least 1 photo required when exceptions are noted' });
+      if (!(req.files?.deliveryPhotos || []).length)
+        return res.status(400).json({ error: 'At least 1 delivery photo is required' });
 
       // Contract folder
       const contractFolder = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
@@ -313,9 +318,9 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
 
       // The delivery is done — take it off the Google Calendar, as Mark
       // Delivered on the Status page does (non-fatal).
-      if (fresh.calendar_event_id) {
+      if (contract.calendar_event_id) {
         try {
-          await deleteCalendarEvent(fresh.calendar_event_id);
+          await deleteCalendarEvent(contract.calendar_event_id);
           db.prepare('UPDATE contracts SET calendar_event_id=NULL WHERE id=?').run(contract.id);
         } catch (e) { console.error('[Calendar delete on acknowledgement failed — non-fatal]', e.message); }
       }
@@ -365,6 +370,14 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
 
       logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'ACK_SUBMITTED', actor: req.session.username||req.session.team||'delivery', detail: emailError ? 'Acknowledgement saved, email failed: '+emailError : 'Acknowledgement submitted' });
       addNotification(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'DELIVERED', color: 'green', message: contract.contract_number+' — marked delivered via acknowledgement' });
+      // The crew isn't stopped by a balance (the spa is already there — e.g.
+      // an edit after scheduling raised the total); the office is told instead.
+      const owed = Math.round((parseFloat(contract.grand_total || 0) - paidTotal(db, contract.id)) * 100) / 100;
+      if (owed > 0) {
+        const msg = `${contract.contract_number} delivered with $${owed.toLocaleString('en-US', { minimumFractionDigits: 2 })} still owed`;
+        addNotification(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'DELIVERED_OWING', color: 'red', message: msg });
+        logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'DELIVERED_OWING', actor: 'system', detail: msg });
+      }
       // The Google review email is no longer queued here — the salesperson
       // chooses to send it from the post-delivery feedback form.
       // Tell the salesperson to start their 48-hour follow-up — the admin
@@ -391,8 +404,14 @@ router.get('/smtp-status', requireDeliveryOrAdmin, (req, res) => {
 });
 
 // ── GET /api/delivery/email-recipients — get recipients for popup ─────────────
+// Admin, or the delivery team the contract is scheduled for (the crew emailing
+// the acknowledgement they're signing) — not any delivery login for any contract.
 router.get('/email-recipients/:contractId', requireDeliveryOrAdmin, (req, res) => {
-  const contract = db.prepare('SELECT data, salesman, salesman_user_id FROM contracts WHERE id=?').get(req.params.contractId);
+  const contract = db.prepare('SELECT data, salesman, salesman_user_id, status, delivery_team FROM contracts WHERE id=?').get(req.params.contractId);
+  if (req.currentUser.role === 'delivery'
+      && !(contract && contract.status === 'scheduled' && contract.delivery_team === req.currentUser.team)) {
+    return res.status(403).json({ error: 'This delivery isn\'t scheduled for your team.' });
+  }
   const custEmail = contract ? JSON.parse(contract.data||'{}').customer?.email : null;
   const settingsRecipients = getEmailRecipients();
 
@@ -420,7 +439,10 @@ router.get('/email-recipients/:contractId', requireDeliveryOrAdmin, (req, res) =
 });
 
 // ── POST /api/delivery/send-ack/:id — resend ack email (admin) ───────────────
+// Admin only (the contract page's resend) — a delivery login could otherwise
+// email any customer's signed acknowledgement to any address.
 router.post('/send-ack/:id', requireDeliveryOrAdmin, async (req, res) => {
+  if (req.currentUser.role !== 'admin') return res.status(403).json({ error: 'Forbidden — Admin only' });
   try {
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Not found' });

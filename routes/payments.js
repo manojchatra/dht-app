@@ -12,6 +12,7 @@ const { withLock } = require('../utils/asyncLock');
 const { requireRole, requireAdmin } = require('../middleware/auth');
 const { phoenixToday } = require('../utils/arizona');
 const { totalPaid: paidTotal, paidThrough } = require('../utils/paymentTotals');
+const { moneyOk } = require('../utils/money');
 
 // Payment data is financial/customer data — only admin and sales have any
 // business reason to see it. Ownership (which salesman) is checked per
@@ -103,7 +104,7 @@ router.post('/', withChequePhoto, async (req, res) => {
       if (dup) { discardUpload(); return res.json(existingPaymentResponse(dup.id)); }
     }
 
-    const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+    let contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
     if (!contract) { discardUpload(); return res.status(404).json({ error: 'Contract not found' }); }
     if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {
       discardUpload();
@@ -116,12 +117,26 @@ router.post('/', withChequePhoto, async (req, res) => {
     // partial payments could otherwise both pass the check. See
     // utils/asyncLock.js.
     return await withLock('contract-payment:' + contractId, async () => {
+    // Read again now that it's this request's turn: an edit saved while this
+    // payment waited may have changed the Grand Total.
+    contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+    if (!contract) { discardUpload(); return res.status(404).json({ error: 'Contract not found' }); }
+    // Money kept or refunded on a cancellation is handled outside the portal.
+    if (contract.status === 'cancelled') {
+      discardUpload();
+      return res.status(400).json({ error: `${contract.contract_number} is cancelled — payments can't be recorded on it.` });
+    }
 
-    // "1,500" / "$1,500" is 1500 (plain parseFloat would read 1).
+    // "1,500" / "$1,500" is 1500 (plain parseFloat would read 1); a comma in
+    // the wrong place ("1,5000") is refused rather than guessed.
     const amt = parseFloat(String(amount ?? '').replace(/[$,\s]/g, ''));
     if (!Number.isFinite(amt) || amt <= 0) {
       discardUpload();
       return res.status(400).json({ error: 'Amount must be a positive number' });
+    }
+    if (!moneyOk(amount)) {
+      discardUpload();
+      return res.status(400).json({ error: `Amount looks wrong: ${String(amount).trim()} — use 1500 or 1,500` });
     }
 
     const totalPaidBefore = paidTotal(db, contractId);

@@ -44,6 +44,7 @@
 .pay-banner{display:flex;align-items:center;gap:7px;padding:8px 16px;font-size:11.5px;font-weight:600}
 .banner-pending{background:var(--red-bg);color:var(--red)}
 .banner-paid{background:var(--green-bg);color:var(--green)}
+.banner-cancelled{background:var(--surface2);color:var(--text-muted)}
 .card-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
 .card-actions .btn{flex:1;justify-content:center}
 .card-img-row{display:flex;gap:6px;padding:0 16px 12px;overflow:hidden}
@@ -96,6 +97,7 @@
   <div class="contracts-grid" id="contractsGrid">
     <div class="empty-state" style="grid-column:1/-1"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div>
   </div>
+  <div class="list-footer" id="listFooter" style="display:none"></div>
 </main>
 
 
@@ -256,6 +258,7 @@ function toggleActionMenu(e,id){
 </script>
 <script>
 let allContracts=[],paymentContractId=null,currentBalance=0;
+let filteredContracts=[],shownCount=LIST_PAGE; // 50 cards at a time (listFooter in util.js)
 const BADGE={assigned:'badge-assigned',tbo:'badge-tbo',order_placed:'badge-tbo',received:'badge-tbo',scheduled:'badge-scheduled',delivered:'badge-delivered',cancelled:'badge-cancelled'};
 const STATUS_LABEL={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
 
@@ -278,6 +281,8 @@ function contractYear(c){return String(c.date||c.created_at||'').slice(0,4);}
 // Year/Brand/Salesman options come from the contracts themselves, so a new
 // brand or salesman shows up without a code change. Keeps the current
 // selection if it still exists after a reload (e.g. after recording a payment).
+// Cancelled contracts owe nothing (money kept or refunded is handled outside the portal).
+function isOwing(c){return c.status!=='cancelled'&&parseFloat(c.due_prior||0)>0;}
 function fillSelect(id,values){
   const sel=document.getElementById(id);
   const keep=sel.value;
@@ -311,7 +316,7 @@ function clearFilters(){
 }
 
 function renderStats(c){
-  const pending=c.filter(x=>parseFloat(x.due_prior||0)>0).length;
+  const pending=c.filter(isOwing).length;
   const scheduled=c.filter(x=>x.status==='scheduled').length;
   const tbo=c.filter(x=>x.status==='tbo').length;
   document.getElementById('statsRow').innerHTML=`
@@ -336,8 +341,8 @@ function filterCards(){
     if(store&&c.store!==store)return false;
     if(channel&&(c.sale_channel||'showroom')!==channel)return false;
     if(status&&c.status!==status)return false;
-    if(pay==='pending'&&!(parseFloat(c.due_prior||0)>0))return false;
-    if(pay==='paid'&&parseFloat(c.due_prior||0)>0)return false;
+    if(pay==='pending'&&!isOwing(c))return false;
+    if(pay==='paid'&&(isOwing(c)||c.status==='cancelled'))return false;
     if(year&&contractYear(c)!==year)return false;
     if(brand&&String(c.make||'').trim()!==brand)return false;
     if(salesman&&String(c.salesman||'').trim()!==salesman)return false;
@@ -347,14 +352,22 @@ function filterCards(){
     ? allContracts.length+' total'
     : filtered.length+' of '+allContracts.length;
   renderStats(filtered);
-  renderCards(filtered);
+  // A new search or filter starts again at the first 50; a reload after an
+  // action (payment, image, delete) keeps what was already shown.
+  const key=[q,store,channel,status,pay,year,brand,salesman].join('|');
+  if(key!==filterCards.key){shownCount=LIST_PAGE;filterCards.key=key;}
+  filteredContracts=filtered;
+  renderCards();
   syncFiltersToUrl();
 }
 
-function renderCards(contracts){
-  const grid=document.getElementById('contractsGrid');
-  if(!contracts.length){grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="fa-solid fa-file-contract"></i><p>No contracts found</p></div>';return;}
-  grid.innerHTML=contracts.map(c=>buildCard(c)).join('');
+function renderCards(){
+  const grid=document.getElementById('contractsGrid'),contracts=filteredContracts;
+  const footer=()=>listFooter(document.getElementById('listFooter'),shownCount,contracts.length,'contracts',
+    ()=>{shownCount+=LIST_PAGE;renderCards();},()=>{shownCount=contracts.length;renderCards();});
+  if(!contracts.length){grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="fa-solid fa-file-contract"></i><p>No contracts found</p></div>';footer();return;}
+  grid.innerHTML=contracts.slice(0,shownCount).map(c=>buildCard(c)).join('');
+  footer();
 }
 
 // Money with exactly 2 decimals, e.g. 7087 -> "7,087.00", 0.0900000000000145 -> "0.09".
@@ -371,7 +384,7 @@ function financeIcon(finance){
 const cardPhotos={}; // contract id -> its photo URLs (no PDFs), for the viewer's ‹ › arrows
 
 function buildCard(c){
-  const hasPending=parseFloat(c.due_prior||0)>0;
+  const hasPending=isOwing(c);
   const isAdmin=window._userRole==='admin';
   const dateStr=c.date?new Date(c.date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
   const imgs=[c.contract_image_url,c.cheque_image_url,...(c.extra_images_data||[]).map(i=>i.url)].filter(Boolean);
@@ -386,7 +399,7 @@ function buildCard(c){
   const imgRow=imgs.length?`<div class="card-img-row">${shown.map(u=>
     isPdf(u)
       ? `<a href="${u}" target="_blank" class="card-pdf-thumb" title="View PDF"><i class="fa-solid fa-file-pdf"></i></a>`
-      : `<img src="${u}" class="card-img-thumb" onclick="openGallery(cardPhotos[${c.id}],${photos.indexOf(u)})" alt="Image">`
+      : `<img src="${thumbUrl(u)}" loading="lazy" class="card-img-thumb" onclick="openGallery(cardPhotos[${c.id}],${photos.indexOf(u)})" alt="Image">`
   ).join('')}${moreTile}</div>`:'';
   // The name travels in a data attribute (read back as plain text) — putting it
   // inside the onclick's JavaScript let a customer name run as code.
@@ -407,14 +420,15 @@ function buildCard(c){
       <div class="meta-row"><span class="lbl">Grand Total</span><span class="val total">${c.grand_total?'$'+c.grand_total:'—'}</span></div>
     </div>
     ${imgRow}
-    ${hasPending?`<div class="pay-banner banner-pending"><i class="fa-solid fa-triangle-exclamation"></i> Due: $${fmtMoney(c.due_prior)}</div>`:`<div class="pay-banner banner-paid"><i class="fa-solid fa-circle-check"></i> Paid</div>`}
+    ${c.status==='cancelled'?`<div class="pay-banner banner-cancelled"><i class="fa-solid fa-ban"></i> Cancelled</div>`
+      :hasPending?`<div class="pay-banner banner-pending"><i class="fa-solid fa-triangle-exclamation"></i> Due: $${fmtMoney(c.due_prior)}</div>`:`<div class="pay-banner banner-paid"><i class="fa-solid fa-circle-check"></i> Paid</div>`}
     <div class="card-actions">
       <a href="/contracts/${c.id}" class="btn btn-secondary btn-sm"><i class="fa-solid fa-eye"></i> View</a>
       <a href="/api/contracts/${c.id}/pdf" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i> PDF</a>
       <div class="action-menu">
         <button class="three-dot-btn" onclick="toggleActionMenu(event,${c.id})"><i class="fa-solid fa-ellipsis-vertical"></i></button>
         <div class="action-dropdown" id="dd-${c.id}">
-          <button onclick="openPaymentModal(${c.id},${parseFloat(c.due_prior||0)})"><i class="fa-solid fa-money-bill-wave" style="color:var(--green)"></i> Record Payment</button>
+          ${hasPending?`<button onclick="openPaymentModal(${c.id},${parseFloat(c.due_prior||0)})"><i class="fa-solid fa-money-bill-wave" style="color:var(--green)"></i> Record Payment</button>`:''}
           <button onclick="openAddImageModal(${c.id})"><i class="fa-solid fa-image" style="color:var(--accent)"></i> Add Image</button>
           ${(c.status==='tbo'||c.status==='scheduled')?`<button onclick="openSerialModalCard(${c.id})"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign SI. No</button>`:''}
           <button disabled style="opacity:.4;cursor:not-allowed"><i class="fa-solid fa-envelope" style="color:var(--accent)"></i> Send Email</button>

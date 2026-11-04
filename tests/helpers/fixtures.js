@@ -48,7 +48,13 @@ function contractFormData(overrides = {}) {
     details: { spaPrice: '5000' },
     customerSignature: SIGNATURE_PNG,
   };
-  return { ...base, ...overrides };
+  const out = { ...base, ...overrides };
+  // The server works the Grand Total out again from the prices: a test that
+  // only sets a Grand Total gets a spa price that adds up to it (no tax).
+  if (overrides.costing && !overrides.details && out.costing.grandTotal !== undefined) {
+    out.details = { spaPrice: String(out.costing.grandTotal) };
+  }
+  return out;
 }
 
 /** Creates a contract via the API and returns the parsed response body ({ contractId, contractNumber, ... }). */

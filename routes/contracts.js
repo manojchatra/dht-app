@@ -16,12 +16,13 @@ const {
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, deleteInventoryRow, updateInventoryItemField, deleteInventoryItem,
-  deleteContractRowFromSheet, appendInventoryItem
+  deleteContractRowFromSheet, appendInventoryItem, updateContractRowInSheet, updatePaymentInSheet
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
-const { getUnreservedOrdered, reserveOrdered, receiveSerialConflict, receiveReservedUnit } = require('../services/orderedStock');
+const { getUnreservedOrdered, reserveOrdered, receiveSerialConflict, linkReceivedUnit, serialWas, keepOrderedSpa } = require('../services/orderedStock');
+const { removeContractThumbs } = require('../middleware/thumbnails');
 const { normalizeMake } = require('../utils/makes');
 const { normalizeColour } = require('../utils/colours');
 const { cleanSaleChannel, saleChannelLabel } = require('../utils/saleChannel');
@@ -29,6 +30,9 @@ const { withLock } = require('../utils/asyncLock');
 const { phoenixToday } = require('../utils/arizona');
 const { statusName } = require('../utils/contractStatus');
 const { teamName } = require('../utils/teams');
+const { editBlockReason, planContractEdit, changeText, removableImage, TOTALS_MISMATCH } = require('../services/contractEdit');
+const { computeTotals } = require('../utils/contractTotals');
+const { moneyError, contractMoneyFields, moneyOk } = require('../utils/money');
 const { zoneForZip } = require('../utils/deliveryZones');
 // Delivery zone of a zip, for the portal calendar's colours (same as Google's).
 const zoneFields = zip => { const z = zoneForZip(zip); return { zone_name: z.name, zone_color: z.hex, zone_text_color: z.text }; };
@@ -281,7 +285,8 @@ router.get('/:id', (req, res) => {
     const row = db.prepare(`
       SELECT c.*, cu.customer_number, cu.name AS customer_name,
         COALESCE(json_extract(c.data,'$.customer.address'), cu.address) AS customer_address,
-        inv.finance AS linked_finance
+        inv.finance AS linked_finance,
+        inv.id AS linked_unit_id, inv.serial_number AS linked_unit_serial -- Edit page: make/model locked when set
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       LEFT JOIN inventory inv ON inv.contract_id = c.id
@@ -414,6 +419,16 @@ router.post('/', uploadFields, async (req, res) => {
     // checks below, the payments seeded at signing and everything that later reads
     // the stored Grand Total (payments, balances, receipts) see the same number.
     // (parseFloat("10,000") is 10 — that used to record a $10,000 deposit as $10.)
+    // A comma in the wrong place ("20,0300") is refused, not read as $200,300.
+    const badMoney = moneyError(contractMoneyFields(formData));
+    if (badMoney) return res.status(400).json({ error: badMoney });
+    // Monthly cleanings: how many months (optional, 1–60) and whether they're included.
+    if (formData.misc) {
+      const m = String(formData.misc.cleaningMonths ?? '').trim();
+      if (m && !(/^\d+$/.test(m) && +m >= 1 && +m <= 60)) return res.status(400).json({ error: 'Monthly cleanings: months must be a whole number from 1 to 60' });
+      formData.misc.cleaningMonths = m;
+      formData.misc.cleaningIncluded = !!formData.misc.cleaningIncluded;
+    }
     if (costing && costing.grandTotal !== undefined && costing.grandTotal !== '') costing.grandTotal = String(money(costing.grandTotal));
     for (const k of ['cheque', 'cash', 'creditCard', 'finance']) {
       if (payment?.[k] && payment[k].amount !== undefined && payment[k].amount !== '') payment[k].amount = String(money(payment[k].amount));
@@ -427,6 +442,14 @@ router.post('/', uploadFields, async (req, res) => {
     }
     if (!(money(costing?.grandTotal) > 0)) {
       payErrors.push('Grand Total must be a valid amount greater than $0');
+    } else {
+      // The Grand Total is worked out again here (utils/contractTotals.js, the
+      // same sum as the page) — a stale or faulty page can't save a wrong one.
+      const serverTotal = computeTotals(details, formData.service, costing?.taxPercent).grandTotal;
+      if (Math.abs(serverTotal - money(costing.grandTotal)) > 0.01) {
+        console.warn(`[New contract] page total ${costing.grandTotal} ≠ server total ${serverTotal}`);
+        payErrors.push(TOTALS_MISMATCH);
+      }
     }
     if (payment?.cheque?.selected) {
       if (!payment.cheque.number) payErrors.push('Cheque number is required');
@@ -886,6 +909,16 @@ async function syncCalendarEvent(contractId) {
 }
 
 // ── Update status ─────────────────────────────────────────────────────────────
+// Allowed moves (current status → new status). Delivered is final; a cancelled
+// contract goes back to Assigned only if In Stock (checked below).
+const STATUS_MOVES = {
+  assigned:     ['scheduled', 'delivered', 'cancelled'],
+  tbo:          ['order_placed', 'cancelled'],
+  order_placed: ['received', 'cancelled'],
+  received:     ['scheduled', 'delivered', 'cancelled'],
+  scheduled:    ['scheduled', 'delivered', 'cancelled'],
+  cancelled:    ['assigned'],
+};
 router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => {
   const VALID = ['assigned','tbo','order_placed','scheduled','delivered','cancelled','received'];
   const { status, deliveryDate, scheduledDatetime, scheduledDuration } = req.body;
@@ -949,6 +982,16 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     if (status === contract.status && status !== 'scheduled') {
       return res.status(400).json({ error: `Contract is already ${statusName(status)}.` });
     }
+    // Only the moves the Status page offers. Anything else would skip its clean-up
+    // (calendar event, Sheet row, inventory) — e.g. Scheduled → Assigned left
+    // the delivery on the Google Calendar.
+    if (status === 'assigned' && contract.status === 'scheduled') {
+      return res.status(400).json({ error: 'A scheduled delivery can\'t go back to Assigned — use Reschedule, or Cancel the contract.' });
+    }
+    // (Order Placed has its own, clearer message just below.)
+    if (status !== 'order_placed' && !(STATUS_MOVES[contract.status] || []).includes(status)) {
+      return res.status(400).json({ error: `${contract.contract_number} can't be changed from ${statusName(contract.status)} to ${statusName(status)}.` });
+    }
 
     // Order Placed: only reachable from TBO, and requires both fields — unless
     // admin links on-order stock (inventoryId), whose Web Order # / Truck # are used.
@@ -967,13 +1010,17 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
       }
     }
 
-    // Block scheduling if balance > 0
-    if (status === 'scheduled') {
+    // Block scheduling or marking Delivered if balance > 0. (The crew's
+    // acknowledgement isn't blocked — the spa is already there; the office is
+    // notified instead. Back-entered sales are saved by New Contract.)
+    if (status === 'scheduled' || status === 'delivered') {
       const gtNum = parseFloat(contract.grand_total || 0);
       const balance = Math.round((gtNum - paidTotal(db, req.params.id)) * 100) / 100;
       if (balance > 0) {
         return res.status(400).json({
-          error: 'Balance of $' + Math.round(balance).toLocaleString() + ' must be cleared before scheduling.'
+          error: status === 'scheduled'
+            ? 'Balance of $' + Math.round(balance).toLocaleString() + ' must be cleared before scheduling.'
+            : `${contract.contract_number} still owes $${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })} — record the payment before marking it Delivered.`
         });
       }
     }
@@ -1031,7 +1078,9 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
     } else if (status === 'cancelled') {
       db.prepare('UPDATE contracts SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run(status, req.params.id);
-      const released = await releaseInventoryForContract(contract.id);
+      // (contract is the row as read before this change — still Order Placed.)
+      const kept = await keepOrderedSpa(db, contract, req.session.username || 'system');
+      const released = (await releaseInventoryForContract(contract.id)).concat(kept ? [kept] : []);
       if (released.length) {
         logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'INVENTORY_RELEASED',
           actor: req.session.username || 'system', detail: `Returned to stock: ${released.join(', ')}` });
@@ -1153,6 +1202,100 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
   }
 });
 
+// ── Edit a saved contract (services/contractEdit.js) ──────────────────────────
+// After saving: the contract's Sheet row and Customer Record row, and its
+// calendar event (address / zone colour) if Scheduled. Non-fatal. The contract
+// PDF is rebuilt on its next download (updated_at changed).
+async function syncAfterEdit(contractId) {
+  const c = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+  const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(c.customer_id);
+  try { await updateContractRowInSheet(c.contract_number, buildDriveData(c, customer, null)); }
+  catch (e) { console.error('[Drive contract row rewrite failed — non-fatal]', e.message); }
+  if (c.customer_id) await syncCustomerRecordsForCustomer(c.customer_id); else await syncCustomerRecord(c.id);
+  await syncCalendarEvent(c.id);
+}
+
+function loadForEdit(req, res) {
+  const c = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
+  if (!c) { res.status(404).json({ error: 'Not found' }); return null; }
+  const blocked = editBlockReason(req.session, c);
+  if (blocked) { res.status(403).json({ error: blocked }); return null; }
+  return c;
+}
+
+// POST /:id/edit  { form: <New Contract form data>, reason, removeImages: [url, …] }
+// The Edit contract page (create-contract.html in edit mode). Only the editable
+// fields are taken from the form (services/contractEdit.js); totals are worked
+// out again here; removed images are unlinked from the contract and their files
+// deleted. One activity-log entry lists every change and the reason.
+router.post('/:id/edit', async (req, res) => {
+  const reason = String(req.body?.reason ?? '').trim();
+  try {
+    // Same locks as a payment and a status change: the balance check and the
+    // save can't interleave with either.
+    await withLock('contract-payment:' + req.params.id, () => withLock('contract-status:' + req.params.id, async () => {
+      const c = loadForEdit(req, res); if (!c) return;
+      if (!reason) return res.status(400).json({ error: 'A reason is required to edit the contract.' });
+      const linkedUnit = db.prepare('SELECT id, serial_number FROM inventory WHERE contract_id=?').get(c.id) || null;
+      const plan = planContractEdit(db, c, req.body.form || {}, { linkedUnit });
+      if (plan.error) return res.status(400).json({ error: plan.error });
+
+      // Images to remove (by the URL the page shows), only while the contract is open.
+      const wanted = new Set((Array.isArray(req.body.removeImages) ? req.body.removeImages : []).map(String));
+      const removed = [];
+      let contractImage = c.contract_image_path, chequeImage = c.cheque_image_path;
+      let extras = c.extra_images ? JSON.parse(c.extra_images) : [];
+      if (wanted.size && !plan.closed) {
+        const take = (p, label) => { if (p && wanted.has(toUrlPath(p)) && removableImage(p, label)) { removed.push({ path: p, label }); return true; } return false; };
+        if (take(contractImage, 'Contract')) contractImage = null;
+        if (take(chequeImage, 'Cheque')) chequeImage = null;
+        extras = extras.filter(i => !take(typeof i === 'string' ? i : i.path, typeof i === 'string' ? '' : i.label));
+      }
+      if (!plan.changes.length && !removed.length) return res.status(400).json({ error: 'Nothing was changed.' });
+
+      const d = plan.data, cu = d.customer;
+      db.transaction(() => {
+        db.prepare(`UPDATE contracts SET data=?, make=?, model=?, delivery_date=?, grand_total=?, due_prior=?, paid_amount=?,
+            contract_image_path=?, cheque_image_path=?, extra_images=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+          .run(JSON.stringify(d), d.product?.make ?? c.make, d.product?.model ?? c.model,
+            plan.closed ? c.delivery_date : (d.deliveryDate || null),
+            plan.totals ? d.costing.grandTotal : c.grand_total, String(plan.balance), String(plan.paid),
+            contractImage, chequeImage, extras.length ? JSON.stringify(extras) : null, c.id);
+        // Name, phones and email live on the shared customer record.
+        if (c.customer_id) {
+          db.prepare('UPDATE customers SET name=?, email=?, phone_cell=?, phone_home=?, phone_work=? WHERE id=?')
+            .run(cu.name, cu.email || null, cu.phone?.cell || null, cu.phone?.home || null, cu.phone?.work || null, c.customer_id);
+        }
+      })();
+      // Removed files go (the nightly Drive copy keeps a backup); only files in this contract's folder.
+      const folder = path.resolve(UPLOADS_DIR, 'contracts', c.contract_number);
+      for (const r of removed) {
+        if (path.dirname(path.resolve(r.path)) === folder) { try { fs.unlinkSync(r.path); } catch (e) { /* already gone */ } }
+      }
+
+      const money = v => '$' + Number(v).toFixed(2);
+      const parts = [];
+      if (plan.changes.length) parts.push(changeText(plan.changes));
+      if (plan.totals && plan.before.grandTotal !== plan.totals.grandTotal) parts.push(`Grand Total ${money(plan.before.grandTotal)} → ${money(plan.totals.grandTotal)}`);
+      if (plan.before.balance !== plan.balance) parts.push(`Balance ${money(plan.before.balance)} → ${money(plan.balance)}`);
+      if (removed.length) parts.push('Images removed: ' + removed.map(r => r.label || path.basename(r.path)).join(', '));
+      logActivity(db, { contractId: c.id, contractNum: c.contract_number, eventType: 'CONTRACT_EDITED', actor: req.session.username || 'system',
+        detail: parts.join(' · ') + ` — Reason: ${reason}` });
+
+      if (plan.totals) {
+        try { await updatePaymentInSheet(c.contract_number, plan.paid, plan.balance); }
+        catch (e) { console.error('[Drive payment update failed — non-fatal]', e.message); }
+      }
+      await syncAfterEdit(c.id);
+      res.json({ success: true, changes: plan.changes, removed: removed.length, totals: plan.totals, balance: plan.balance,
+        owesWhileScheduled: c.status === 'scheduled' && plan.balance > 0 });
+    }));
+  } catch (err) {
+    console.error('Contract edit error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to save the contract' });
+  }
+});
+
 // ── Assign serial number ───────────────────────────────────────────────────────
 // The serial is checked against inventory, as on New Contract, so a spa can't
 // be sold twice:
@@ -1261,6 +1404,9 @@ router.post('/:id/received', requireAdmin, (req, res) => {
     if (!serialNumber || !serialNumber.trim()) return res.status(400).json({ error: 'Serial number is required' });
     if (!req.file) return res.status(400).json({ error: 'Serial number photo is required' });
     try {
+      // One receive at a time per contract (same lock as status changes and
+      // edits): a double-click's second request finds it already Received.
+      return await withLock('contract-status:' + req.params.id, async () => {
       const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
       if (!contract) return res.status(404).json({ error: 'Not found' });
       if (contract.product_status === 'instock') {
@@ -1291,8 +1437,11 @@ router.post('/:id/received', requireAdmin, (req, res) => {
       const actualDate = receivedDate || phoenixToday();
       db.prepare('UPDATE contracts SET status=?,serial_number=?,data=?,extra_images=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run('received', serialNumber.trim(), JSON.stringify(data), JSON.stringify(filtered), req.params.id);
-      // On-order stock reserved by this contract: that unit gets the serial (Sold).
-      await receiveReservedUnit(db, contract.id, { serial: serialNumber.trim(), serialPhotoPath: finalPhotoPath });
+      // The spa in inventory, as the warehouse's receive does: the reserved
+      // on-order unit gets the serial, or an inventory spa with it is linked, or
+      // a new unit is added (Sold) — it used to be left out of inventory.
+      await linkReceivedUnit(db, contract, { serial: serialNumber.trim(), serialPhotoPath: finalPhotoPath,
+        addedBy: req.session.username || 'system', addedDate: actualDate });
       // Google Sheets (non-fatal)
       try {
         const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(contract.customer_id);
@@ -1302,12 +1451,15 @@ router.post('/:id/received', requireAdmin, (req, res) => {
         await moveToReceived(contract.contract_number, actualDate, photoUrl, driveData);
       } catch(e) { console.error('[Drive received failed]', e.message, e.stack); }
       await syncCustomerRecord(req.params.id);
+      logActivity(db, { contractId: contract.id, contractNum: contract.contract_number, eventType: 'MARK_RECEIVED',
+        actor: req.session.username || 'system', detail: `order_placed → received — Serial ${serialNumber.trim()}` + serialWas(contract, serialNumber.trim()) });
       try {
         const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
         const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
         await notifyReceived({ contract: freshContract, customerName: custName });
       } catch (e) { console.error('[Email notify RECEIVED failed — non-fatal]', e.message); }
       res.json({ success: true });
+      }); // end withLock
     } catch(err) {
       console.error('Received error:', err);
       res.status(500).json({ error: 'Failed to mark as received' });
@@ -1350,7 +1502,9 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     // foreign-key constraint would otherwise block the delete below):
     // undelivered units go back to In-stock; a delivered unit is at the
     // customer's, so it stays Sold. A mistyped serial is left for an admin to
-    // delete from Inventory.
+    // delete from Inventory. An Order Placed spa with no unit yet is added as
+    // on-order general stock — it's still coming on the truck.
+    await keepOrderedSpa(db, row, req.session.username || 'system');
     if (row.status !== 'delivered') await releaseInventoryForContract(row.id);
     db.prepare('UPDATE inventory SET contract_id=NULL WHERE contract_id=?').run(req.params.id);
 
@@ -1364,6 +1518,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     if (fs.existsSync(contractFolder)) {
       fs.rmSync(contractFolder, { recursive: true, force: true });
     }
+    removeContractThumbs(UPLOADS_DIR, row.contract_number);
 
     db.prepare('DELETE FROM contracts WHERE id=?').run(req.params.id);
     // Deleting is for mistakes — a customer left with no contracts goes too.
@@ -1439,7 +1594,12 @@ router.post('/:id/images', (req, res) => {
     const existing = contract.extra_images ? JSON.parse(contract.extra_images) : [];
     const safe     = label.replace(/[^a-zA-Z0-9 -]/g,'').trim().replace(/\s+/g,'-').slice(0,30) || 'image';
     const ext      = path.extname(req.file.originalname) || path.extname(req.file.path) || '.jpg';
-    const destPath = path.join(contractFolder, `extra-${existing.length+1}-${safe}${ext}`);
+    // The next number no file in the folder uses yet — "count + 1" repeated
+    // a number after an image was removed and overwrote another image.
+    const taken = new Set(fs.readdirSync(contractFolder).map(f => (f.match(/^extra-(\d+)-/) || [])[1]).filter(Boolean).map(Number));
+    let n = existing.length + 1;
+    while (taken.has(n)) n++;
+    const destPath = path.join(contractFolder, `extra-${n}-${safe}${ext}`);
     try { fs.renameSync(req.file.path, destPath); } catch(e) { /* keep original path */ }
     let finalPath = fs.existsSync(destPath) ? destPath : req.file.path;
 

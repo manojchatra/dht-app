@@ -15,12 +15,13 @@ const router  = express.Router();
 const db      = require('../db/database');
 const { compressAndGate } = require('../utils/imageUtils');
 const { requireRole } = require('../middleware/auth');
-const { moveToReceived, appendInventoryItem, inventoryItemExistsInSheet } = require('../services/driveInventory');
+const { moveToReceived } = require('../services/driveInventory');
+const { withLock } = require('../utils/asyncLock');
 const { logActivity, addNotification } = require('../utils/activityLogger');
 const { notifyReceived } = require('../utils/emailSender');
 const { buildDriveData } = require('./contracts');
 const { syncCustomerRecord } = require('../services/customers');
-const { receiveSerialConflict, receiveReservedUnit } = require('../services/orderedStock');
+const { receiveSerialConflict, linkReceivedUnit, serialWas } = require('../services/orderedStock');
 const { phoenixToday } = require('../utils/arizona');
 
 router.use(requireRole(['admin', 'warehouse']));
@@ -106,10 +107,14 @@ router.post('/:id/receive', (req, res) => {
     if (!req.files?.skuPhoto?.[0])    return res.status(400).json({ error: 'SKU barcode photo is required' });
 
     try {
+      // One receive at a time per contract (same lock as status changes and
+      // edits): a double-tap's second request then finds it already Received.
+      return await withLock('contract-status:' + req.params.id, async () => {
       const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
       if (!contract) return res.status(404).json({ error: 'Not found' });
       if (contract.status !== 'order_placed') {
-        return res.status(400).json({ error: 'Only Order Placed contracts can be marked received here.' });
+        return res.status(400).json({ error: contract.status === 'received'
+          ? `${contract.contract_number} is already received.` : 'Only Order Placed contracts can be marked received here.' });
       }
 
       const serial = serialNumber.trim();
@@ -132,61 +137,24 @@ router.post('/:id/receive', (req, res) => {
       db.prepare('UPDATE contracts SET status=?,serial_number=?,data=?,extra_images=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
         .run('received', serial, JSON.stringify(data), JSON.stringify(filteredImages), req.params.id);
 
-      // Create or link the inventory row for this physical unit — carries the
-      // contract's Web Order Number/Truck Number over too, same as the
-      // general "Add to Inventory" flow already does for Ordered stock.
-      const product = data.product || {};
-      // On-order stock this contract reserved: that unit gets the serial — no second unit.
-      // (receiveReservedUnit also updates that unit's Sheet row.)
-      const usedReserved = await receiveReservedUnit(db, contract.id, { serial, sku, skuPhotoPath, serialPhotoPath });
-      const invExisting = usedReserved ? null : db.prepare('SELECT id FROM inventory WHERE upper(trim(serial_number))=upper(trim(?))').get(serial);
-      if (usedReserved) {
-        // nothing more to create or link
-      } else if (invExisting) {
-        db.prepare(`UPDATE inventory SET contract_id=?,availability=?,sku_number=?,sku_photo_path=?,serial_photo_path=?,web_order_number=?,truck_number=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-          .run(req.params.id, 'Sold', sku, skuPhotoPath, serialPhotoPath, contract.web_order_number || '', contract.truck_number || '', invExisting.id);
-      } else {
-        db.prepare(`
-          INSERT INTO inventory
-            (make, model, shell_color, cabinet_color, serial_number, sku_number,
-             availability, sku_photo_path, serial_photo_path, contract_id, added_by,
-             web_order_number, truck_number)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-        `).run(
-          contract.make || product.make || '', contract.model || product.model || '',
-          product.shellColor || '', product.cabinetColor || '',
-          serial, sku, 'Sold', skuPhotoPath, serialPhotoPath, req.params.id,
-          req.session.username || 'system',
-          contract.web_order_number || '', contract.truck_number || ''
-        );
-      }
+      // The spa in inventory: the reserved on-order unit gets the serial, or an
+      // inventory spa with it is linked, or a new unit is added (Sold) — with
+      // the Inventory Items Sheet row (services/orderedStock.js).
+      await linkReceivedUnit(db, contract, { serial, sku, skuPhotoPath, serialPhotoPath,
+        addedBy: req.session.username || 'system', addedDate: actualDate });
 
-      // Google Sheets (non-fatal): move the contract's row to Received, and
-      // add this unit to the "Inventory Items" tab too (skipped by this flow
-      // before — that's why an editable field like Finance couldn't find it
-      // there afterward, since it looks the item up by Serial Number).
+      // Google Sheets (non-fatal): move the contract's row to Received.
       try {
         const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(contract.customer_id);
         const driveData = buildDriveData(contract, customer, null);
         driveData.serialNumber = serial;
         const photoUrl = 'https://app.deserthottubsaz.com' + (toUrlPath(serialPhotoPath) || '');
         await moveToReceived(contract.contract_number, actualDate, photoUrl, driveData);
-
-        const alreadyInSheet = usedReserved || await inventoryItemExistsInSheet(serial);
-        if (!alreadyInSheet) {
-          await appendInventoryItem({
-            serialNumber: serial, skuNumber: sku,
-            make: contract.make || product.make || '', model: contract.model || product.model || '',
-            shellColor: product.shellColor || '', cabinetColor: product.cabinetColor || '',
-            availability: 'Sold', addedDate: actualDate,
-            webOrderNumber: contract.web_order_number || '', truckNumber: contract.truck_number || '',
-          });
-        }
       } catch(e) { console.error('[Drive warehouse-received failed — non-fatal]', e.message); }
       await syncCustomerRecord(req.params.id);
 
       logActivity(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'MARK_RECEIVED',
-        actor: req.session.username || 'warehouse', detail: 'order_placed → received (warehouse)' });
+        actor: req.session.username || 'warehouse', detail: 'order_placed → received (warehouse)' + serialWas(contract, serial) });
       const custName = (() => { try { return JSON.parse(contract.data||'{}').customer?.name || ''; } catch(e){ return ''; } })();
       addNotification(db, { contractId: req.params.id, contractNum: contract.contract_number, eventType: 'RECEIVED',
         color: 'green', message: `${contract.contract_number} — ${custName} marked received` });
@@ -196,6 +164,7 @@ router.post('/:id/receive', (req, res) => {
       } catch (e) { console.error('[Email notify RECEIVED failed — non-fatal]', e.message); }
 
       res.json({ success: true });
+      }); // end withLock
     } catch (err) {
       console.error('Warehouse receive error:', err);
       res.status(500).json({ error: 'Failed to mark as received' });

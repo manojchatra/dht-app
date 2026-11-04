@@ -36,6 +36,7 @@ function createTestApp() {
     moveToCancelled:              jest.fn().mockResolvedValue(null),
     revertToAssigned:             jest.fn().mockResolvedValue(null),
     updateTBOSerial:              jest.fn().mockResolvedValue(null),
+    updateContractRowInSheet:     jest.fn().mockResolvedValue('Assigned'),
     moveToOrderPlaced:            jest.fn().mockResolvedValue(null),
     moveToReceived:               jest.fn().mockResolvedValue(null),
     moveFromReceivedToScheduled:  jest.fn().mockResolvedValue(null),
@@ -68,6 +69,7 @@ function createTestApp() {
     notifyUserCreated:         jest.fn().mockResolvedValue(null),
     getStoreReviewUrl:         jest.fn().mockReturnValue('https://g.page/r/test/review'),
     getSalesmanEmail:          jest.fn().mockReturnValue(null),
+    smtpConfigured:            jest.fn().mockReturnValue(false),
   }));
 
   const app = require('../../server');

@@ -700,6 +700,34 @@ async function revertToAssigned(contractNumber, contractData) {
   console.warn('[Drive] Contract not found in Cancelled for revert:', contractNumber);
 }
 
+// Rewrite a contract's row after the contract is edited, in whichever status
+// tab it's in. Columns are found by their header names, so it works for every
+// tab's layout; tab-specific columns (dates, status, schedule) are left alone.
+// d = routes/contracts.js buildDriveData(). Returns the tab, or null.
+const ROW_FIELDS = { 'Make': 'make', 'Model': 'model', 'Year': 'year', 'Shell': 'shellColor', 'Cabinet': 'cabinetColor',
+  'Serial Number': 'serialNumber', 'Sales Man': 'salesman', 'Customer': 'customerName', 'Address': 'address', 'Zip': 'zip',
+  'Cover': 'cover', 'Steps': 'steps', 'Water Care': 'waterCare', 'Accessories': 'accessories',
+  'Paid': 'paid', 'Pending': 'pending', 'Sold At': 'soldAt' };
+const colLetter = n => (n > 26 ? String.fromCharCode(64 + Math.floor((n - 1) / 26)) : '') + String.fromCharCode(65 + ((n - 1) % 26));
+async function updateContractRowInSheet(contractNumber, d) {
+  const sheets = getSheets();
+  for (const tab of ['Assigned', 'TBO', 'Order Placed', 'Received', 'Delivered', 'Cancelled']) {
+    const row = await findRowByContractId(sheets, tab, contractNumber);
+    if (row < 0) continue;
+    const head = (await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${tab}!1:1` })).data.values?.[0] || [];
+    const data = head.map((h, i) => [String(h).trim(), i + 1])
+      .filter(([h]) => h in ROW_FIELDS)
+      .map(([h, col]) => ({ range: `${tab}!${colLetter(col)}${row}`, values: [[d[ROW_FIELDS[h]] ?? '']] }));
+    if (data.length) {
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+    }
+    console.log('[Drive] Rewrote contract row in', tab + ':', contractNumber);
+    return tab;
+  }
+  console.warn('[Drive] Contract not found for row rewrite:', contractNumber);
+  return null;
+}
+
 // Update the serial number wherever the contract's row is (Assign SI. No).
 // Serial is column 8 on TBO / Order Placed / Assigned, column 9 on Received.
 async function updateTBOSerial(contractNumber, serialNumber) {
@@ -863,7 +891,7 @@ const changes = {
   markInventoryItemReceivedInSheet, deleteOrderedInventoryItem,
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
-  revertToAssigned, updateTBOSerial, updateRowStatus,
+  revertToAssigned, updateTBOSerial, updateRowStatus, updateContractRowInSheet,
   moveToOrderPlaced,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,

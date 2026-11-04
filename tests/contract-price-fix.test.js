@@ -14,10 +14,14 @@ afterAll(() => { destroyTestApp(ctx); });
 test('recalculates subtotal, tax, Grand Total and balance; serial in capitals', async () => {
   const { contractId, contractNumber } = await createContract(admin, {
     product: { status: 'instock', serialNumber: 'geb25d2251040', make: 'Caldera', model: 'Geneva' },
-    details: { spaPrice: '20,0300' },
+    details: { spaPrice: '200300' },
     costing: { subtotal: '200300', taxPercent: '8.1', taxAmount: '16224.30', productTotal: '216524.30', grandTotal: '216524.3' },
     payment: { creditCard: { selected: true, lastFour: '1234', amount: '10962' } },
   });
+  // New Contract now refuses "20,0300" — put the typo in as it was saved on Oct 26.
+  const saved = JSON.parse(ctx.db.prepare('SELECT data FROM contracts WHERE id=?').get(contractId).data);
+  saved.details.spaPrice = '20,0300';
+  ctx.db.prepare('UPDATE contracts SET data=? WHERE id=?').run(JSON.stringify(saved), contractId);
   const plan = planPriceFix(ctx.db, contractNumber, 20300);
   expect(plan.after).toMatchObject({ spaPrice: '20300', subtotal: '20300', taxAmount: '1644.30',
     productTotal: '21944.30', grandTotal: '21944.30', balance: '10982.30', serial: 'GEB25D2251040' });

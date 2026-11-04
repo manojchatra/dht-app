@@ -94,7 +94,7 @@ SMTP_FROM=deliveries@deserthottubsaz.com
 | Role | Access |
 |---|---|
 | admin | Everything — contracts, status board, customers, inventory, warehouse, sales, calendar, acknowledgement hub, post-delivery admin, settings, notifications |
-| sales | Own contracts only (list, detail, dashboard counts, post-delivery follow-up are all scoped by `salesman_user_id`). Can create contracts, schedule, record payments. Salesman is always themself. |
+| sales | Own contracts only (list, detail, dashboard counts, post-delivery follow-up are all scoped by `salesman_user_id`). Can create contracts, schedule, record payments. Salesman is always themself. View-only Inventory (`/inventory`, no Add): every spa, customer name and contract number shown, but linked only on their own contracts; Finance hidden (left out by `GET /api/inventory-items`, the only inventory-items route sales may use). |
 | warehouse | `/warehouse` receiving dashboard + Inventory pages (+ Settings for own password). Sees no pricing — the contracts API (`/api/contracts`) and spa search (`/api/inventory`) are admin + sales only. |
 | delivery | Calendar (`/api/delivery/calendar`: own team + unassigned, no prices) + `/delivery/:id` + `/acknowledgement` hub/form (+ Settings for own password). Scoped to own team. |
 
@@ -117,12 +117,26 @@ Any (not Delivered) → Cancelled → Assigned  (revert — In Stock contracts o
 - **Received** — only from Order Placed (a TBO contract always goes through Order Placed); admin on the status board or warehouse. Serial number + serial photo (warehouse flow also requires a SKU photo). In-Stock contracts skip Received.
 - **Scheduled** — only from Assigned, Received, or Scheduled (reschedule); serial number required, balance must be $0, date/time required; one booking per team per overlapping slot.
 - **Cancel** — admin: status dropdown on Assigned / Scheduled, ⋮ menu on TBO / Order Placed / Received (Order Placed warns that the factory order isn't cancelled). A cancelled TBO contract can't be reverted yet (restore-to-previous-status is on hold).
-- **Delivered** — serial required; terminal (no further changes).
-- Past delivery date on a new contract → contract saved straight to Delivered (historical entry), with a warning if a balance is owed.
+- **Delivered** — serial required; **balance must be $0** (status dropdown and the Received card's Deliver button — "DHT… still owes $X — record the payment before marking it Delivered.", checked on the page and by the server); terminal (no further changes). The crew's **acknowledgement is never blocked** by a balance (the spa is already there — e.g. an edit after scheduling raised the total): the office gets a red `DELIVERED_OWING` notification "DHT… delivered with $X still owed", also in the activity log.
+- Past delivery date on a new contract → contract saved straight to Delivered (historical entry), with a warning if a balance is owed. With the acknowledgement case and a bounced cheque voided after delivery, these are the only ways a Delivered contract owes money.
+- **Only these moves** (`STATUS_MOVES` in `routes/contracts.js`): Assigned → Scheduled / Delivered / Cancelled; TBO → Order Placed / Cancelled; Order Placed → Received / Cancelled; Received → Scheduled / Delivered / Cancelled; Scheduled → Scheduled (reschedule) / Delivered / Cancelled; Cancelled → Assigned (In Stock only). **Scheduled → Assigned is refused** (it left the calendar event live) — unschedule is #11, on hold; the Scheduled card's dropdown has no Assigned.
+- **Mark Received** (admin `POST /:id/received`, warehouse `POST /api/warehouse/:id/receive`) runs under the contract lock (a double-tap's second request gets "already received"). The serial is checked with `receiveSerialConflict` (refused if sold to another contract, or not In-stock / Ordered) and the spa linked with `linkReceivedUnit` (`services/orderedStock.js`): reserved on-order unit, else the inventory spa with that serial, else a new Sold unit — both routes. Whatever the serial box held before (a salesperson's remark on a TBO sale) is kept in the MARK_RECEIVED log as "Serial was: …".
+- **New Contract's Grand Total** is worked out again by the server (`utils/contractTotals.js`); more than 1¢ off the page's → refused "The totals don't add up — refresh the page and try again."
+
+**Editing a contract** — **Edit contract** on the contract page opens `/contracts/:id/edit`: New Contract's own form (`create-contract.html`) in edit mode (`js/contract-edit.js`), filled in from the contract. Saved with `POST /api/contracts/:id/edit` (`services/contractEdit.js`).
+- Admin, or the contract's own salesperson. The handwritten contract stays the legal one — edits correct what was typed in; no re-signing, no copy of the old PDF.
+- **Editable until Delivered:** customer & delivery address, requested delivery date, Sold at, spa colours / speaker / year / series (make and model only if no spa is linked), warranty, electrical, notes, monthly cleanings, every line item (options, price, Included), services and fees, spa removal, fuel surcharge, discount, tax %. Images can be removed with × (not the signature, serial / SKU or delivery photos); the file is deleted.
+- **Locked (greyed out):** contract number, store, sale date, salesperson, In Stock / To Be Ordered, serial and inventory search (Assign SI. No), payments at signing (Record / Void on the contract page), signature. The server ignores these fields even if sent.
+- **After Delivered / Cancelled:** only phones, email and gate details.
+- Totals are recalculated by the server (`utils/contractTotals.js`, same as New Contract) **only when a price, line item, fee, discount or tax % changed** — a contact or colour fix leaves the saved totals alone. The page's Grand Total must match the server's (else "The totals don't add up"). Refused if the new total is below what's been paid (void the extra payment and re-record; refund outside the portal). A Scheduled contract that now owes money is flagged but keeps its booking. Receipts rebuild with the corrected totals.
+- Name, phones and email also update the shared customer record; the delivery address is this contract's only.
+- A reason is required; each save is one `CONTRACT_EDITED` log entry listing every field old → new, removed images and the reason. The Sheet row (by header names), Customer Record rows, calendar event and contract PDF follow.
+- Amounts with a comma in the wrong place (`20,0300`) are refused on New Contract, Record Payment and the edit page (`utils/money.js`).
 
 **Cancel vs Delete:**
-- **Cancel** — a real customer backed out. Contract, payments, PDFs and history are kept (the contract terms charge for cancellations after the deposit becomes non-refundable). Any linked spa goes back to **In-stock**. Reverting re-claims the spa only if it hasn't been sold meanwhile (logged either way).
-- **Delete** (admin only) — mistakes and test entries. Permanently removes the contract, its payments, activity, notifications, uploads folder, Sheet rows and calendar event. An undelivered linked spa goes back to In-stock (a delivered one stays Sold, unlinked). The spa's inventory unit is never deleted — even one the contract or the stock import created; a mistyped serial is removed by hand from Inventory. If that was the customer's last contract, the customer is deleted too.
+- **Cancel** — a real customer backed out. Contract, payments, PDFs and history are kept (the contract terms charge for cancellations after the deposit becomes non-refundable) — **keep a forfeited deposit's contract Cancelled rather than deleting it**, or its payment record is lost. No payments can be recorded on a cancelled contract (money kept or refunded is handled outside the portal); its card shows "Cancelled" instead of "Due", and Record Payment is hidden. Any linked spa goes back to **In-stock**. Reverting re-claims the spa only if it hasn't been sold meanwhile (logged either way).
+- **Order Placed spa** — cancelling or deleting an Order Placed contract never loses the spa on the truck: reserved on-order stock goes back to unreserved `Ordered`; a contract with only a typed Web Order # / Truck # gets an unreserved `Ordered` unit added (make, series, model, colours, speaker, year, Web Order #, Truck #, plus an Inventory Items Sheet row) — `keepOrderedSpa` in `services/orderedStock.js`. The warehouse receives it as general stock (no customer name). Logged as "Returned to stock: on-order stock (Web Order # …)".
+- **Delete** (admin only) — mistakes and test entries. Permanently removes the contract, its payments, activity, notifications, uploads folder (and its card thumbnails), Sheet rows and calendar event. An undelivered linked spa goes back to In-stock (a delivered one stays Sold, unlinked). The spa's inventory unit is never deleted — even one the contract or the stock import created; a mistyped serial is removed by hand from Inventory. If that was the customer's last contract, the customer is deleted too.
 
 ---
 
@@ -180,7 +194,8 @@ The **customer record is the source of truth** for a customer's name, phone and 
 
 - Payments recorded from View Contracts or contract detail; method cash / cheque / credit card / finance. Cheque payments can attach a **cheque photo**.
 - Payment method details required when selected (cheque #, card last 4, finance lender) — client and server.
-- Grand Total must be > $0 (server-validated). Amount can't exceed the remaining balance.
+- Grand Total must be > $0 (server-validated). Amount can't exceed the remaining balance. Refused on a **cancelled** contract.
+- **Record Payment** (card ⋮ menu and contract page) shows only while money is owed — hidden on fully paid and cancelled contracts.
 - Each payment generates a PDF receipt and updates Paid/Pending in whichever Sheet tab the contract's row is in.
 - **Void** (admin, reason required) — for a wrong amount, a duplicate, the wrong contract, or a bounced cheque / reversed card. The payment stays in Payment History crossed out with the reason, but no longer counts toward Total Paid, the balance, the scheduling check or the Sheet. Its receipt is regenerated stamped VOID. To correct an amount: void it, then record the right one. Logged as `PAYMENT_VOIDED`.
 - Default dates (payments, Mark Delivered, received date, date pickers, New Contract sale date) are today in **Arizona** time.
@@ -189,7 +204,13 @@ The **customer record is the source of truth** for a customer's name, phone and 
 
 ## Contracts List (`/contracts`)
 
-Card grid with search (customer, serial, make, contract #, salesman) and filters: **Region** (store), Status, Payment, **Year**, **Brand**, **Salesman** (hidden for sales users). Year/Brand/Salesman options are built from the data. Filters are mirrored into the URL (bookmarkable, survive refresh and payment/image reloads); stat cards count the filtered set; "Clear filters" appears when any filter is set.
+Card grid with search (customer, serial, make, contract #, salesman) and filters: **Region** (store), Status, Payment, **Year**, **Brand**, **Salesman** (hidden for sales users). Year/Brand/Salesman options are built from the data. Filters are mirrored into the URL (bookmarkable, survive refresh and payment/image reloads); stat cards count the filtered set; "Clear filters" appears when any filter is set. Cancelled contracts never count as Payment Pending.
+
+**Long lists — 50 at a time** (View Contracts, Inventory, every Status tab): the first 50, then "Show 50 more" / "Show all" under the list (`listFooter` in `public/js/util.js`). Search, filters and counts still cover the whole list; a new search or filter starts again at 50, a reload after a payment / image / delete keeps what was shown. The whole list still loads in one request — fine into the thousands.
+
+**Status page search:** one box above the cards filters the open tab by name, contract #, serial, spa, salesman, phone, store, Web Order # or Truck #; while searching, each tab shows its match count, and an empty tab offers "Found in Scheduled (2)…" links.
+
+**Card photos are thumbnails:** `/uploads/…jpg?thumb=1` answers with a 160 px copy (`middleware/thumbnails.js`, ~8 KB instead of ~400 KB), made on first request and kept in `uploads/.thumbs/` (rebuilt when the photo changes; never served directly; skipped by the backup). Card and inventory photos load lazily (only when scrolled into view); clicking still opens the full photo.
 
 ---
 
@@ -252,7 +273,8 @@ Tabs are created automatically the first time they're needed. Sheet writes are a
    - Exceptions + photo
    - Customer + Team signatures (canvas, touch-enabled)
 7. Submit: Save & Mark Delivered / Send Email & Mark Delivered (recipient picker: customer, salesperson, admin list — sends to exactly who's ticked)
-8. On save: photos saved and compressed, PDF generated, contract marked delivered, calendar event deleted, Sheets updated, activity logged, notification created, Google-review email queued.
+8. On save: photos saved and compressed, PDF generated, contract marked delivered, calendar event deleted, Sheets updated, activity logged, notification created. The server also requires a delivery photo, and uses the contract as read under the lock (an edit saved meanwhile isn't written over).
+9. **Who can email an acknowledgement:** the recipient list (`GET /api/delivery/email-recipients/:id`) — admin, or the delivery team the contract is scheduled for; resending later (`POST /api/delivery/send-ack/:id`, the contract page) — admin only.
 
 ---
 
@@ -293,7 +315,7 @@ Provider: `smtp-relay.brevo.com:587` (STARTTLS). From: `deliveries@deserthottubs
 
 **Storage:** SQLite `activity_log` table + `/home/DHT/data/activity.log` text file.
 
-**Event types:** CONTRACT_CREATED, STATUS_CHANGED, SCHEDULED, ORDER_PLACED, MARK_RECEIVED, ACK_SUBMITTED, PAYMENT_RECORDED, FAILED_DELIVERY, CUSTOMER_LINKED, PAYMENT_VOIDED, INVENTORY_RELEASED, INVENTORY_RECLAIM, PDF_SUBMITTED / PDF_ADMIN_COMPLETED (post-delivery feedback), and user management (USER_CREATED, USER_UPDATED, USER_DELETED, USER_ROLE_CHANGED, USER_PASSWORD_RESET, PASSWORD_CHANGED).
+**Event types:** CONTRACT_CREATED, STATUS_CHANGED, SCHEDULED, ORDER_PLACED, MARK_RECEIVED, ACK_SUBMITTED, PAYMENT_RECORDED, FAILED_DELIVERY, CUSTOMER_LINKED, PAYMENT_VOIDED, DELIVERED_OWING, INVENTORY_RELEASED, INVENTORY_RECLAIM, PDF_SUBMITTED / PDF_ADMIN_COMPLETED (post-delivery feedback), and user management (USER_CREATED, USER_UPDATED, USER_DELETED, USER_ROLE_CHANGED, USER_PASSWORD_RESET, PASSWORD_CHANGED).
 
 **Timestamps:** All in MST (`America/Phoenix` — no DST in Arizona).
 

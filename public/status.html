@@ -50,6 +50,16 @@
 .upload-zone-sm{border:2px dashed var(--border);border-radius:6px;padding:10px;text-align:center;cursor:pointer;position:relative;background:var(--surface2);font-size:12px;color:var(--text-muted)}
 .upload-zone-sm input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .upload-zone-sm img{max-width:100%;max-height:80px;object-fit:contain;margin-top:6px;border-radius:4px;display:none}
+.status-search{position:relative;max-width:460px;margin-bottom:16px}
+.status-search>i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:13px}
+.status-search input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 34px;color:var(--text);font-size:13px;font-family:var(--font);outline:none}
+.status-search input:focus{border-color:var(--secondary);box-shadow:0 0 0 3px var(--secondary-bg)}
+.status-search .clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;font-size:14px;display:none}
+.tab-count{font-size:10.5px;font-weight:700;border-radius:10px;padding:1px 7px;background:var(--surface2);color:var(--text-muted)}
+.tab-count:empty{display:none}
+.tab-count.hit{background:var(--accent-bg);color:var(--accent)}
+.search-elsewhere{margin-top:10px;font-size:13px}
+.search-elsewhere button{background:none;border:none;color:var(--accent);cursor:pointer;font-family:var(--font);font-size:13px;text-decoration:underline;text-underline-offset:2px;padding:0 4px}
 </style>
 </head>
 <body>
@@ -66,9 +76,15 @@
     <button class="tab" data-tab="delivered" onclick="switchTab('delivered')"><i class="fa-solid fa-truck-ramp-box"></i>Delivered</button>
     <button class="tab" data-tab="cancelled" onclick="switchTab('cancelled')"><i class="fa-solid fa-ban"></i>Cancelled</button>
   </div>
+  <div class="status-search">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <input type="text" id="statusSearch" placeholder="Search name, contract #, serial, spa, salesman, web order…" autocomplete="off" oninput="onStatusSearch()">
+    <button type="button" class="clear" id="statusSearchClear" onclick="clearStatusSearch()" title="Clear search"><i class="fa-solid fa-xmark"></i></button>
+  </div>
   <div class="status-grid" id="statusGrid">
     <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i>Loading...</div>
   </div>
+  <div class="list-footer" id="listFooter" style="display:none"></div>
 </main>
 
 <!-- Slot Picker Modal (for scheduling) -->
@@ -340,16 +356,59 @@ function switchTab(tab) {
   renderGrid();
 }
 
+// ── Search (filters the open tab; each tab shows how many match) ──────────────
+let shownCount=LIST_PAGE, shownKey=''; // 50 cards at a time (listFooter in util.js)
+function searchText(){ return document.getElementById('statusSearch').value.trim().toLowerCase(); }
+function matchesSearch(c,q){
+  if(!q) return true;
+  return [c.customer_name,c.contract_number,c.serial_number,c.make,c.model,c.salesman,c.customer_phone,c.web_order_number,c.truck_number,c.store]
+    .join(' ').toLowerCase().includes(q);
+}
+function onStatusSearch(){
+  document.getElementById('statusSearchClear').style.display=searchText()?'block':'none';
+  renderGrid();
+}
+function clearStatusSearch(){
+  const box=document.getElementById('statusSearch');
+  box.value=''; onStatusSearch(); box.focus();
+}
+function updateTabCounts(q){
+  const counts={};
+  if(q) allContracts.forEach(c=>{ if(matchesSearch(c,q)) counts[c.status]=(counts[c.status]||0)+1; });
+  document.querySelectorAll('.tab').forEach(t=>{
+    let badge=t.querySelector('.tab-count');
+    if(!badge){ badge=document.createElement('span'); badge.className='tab-count'; t.appendChild(badge); }
+    const n=counts[t.dataset.tab]||0;
+    badge.textContent=q?String(n):'';
+    badge.classList.toggle('hit',!!q&&n>0);
+  });
+  return counts;
+}
+
 function renderGrid() {
   const grid=document.getElementById('statusGrid');
-  let filtered;
-  if (currentTab==='scheduled') filtered=allContracts.filter(c=>c.status==='scheduled');
-  else filtered=allContracts.filter(c=>c.status===currentTab);
+  const q=searchText();
+  const counts=updateTabCounts(q);
+  // A new tab or search starts again at the first 50; a refresh after an
+  // action keeps what was already shown.
+  const key=currentTab+'|'+q;
+  if(key!==shownKey){ shownCount=LIST_PAGE; shownKey=key; }
+  const filtered=allContracts.filter(c=>c.status===currentTab&&matchesSearch(c,q));
+  const footer=()=>listFooter(document.getElementById('listFooter'),shownCount,filtered.length,'contracts',
+    ()=>{shownCount+=LIST_PAGE;renderGrid();},()=>{shownCount=filtered.length;renderGrid();});
   if (!filtered.length) {
-    grid.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No contracts in this status</p></div>';
+    if (q) {
+      const elsewhere=Object.keys(TAB_LABELS).filter(t=>counts[t]);
+      grid.innerHTML='<div class="empty-state"><i class="fa-solid fa-magnifying-glass"></i><p>No matches in '+escHtml(TAB_LABELS[currentTab]||currentTab)+'</p>'
+        +(elsewhere.length?'<div class="search-elsewhere">Found in'+elsewhere.map(t=>'<button type="button" onclick="switchTab(\''+t+'\')">'+escHtml(TAB_LABELS[t])+' ('+counts[t]+')</button>').join(',')+'</div>':'')+'</div>';
+    } else {
+      grid.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No contracts in this status</p></div>';
+    }
+    footer();
     return;
   }
-  grid.innerHTML=filtered.map(c=>buildCard(c)).join('');
+  grid.innerHTML=filtered.slice(0,shownCount).map(c=>buildCard(c)).join('');
+  footer();
 }
 
 const _schedData = {};
@@ -426,13 +485,14 @@ function buildCard(c) {
   var actions = '';
   if (isAdmin) {
     if (isAssigned || isScheduled) {
-      // V8-style status dropdown
+      // V8-style status dropdown. A Scheduled card has no "Assigned": going back
+      // would leave the delivery on the calendar (Reschedule or Cancel instead).
       var opts = [
-        {v:'assigned',  l:'Assigned'},
+        isAssigned ? {v:'assigned', l:'Assigned'} : null,
         {v:'scheduled', l:'Scheduled'},
         {v:'delivered', l:'Delivered'},
         {v:'cancelled', l:'Cancelled'},
-      ];
+      ].filter(Boolean);
       var selHtml = opts.map(function(o){ return '<option value="'+o.v+'"'+(o.v===c.status?' selected':'')+'>'+o.l+'</option>'; }).join('');
       actions = '<select class="status-select" id="sel-'+c.id+'" data-current="'+c.status+'" onchange="onDropdownChange('+c.id+',this.value)">'+selHtml+'</select>'
               + '<button class="btn-apply" id="apply-'+c.id+'" onclick="applyDropdown('+c.id+')" disabled>Apply</button>'
@@ -472,7 +532,7 @@ function buildCard(c) {
     + '<div class="sc-sub">'+escHtml(c.store||'—')+' · '+dateStr+'</div>'
     + '<div class="sc-meta"><span>'+escHtml(c.make||'')+' '+escHtml(c.model||'')+'</span></div>'
     + (c.serial_number ? '<div class="sc-meta"><span style="color:var(--text-muted)">S/N: '+escHtml(c.serial_number)+'</span></div>' : '')
-    + '<div class="sc-meta"><span class="sc-total">'+(c.grand_total?'$'+c.grand_total:'—')+'</span>'+(parseFloat(c.due_prior||0)>0?'<span style="font-size:11px;color:var(--red);font-weight:500">Due: $'+fmtMoney(c.due_prior)+'</span>':'')+'</div>'
+    + '<div class="sc-meta"><span class="sc-total">'+(c.grand_total?'$'+c.grand_total:'—')+'</span>'+(!isCancelled&&parseFloat(c.due_prior||0)>0?'<span style="font-size:11px;color:var(--red);font-weight:500">Due: $'+fmtMoney(c.due_prior)+'</span>':'')+'</div>'
     + extraInfo
     + '</div>'
     + (actions ? '<div class="status-card-actions">'+actions+'</div>' : '')
@@ -659,6 +719,12 @@ async function submitReceived(){
 
 // ── Deliver modal ─────────────────────────────────────────────────────────────
 function openDeliverModal(id){
+  // Same rule as scheduling: paid in full first (the server checks it too).
+  const c=allContracts.find(x=>x.id===id)||{};
+  if(parseFloat(c.due_prior||0)>0){
+    showToast((c.contract_number||'This contract')+' still owes $'+fmtMoney(c.due_prior)+' — record the payment before marking it Delivered.','error');
+    renderGrid(); return;
+  }
   deliverContractId=id;
   document.getElementById('deliverDate').value=azToday();
   syncTextFromDate('deliverDate','deliverDateText');
@@ -695,7 +761,7 @@ async function submitSerial(){
 async function cancelContract(id){
   const c=allContracts.find(x=>x.id===id)||{};
   const msg='Cancel '+(c.contract_number||'this contract')+(c.customer_name?' — '+c.customer_name:'')+'?'
-    +(c.status==='order_placed'?'\n\nThis doesn\'t cancel the order with the factory.':'');
+    +(c.status==='order_placed'?'\n\nThis doesn\'t cancel the order with the factory. The spa stays in Inventory as on-order stock for the warehouse to receive.':'');
   if(!confirm(msg))return;
   try{
     const r=await fetch('/api/contracts/'+id+'/status',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'cancelled'})});

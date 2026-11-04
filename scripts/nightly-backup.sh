@@ -50,7 +50,7 @@ fi
 # 2. Uploads (photos, signatures, PDFs) + activity log — weekly local archive
 if [ -n "$WEEKLY" ] || ! ls "$BACKUP_ROOT"/files/uploads-*.tar.gz >/dev/null 2>&1; then
   UPLOADS_ARCHIVE="$BACKUP_ROOT/files/uploads-$TODAY.tar.gz"
-  TAR_ITEMS=(-C "$APP_DIR" uploads)
+  TAR_ITEMS=(--exclude=uploads/.thumbs -C "$APP_DIR" uploads)  # card thumbnails are rebuilt on demand
   [ -f "$DATA_DIR/activity.log" ] && TAR_ITEMS+=(-C "$DATA_DIR" activity.log)
   if tar -czf "$UPLOADS_ARCHIVE.tmp" "${TAR_ITEMS[@]}" 2>>"$LOG"; then
     mv "$UPLOADS_ARCHIVE.tmp" "$UPLOADS_ARCHIVE"
@@ -94,7 +94,7 @@ fi
 
 # 4b. Uploads (photos, signatures, PDFs) → $UPLOADS_REMOTE, readable in Google Drive
 if remote_ok "$UPLOADS_REMOTE"; then
-  if rclone copy "$APP_DIR/uploads" "$UPLOADS_REMOTE" --exclude 'tmp/**' >>"$LOG" 2>&1; then
+  if rclone copy "$APP_DIR/uploads" "$UPLOADS_REMOTE" --exclude 'tmp/**' --exclude '.thumbs/**' >>"$LOG" 2>&1; then
     log "Uploads copy OK ($UPLOADS_REMOTE)"
   else
     fail "uploads copy to $UPLOADS_REMOTE failed"

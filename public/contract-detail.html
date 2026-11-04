@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/theme.css">
 <script src="/js/util.js"></script>
+<script src="/js/contract-edit.js"></script>
 <script src="/js/gallery.js"></script>
 <style>
 .action-bar-detail{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
@@ -75,6 +76,7 @@
 .act-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px}
 .act-dot.green{background:var(--green)}
 .act-dot.red{background:var(--red)}
+.act-dot.amber{background:var(--accent)}
 .act-body{flex:1;min-width:0}
 .act-type{font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.04em}
 .act-detail{font-size:13px;margin-top:2px}
@@ -327,6 +329,9 @@ function renderDetail(c) {
   ].filter(Boolean);
   const allImgs = allImgsWithLabel.map(i=>i.url);
   const isAdmin = window._userRole === 'admin';
+  // "Edit contract" (js/contract-edit.js → /contracts/:id/edit): admin or this
+  // contract's salesperson; not for contracts saved in the original flat format.
+  const canEdit = canEditContract(c) && !!(c.data && (c.data.customer || c.data.product || c.data.costing));
 
   let outOfTownDeliveryHtml = sv.outOfTownDelivery
     ? cbHtml('Out-of-Town Delivery ($' + (sv.outOfTownDeliveryFee||'\u2014') + ')', true)
@@ -411,22 +416,32 @@ function renderDetail(c) {
   if (window._userRole === 'admin') {
     fetch('/api/activity/' + c.id).then(function(r){return r.json();}).then(function(actLogs){
       if (!actLogs || !actLogs.length) return;
-      var C={SCHEDULED:'green',ACK_SUBMITTED:'green',MARK_RECEIVED:'green',PAYMENT_RECORDED:'green',FAILED_DELIVERY:'red',PAYMENT_VOIDED:'red'};
-      var IC={CONTRACT_CREATED:'fa-plus',CONTRACT_UPDATED:'fa-pen',STATUS_CHANGED:'fa-arrow-right',PAYMENT_RECORDED:'fa-dollar-sign',PAYMENT_VOIDED:'fa-ban',SCHEDULED:'fa-calendar-check',ACK_SUBMITTED:'fa-clipboard-check',EMAIL_SENT:'fa-envelope',MARK_RECEIVED:'fa-truck-arrow-right',CONTRACT_DELETED:'fa-trash',FAILED_DELIVERY:'fa-triangle-exclamation'};
+      var C={SCHEDULED:'green',ACK_SUBMITTED:'green',MARK_RECEIVED:'green',PAYMENT_RECORDED:'green',FAILED_DELIVERY:'red',PAYMENT_VOIDED:'red',DELIVERED_OWING:'red',CONTRACT_EDITED:'amber'};
+      var IC={CONTRACT_CREATED:'fa-plus',CONTRACT_UPDATED:'fa-pen',CONTRACT_EDITED:'fa-pen-to-square',STATUS_CHANGED:'fa-arrow-right',PAYMENT_RECORDED:'fa-dollar-sign',PAYMENT_VOIDED:'fa-ban',SCHEDULED:'fa-calendar-check',ACK_SUBMITTED:'fa-clipboard-check',EMAIL_SENT:'fa-envelope',MARK_RECEIVED:'fa-truck-arrow-right',CONTRACT_DELETED:'fa-trash',FAILED_DELIVERY:'fa-triangle-exclamation',DELIVERED_OWING:'fa-triangle-exclamation'};
       // created_at is stored in UTC — shown in Arizona time.
       function mkRow(l){
         return '<div class="act-item"><div class="act-dot '+(C[l.event_type]||'')+'" ></div><div class="act-body"><div class="act-type"><i class="fa-solid '+(IC[l.event_type]||'fa-circle')+'" style="margin-right:4px"></i>'+l.event_type.replace(/_/g,' ')+'</div>'+(l.detail?'<div class="act-detail">'+escHtml(l.detail)+'</div>':'')+'<div class="act-meta">'+escHtml(l.actor||'system')+' &middot; '+escHtml(azDateTime(l.created_at))+' MST</div></div></div>';
       }
       var shown=actLogs.slice(0,5),hidden=actLogs.slice(5);
-      var more=hidden.length?'<div id="actHidden" class="activity-hidden">'+hidden.map(mkRow).join('')+'</div><button onclick="toggleActHidden()" style="font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;margin-top:8px">Show '+hidden.length+' more</button>':'';
+      // Global so the button onclick finds it; toggles between more / less.
+      window.toggleActHidden=function(btn){
+        var box=document.getElementById("actHidden");
+        if(!box) return;
+        var open=box.style.display==="block";
+        box.style.display=open?"none":"block";
+        btn.textContent=open?"Show "+hidden.length+" more":"Show less";
+      };
+      var more=hidden.length?'<div id="actHidden" class="activity-hidden">'+hidden.map(mkRow).join('')+'</div><button onclick="toggleActHidden(this)" style="font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;margin-top:8px">Show '+hidden.length+' more</button>':'';
       var el=document.getElementById('actSection');
       if(el) el.innerHTML='<div class="detail-section"><h3><i class="fa-solid fa-list-check"></i> Activity Log</h3><div class="activity-timeline">'+shown.map(mkRow).join('')+more+'</div></div>';
     }).catch(function(){});
   }
   document.getElementById('detailContent').innerHTML =
     '<div class="action-bar-detail">' +
+      (canEdit ? '<a href="/contracts/' + c.id + '/edit" class="btn btn-primary"><i class="fa-solid fa-pen"></i> Edit contract</a>' : '') +
       '<a href="/api/contracts/' + c.id + '/pdf" class="btn btn-secondary" download><i class="fa-solid fa-download"></i> Download PDF</a>' +
-      '<button class="btn btn-success" onclick="openPaymentModal()"' + (balDue<=0 ? ' disabled style="opacity:.4" title="Contract is fully paid"' : '') + '><i class="fa-solid fa-money-bill-wave"></i> Record Payment</button>' +
+      // Only while money is owed — never on a fully paid or cancelled contract.
+      (balDue>0 && c.status!=='cancelled' ? '<button class="btn btn-success" onclick="openPaymentModal()"><i class="fa-solid fa-money-bill-wave"></i> Record Payment</button>' : '') +
       '<button class="btn btn-secondary" onclick="openDetailAddImage()"><i class="fa-solid fa-image"></i> Add Image</button>' +
       ((c.status==='tbo'||c.status==='assigned'||c.status==='scheduled') ? '<button class="btn btn-secondary" onclick="openDetailSerial()"><i class="fa-solid fa-barcode"></i> Assign SI. No</button>' : '') +
       (isAdmin && c.status==='delivered' && c.acknowledgement_pdf ? '<button class="btn btn-secondary" onclick="openSendAckModal()"><i class="fa-solid fa-paper-plane"></i> Send Acknowledgement</button>' : '') +
@@ -502,7 +517,7 @@ function renderDetail(c) {
     '<div class="detail-section"><h3><i class="fa-solid fa-note-sticky"></i> Miscellaneous</h3>' +
       '<p style="font-size:13px;margin-bottom:8px">' + escHtml(mi.notes || 'No Note Available') + '</p>' +
       cbHtml('Monthly Cleanings', mi.monthlyCleanings) +
-      (mi.monthlyCleanings ? '<div style="font-size:12px;color:var(--text-muted)">' + (mi.cleaningPrice ? '$' + mi.cleaningPrice + '/mo' : 'Price not set') + '</div>' : '') +
+      (mi.monthlyCleanings ? '<div style="font-size:12px;color:var(--text-muted)">' + escHtml(cleaningText(mi) || 'Price not set') + '</div>' : '') +
     '</div>' +
 
     '<div class="detail-section"><h3><i class="fa-solid fa-list"></i> Details &amp; Line Items</h3>' +
@@ -529,7 +544,9 @@ function renderDetail(c) {
       (co.serviceTotal ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Service Total</span><span>$' + co.serviceTotal + '</span></div>' : '') +
       (co.discountAmount ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Discount</span><span>-$' + co.discountAmount + '</span></div>' : '') +
       '<div class="totals-box"><div class="grand">Grand Total: $' + (co.grandTotal||'\u2014') + '</div><div style="font-size:13px;margin-top:6px;color:var(--green)">Total Paid: $' + totalPaid.toFixed(2) + '</div></div>' +
-      (balDue > 0
+      (c.status === 'cancelled'
+        ? '<div class="pending-box" style="background:var(--surface2);color:var(--text-muted)"><i class="fa-solid fa-ban"></i> Cancelled — nothing more is collected</div>'
+        : balDue > 0
         ? '<div class="pending-box"><i class="fa-solid fa-triangle-exclamation"></i> Balance Due: $' + balDue.toFixed(2) + '</div>'
         : '<div class="fully-paid-seal"><i class="fa-solid fa-circle-check"></i> FULLY PAID</div>') +
     '</div>' +

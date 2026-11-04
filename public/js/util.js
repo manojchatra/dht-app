@@ -114,10 +114,54 @@ async function deleteUserRequest(id) {
   return { contracts: j.contracts || 0 };
 }
 
+// cleaningText: Monthly Cleanings details, e.g. "3 months · Included" or
+// "$45/mo · 6 months" ('' if none). Same wording as the contract PDF.
+function cleaningText(mi) {
+  mi = mi || {};
+  var months = mi.cleaningMonths ? mi.cleaningMonths + ' month' + (String(mi.cleaningMonths) === '1' ? '' : 's') : '';
+  if (mi.cleaningIncluded) return [months, 'Included'].filter(Boolean).join(' · ');
+  return [mi.cleaningPrice ? '$' + mi.cleaningPrice + '/mo' : '', months].filter(Boolean).join(' · ');
+}
+
+// moneyLooksWrong: true for an amount written wrongly, like "20,0300" (a comma
+// in the wrong place — read as $200,300 once). "", "20300", "20,300" and
+// "$20,300.50" are fine. Same rule as utils/money.js on the server.
+function moneyLooksWrong(v) {
+  var s = String(v == null ? '' : v).trim();
+  return s !== '' && !/^\$?\s*(\d{1,3}(,\d{3})+|\d+)(\.\d{1,2})?$/.test(s);
+}
+
 // newIdempotencyKey: a fresh id for one submit attempt (contract creation,
 // payment recording). Carrying the SAME key through a resubmit — a browser
 // Back navigation, a double-click — lets the server recognize it as the same
 // attempt and return the original result instead of creating a duplicate.
 function newIdempotencyKey() {
   return (crypto.randomUUID ? crypto.randomUUID() : 'idk-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+}
+
+// thumbUrl: the small card-size copy of an uploaded photo (server makes it on
+// first request — middleware/thumbnails.js). The full photo stays the link target.
+function thumbUrl(u) {
+  return u ? u + (u.indexOf('?') < 0 ? '?' : '&') + 'thumb=1' : u;
+}
+
+// LIST_PAGE / listFooter: long lists (View Contracts, Inventory) show 50 rows,
+// then "Show 50 more" / "Show all". Search, filters and counts still cover the
+// whole list. listFooter(el, shown, total, noun, onMore, onAll) draws the bar
+// under the list; the page keeps `shown` and resets it to LIST_PAGE whenever
+// the search or a filter changes.
+var LIST_PAGE = 50;
+function listFooter(el, shown, total, noun, onMore, onAll) {
+  if (!el) return;
+  var n = Math.min(shown, total), left = total - n;
+  if (total <= LIST_PAGE) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML =
+    '<div class="count">' + (left > 0 ? 'Showing <b>' + n + '</b> of <b>' + total + '</b> ' + noun : 'All <b>' + total + '</b> ' + noun + ' shown') + '</div>' +
+    '<div class="progress"><span style="width:' + Math.round(n / total * 100) + '%"></span></div>' +
+    (left > 0 ? '<button type="button" class="btn btn-secondary btn-sm" data-more><i class="fa-solid fa-angles-down"></i> Show ' + Math.min(LIST_PAGE, left) + ' more</button>' : '') +
+    (left > LIST_PAGE ? '<button type="button" class="link-btn" data-all>Show all</button>' : '');
+  var more = el.querySelector('[data-more]'), all = el.querySelector('[data-all]');
+  if (more) more.onclick = onMore;
+  if (all) all.onclick = onAll;
 }

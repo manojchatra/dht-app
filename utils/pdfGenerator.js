@@ -29,6 +29,14 @@ function fmtUSDate(iso) {
 }
 
 // ── Checkbox: PNG tick for checked, hidden completely for unchecked ──────────
+// Monthly Cleanings details, e.g. "3 months · Included" or "$45/mo · 6 months"
+// (same as js/util.js cleaningText on the pages). Not part of the Grand Total.
+function cleaningText(mi = {}) {
+  const months = mi.cleaningMonths ? `${mi.cleaningMonths} month${String(mi.cleaningMonths) === '1' ? '' : 's'}` : '';
+  if (mi.cleaningIncluded) return [months, 'Included'].filter(Boolean).join(' · ');
+  return [mi.cleaningPrice ? `$${mi.cleaningPrice}/mo` : '', months].filter(Boolean).join(' · ');
+}
+
 function cb(label, checked, opts={}) {
   const sz = opts.size || 7.5;
   if (checked) {
@@ -304,7 +312,8 @@ async function generateContractPDF(contract) {
           mi.notes?{ text:mi.notes, fontSize:7.5, width:'65%' }:{text:'',width:'65%'},
           { width:'*', columns:[
             cb('Monthly Cleanings',mi.monthlyCleanings),
-            mi.monthlyCleanings&&mi.cleaningPrice?{text:'$'+mi.cleaningPrice+'/mo',fontSize:7.5}:{text:''},
+            // "3 months · Included" / "$45/mo · 6 months" — same wording as the pages (js/util.js cleaningText).
+            mi.monthlyCleanings&&cleaningText(mi)?{text:cleaningText(mi),fontSize:7.5}:{text:''},
           ]},
         ], margin:[0,0,0,4] },
       ]:{text:''},
