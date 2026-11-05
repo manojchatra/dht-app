@@ -12,7 +12,7 @@ const { logActivity, addNotification }   = require('../utils/activityLogger');
 const {
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
-  revertToAssigned, updateTBOSerial, moveToOrderPlaced,
+  revertToAssigned, updateTBOSerial, moveToOrderPlaced, moveContractRowForSwitch,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, deleteInventoryRow, updateInventoryItemField, deleteInventoryItem,
@@ -31,6 +31,7 @@ const { phoenixToday } = require('../utils/arizona');
 const { statusName } = require('../utils/contractStatus');
 const { teamName } = require('../utils/teams');
 const { editBlockReason, planContractEdit, changeText, removableImage, TOTALS_MISMATCH } = require('../services/contractEdit');
+const { planSpaChange, contractAfterSpa, linkedAfter, applySpaUnits, spaLogText, spaDetailChanges, spaChangeText } = require('../services/contractSpa');
 const { computeTotals } = require('../utils/contractTotals');
 const { moneyError, contractMoneyFields, moneyOk } = require('../utils/money');
 const { zoneForZip } = require('../utils/deliveryZones');
@@ -1027,12 +1028,12 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
 
     // Serial number required for Delivered
     if (status === 'delivered' && !contract.serial_number) {
-      return res.status(400).json({ error: 'Serial number required before marking as Delivered. Use Assign SI. No first.' });
+      return res.status(400).json({ error: 'Serial number required before marking as Delivered. Add it on Edit contract first.' });
     }
 
     // Serial number required before Scheduling (can't acknowledge delivery without one)
     if (status === 'scheduled' && !contract.serial_number) {
-      return res.status(400).json({ error: 'Serial number required before scheduling. Use Assign SI. No first.' });
+      return res.status(400).json({ error: 'Serial number required before scheduling. Add it on Edit contract first.' });
     }
 
     // Scheduled requires datetime
@@ -1223,25 +1224,72 @@ function loadForEdit(req, res) {
   return c;
 }
 
-// POST /:id/edit  { form: <New Contract form data>, reason, removeImages: [url, …] }
+// A new image's file in the contract's folder: extra-<n>-<label>.<ext>, n from
+// start up to the next number no file there uses yet ("count + 1" alone
+// repeated a number after an image was removed and overwrote another image).
+// used = numbers already given out in this request.
+function extraImageDest(contractNumber, label, ext, start = 1, used = new Set()) {
+  const folder = path.join(UPLOADS_DIR, 'contracts', contractNumber);
+  fs.mkdirSync(folder, { recursive: true });
+  const taken = new Set(fs.readdirSync(folder).map(f => (f.match(/^extra-(\d+)-/) || [])[1]).filter(Boolean).map(Number));
+  let n = start;
+  while (taken.has(n) || used.has(n)) n++;
+  used.add(n);
+  const safe = label.replace(/[^a-zA-Z0-9 -]/g, '').trim().replace(/\s+/g, '-').slice(0, 30) || 'image';
+  return path.join(folder, `extra-${n}-${safe}${ext}`);
+}
+
+const uploadEditImages = upload.array('newImages', 5);
+
+// POST /:id/edit  { form: <New Contract form data>, reason, removeImages: [url, …], newImageLabels: [label, …] }
+// JSON, or multipart with that object in "payload" plus up to 5 "newImages".
 // The Edit contract page (create-contract.html in edit mode). Only the editable
 // fields are taken from the form (services/contractEdit.js); totals are worked
 // out again here; removed images are unlinked from the contract and their files
-// deleted. One activity-log entry lists every change and the reason.
-router.post('/:id/edit', async (req, res) => {
-  const reason = String(req.body?.reason ?? '').trim();
+// deleted; new images go into the contract's folder. An admin can also change
+// the spa / serial / In Stock ↔ To Be Ordered (form.spa, services/contractSpa.js)
+// — the card moves with a switch. One activity-log entry lists every change and
+// the reason.
+router.post('/:id/edit', (req, res, next) => uploadEditImages(req, res, err => (err
+  ? res.status(400).json({ error: 'Upload failed: ' + err.message }) : next())), async (req, res) => {
+  let body = req.body || {};
+  if (typeof body.payload === 'string') { try { body = JSON.parse(body.payload); } catch (e) { body = {}; } }
+  const reason = String(body.reason ?? '').trim();
+  const form = body.form || {};
+  const files = req.files || [];
+  const labels = Array.isArray(body.newImageLabels) ? body.newImageLabels.map(l => String(l ?? '').trim().slice(0, 60)) : [];
+  const pending = files.map(f => f.path); // uploaded files not yet in the contract's folder
+  const dropPending = () => { for (const p of pending) { try { if (p) fs.unlinkSync(p); } catch (e) { /* gone */ } } };
   try {
+    if (files.length && labels.slice(0, files.length).filter(Boolean).length < files.length) {
+      dropPending(); return res.status(400).json({ error: 'Every new image needs a label.' });
+    }
+    // Compressed before taking the lock (slow); same 2 MB gate as Add Image.
+    const added = [];
+    for (let i = 0; i < files.length; i++) {
+      const r = await compressAndGate(files[i].path);
+      if (r.error) { pending[i] = null; dropPending(); return res.status(400).json({ error: `${labels[i]}: ${r.error}` }); }
+      pending[i] = r.path;
+      added.push({ path: r.path, label: labels[i] });
+    }
     // Same locks as a payment and a status change: the balance check and the
     // save can't interleave with either.
     await withLock('contract-payment:' + req.params.id, () => withLock('contract-status:' + req.params.id, async () => {
       const c = loadForEdit(req, res); if (!c) return;
       if (!reason) return res.status(400).json({ error: 'A reason is required to edit the contract.' });
-      const linkedUnit = db.prepare('SELECT id, serial_number FROM inventory WHERE contract_id=?').get(c.id) || null;
-      const plan = planContractEdit(db, c, req.body.form || {}, { linkedUnit });
+      // The spa section — admin only (a salesperson sees it locked; anything sent is ignored).
+      const spa = req.session.role === 'admin' ? planSpaChange(db, c, form.spa) : null;
+      if (spa?.error) return res.status(400).json({ error: spa.error, notFound: !!spa.notFound });
+      if ((spa?.link || spa?.reserve) && !form.spa.confirmed) return res.status(409).json({ needsConfirm: true, message: spa.confirmMessage });
+      const view = spa ? contractAfterSpa(c, spa) : c;
+      const linkedUnit = spa ? linkedAfter(db, c, spa)
+        : db.prepare('SELECT id, serial_number FROM inventory WHERE contract_id=?').get(c.id) || null;
+      const plan = planContractEdit(db, view, form, { linkedUnit });
       if (plan.error) return res.status(400).json({ error: plan.error });
+      if (added.length && plan.closed) return res.status(400).json({ error: `${c.contract_number} is ${statusName(c.status)} — images can't be added on the Edit page.` });
 
       // Images to remove (by the URL the page shows), only while the contract is open.
-      const wanted = new Set((Array.isArray(req.body.removeImages) ? req.body.removeImages : []).map(String));
+      const wanted = new Set((Array.isArray(body.removeImages) ? body.removeImages : []).map(String));
       const removed = [];
       let contractImage = c.contract_image_path, chequeImage = c.cheque_image_path;
       let extras = c.extra_images ? JSON.parse(c.extra_images) : [];
@@ -1251,22 +1299,42 @@ router.post('/:id/edit', async (req, res) => {
         if (take(chequeImage, 'Cheque')) chequeImage = null;
         extras = extras.filter(i => !take(typeof i === 'string' ? i : i.path, typeof i === 'string' ? '' : i.label));
       }
-      if (!plan.changes.length && !removed.length) return res.status(400).json({ error: 'Nothing was changed.' });
+      if (!plan.changes.length && !removed.length && !spa && !added.length) return res.status(400).json({ error: 'Nothing was changed.' });
 
-      const d = plan.data, cu = d.customer;
-      db.transaction(() => {
-        db.prepare(`UPDATE contracts SET data=?, make=?, model=?, delivery_date=?, grand_total=?, due_prior=?, paid_amount=?,
-            contract_image_path=?, cheque_image_path=?, extra_images=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-          .run(JSON.stringify(d), d.product?.make ?? c.make, d.product?.model ?? c.model,
-            plan.closed ? c.delivery_date : (d.deliveryDate || null),
-            plan.totals ? d.costing.grandTotal : c.grand_total, String(plan.balance), String(plan.paid),
-            contractImage, chequeImage, extras.length ? JSON.stringify(extras) : null, c.id);
-        // Name, phones and email live on the shared customer record.
-        if (c.customer_id) {
-          db.prepare('UPDATE customers SET name=?, email=?, phone_cell=?, phone_home=?, phone_work=? WHERE id=?')
-            .run(cu.name, cu.email || null, cu.phone?.cell || null, cu.phone?.home || null, cu.phone?.work || null, c.customer_id);
-        }
-      })();
+      // New images into the contract's folder.
+      const used = new Set(), moved = [], start = extras.length + 1;
+      for (let i = 0; i < added.length; i++) {
+        const dest = extraImageDest(c.contract_number, added[i].label, path.extname(added[i].path) || '.jpg', start, used);
+        try { fs.renameSync(added[i].path, dest); added[i].path = dest; } catch (e) { /* keep it where it is */ }
+        moved.push(added[i].path); pending[i] = null;
+        extras.push({ path: added[i].path, label: added[i].label });
+      }
+
+      const d = plan.data, cu = d.customer, actor = req.session.username || 'system';
+      let units = { created: null, kept: null };
+      try {
+        db.transaction(() => {
+          if (spa) units = applySpaUnits(db, c, spa, d.product, actor);
+          db.prepare(`UPDATE contracts SET data=?, make=?, model=?, delivery_date=?, grand_total=?, due_prior=?, paid_amount=?,
+              contract_image_path=?, cheque_image_path=?, extra_images=?, status=?, product_status=?, serial_number=?,
+              web_order_number=?, truck_number=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+            .run(JSON.stringify(d), d.product?.make ?? view.make, d.product?.model ?? view.model,
+              plan.closed ? c.delivery_date : (d.deliveryDate || null),
+              plan.totals ? d.costing.grandTotal : c.grand_total, String(plan.balance), String(plan.paid),
+              contractImage, chequeImage, extras.length ? JSON.stringify(extras) : null,
+              view.status, view.product_status, view.serial_number,
+              view.web_order_number ?? null, view.truck_number ?? null, c.id);
+          // Name, phones and email live on the shared customer record.
+          if (c.customer_id) {
+            db.prepare('UPDATE customers SET name=?, email=?, phone_cell=?, phone_home=?, phone_work=? WHERE id=?')
+              .run(cu.name, cu.email || null, cu.phone?.cell || null, cu.phone?.home || null, cu.phone?.work || null, c.customer_id);
+          }
+        })();
+      } catch (e) {
+        for (const p of moved) { try { fs.unlinkSync(p); } catch (x) { /* gone */ } }
+        if (e.message === 'taken') return res.status(409).json({ error: `${spa.link ? 'Spa ' + spa.link.serial_number : 'That on-order spa'} was just taken — check Inventory.` });
+        throw e;
+      }
       // Removed files go (the nightly Drive copy keeps a backup); only files in this contract's folder.
       const folder = path.resolve(UPLOADS_DIR, 'contracts', c.contract_number);
       for (const r of removed) {
@@ -1275,36 +1343,74 @@ router.post('/:id/edit', async (req, res) => {
 
       const money = v => '$' + Number(v).toFixed(2);
       const parts = [];
+      if (spa) parts.push(spaLogText(c, spa));
       if (plan.changes.length) parts.push(changeText(plan.changes));
       if (plan.totals && plan.before.grandTotal !== plan.totals.grandTotal) parts.push(`Grand Total ${money(plan.before.grandTotal)} → ${money(plan.totals.grandTotal)}`);
       if (plan.before.balance !== plan.balance) parts.push(`Balance ${money(plan.before.balance)} → ${money(plan.balance)}`);
       if (removed.length) parts.push('Images removed: ' + removed.map(r => r.label || path.basename(r.path)).join(', '));
-      logActivity(db, { contractId: c.id, contractNum: c.contract_number, eventType: 'CONTRACT_EDITED', actor: req.session.username || 'system',
-        detail: parts.join(' · ') + ` — Reason: ${reason}` });
+      if (added.length) parts.push('Images added: ' + added.map(a => a.label).join(', '));
+      logActivity(db, { contractId: c.id, contractNum: c.contract_number, eventType: 'CONTRACT_EDITED', actor,
+        detail: parts.filter(Boolean).join(' · ') + ` — Reason: ${reason}` });
 
+      if (spa) {
+        // Sheets (non-fatal): the row changes tab on a switch, then the inventory spas.
+        try {
+          const fresh = db.prepare('SELECT * FROM contracts WHERE id=?').get(c.id);
+          const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(fresh.customer_id);
+          if (spa.switching) await moveContractRowForSwitch(c.contract_number, spa.to === 'instock', buildDriveData(fresh, customer, null));
+          if (spa.reserve) {
+            // The row goes (back) to Order Placed with the spa's Web Order # / Truck #.
+            await deleteContractRowFromSheet(c.contract_number);
+            await moveToOrderPlaced(c.contract_number, fresh.web_order_number || '', fresh.truck_number || '', buildDriveData(fresh, customer, null));
+          }
+          if (spa.link) await updateInventoryItemField(spa.link.serial_number, 'availability', 'Sold');
+          if (units.created) await appendInventoryItem(units.created);
+          if (units.kept) await appendInventoryItem(units.kept);
+          for (const u of spa.release) if (u.serial_number && u.availability !== 'Ordered') await updateInventoryItemField(u.serial_number, 'availability', 'In-stock');
+          for (const u of spa.remove) if (u.serial_number) await deleteInventoryItem(u.serial_number);
+        } catch (e) { console.error('[Drive spa change failed — non-fatal]', e.message); }
+      }
+      if (spa?.reserve && c.status === 'tbo') {
+        // To Be Ordered → Order Placed: the same notice and email as Move to Order Placed.
+        const name = cu.name || '';
+        addNotification(db, { contractId: c.id, contractNum: c.contract_number, eventType: 'ORDER_PLACED', color: 'green',
+          message: `${c.contract_number} — ${name} order placed (Web Order #${spa.setOrder.webOrder})` });
+        try {
+          await notifyOrderPlaced({ contract: db.prepare('SELECT * FROM contracts WHERE id=?').get(c.id), customerName: name,
+            webOrderNumber: spa.setOrder.webOrder, truckNumber: spa.setOrder.truck });
+        } catch (e) { console.error('[Email notify ORDER_PLACED failed — non-fatal]', e.message); }
+      }
       if (plan.totals) {
         try { await updatePaymentInSheet(c.contract_number, plan.paid, plan.balance); }
         catch (e) { console.error('[Drive payment update failed — non-fatal]', e.message); }
       }
       await syncAfterEdit(c.id);
-      res.json({ success: true, changes: plan.changes, removed: removed.length, totals: plan.totals, balance: plan.balance,
+      res.json({ success: true, changes: plan.changes, removed: removed.length, added: added.length, totals: plan.totals, balance: plan.balance,
+        movedTo: view.status !== c.status ? statusName(view.status) : null,
         owesWhileScheduled: c.status === 'scheduled' && plan.balance > 0 });
     }));
   } catch (err) {
     console.error('Contract edit error:', err);
     if (!res.headersSent) res.status(500).json({ error: 'Failed to save the contract' });
+  } finally {
+    dropPending(); // anything uploaded that didn't make it into the contract
   }
 });
 
 // ── Assign serial number ───────────────────────────────────────────────────────
-// The serial is checked against inventory, as on New Contract, so a spa can't
-// be sold twice:
-//  - on another contract, or in inventory but not In-stock → refused;
-//  - a free In-stock spa → the page first asks (409 needsConfirm; Proceed sends
-//    linkInventory: true), then the contract is linked to it and it's marked
-//    Sold. Any spa the contract had before goes back (In-stock, or stays
-//    Ordered); a unit this contract created itself for a typed serial is removed.
-//  - not in inventory → just recorded on the contract, as before.
+// Assign SI. No. No page offers it any more — since 2026-11-05 the spa is
+// changed on the Edit contract page (services/contractSpa.js); kept as an API.
+// The serial is checked against inventory:
+//  - sold to another contract, or in inventory but not In-stock → refused;
+//  - a free In-stock spa → asks first (needsConfirm); on Proceed the spa is
+//    linked and marked Sold, and the contract takes its make, series, model,
+//    year and colours (blank inventory fields leave the contract's value);
+//  - not in inventory → on an Assigned or Scheduled contract (spa in hand) a
+//    Sold unit is added for it, like New Contract does; on To Be Ordered /
+//    Order Placed the serial is only saved (salespeople type remarks there).
+// Whatever spa the contract had before goes back to stock (a unit it created
+// for a typed serial is removed). Never on a Delivered or Cancelled contract.
+
 router.patch('/:id/serial', requireAdmin, async (req, res) => {
   const { serialNumber } = req.body;
   if (!serialNumber || !String(serialNumber).trim()) {
@@ -1312,8 +1418,13 @@ router.patch('/:id/serial', requireAdmin, async (req, res) => {
   }
   const serial = String(serialNumber).trim();
   try {
+    // Same lock as status changes and edits: the contract can't change under it.
+    return await withLock('contract-status:' + req.params.id, async () => {
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Not found' });
+    if (['delivered', 'cancelled'].includes(contract.status)) {
+      return res.status(400).json({ error: `${contract.contract_number} is ${statusName(contract.status)} — its serial can't be changed.` });
+    }
 
     const unit = db.prepare(`SELECT i.*, c.contract_number AS linked_contract FROM inventory i
       LEFT JOIN contracts c ON c.id = i.contract_id WHERE lower(trim(i.serial_number)) = lower(?)`).get(serial);
@@ -1325,69 +1436,99 @@ router.patch('/:id/serial', requireAdmin, async (req, res) => {
       return res.status(409).json({ error: `Spa ${unit.serial_number} is "${unit.availability}" in inventory, not In-stock — it can't be assigned.` });
     }
     const linkUnit = unit && !ownUnit ? unit : null;
+    const createUnit = !unit && ['assigned', 'scheduled'].includes(contract.status);
+    const data = JSON.parse(contract.data || '{}');
+    const product = data.product || {};
+    const changes = linkUnit ? spaDetailChanges(contract, product, linkUnit) : [];
+    const previous = (linkUnit || createUnit)
+      ? db.prepare('SELECT * FROM inventory WHERE contract_id=?').all(contract.id).filter(u => !linkUnit || u.id !== linkUnit.id)
+      : [];
+    const removed  = previous.filter(u => u.created_by_contract_id === contract.id);
+    const released = previous.filter(u => u.created_by_contract_id !== contract.id);
+
     if (linkUnit && !req.body.linkInventory) {
       const what = [linkUnit.make, linkUnit.model].filter(Boolean).join(' ') || 'Spa';
+      const freed = released.map(u => u.serial_number).filter(Boolean);
       return res.status(409).json({
         needsConfirm: true,
         message: `${linkUnit.serial_number} is in inventory (${what}${linkUnit.location ? ', ' + linkUnit.location : ''}). `
-          + `${contract.contract_number} will be linked to this inventory item and it will be marked Sold.`,
+          + `${contract.contract_number} will be linked to this inventory item and it will be marked Sold.`
+          + (changes.length ? `\n\nContract spa details change: ${spaChangeText(changes)}.` : '')
+          + (freed.length ? `\n\n${freed.join(', ')} goes back to In-stock.` : ''),
       });
     }
 
-    const data = JSON.parse(contract.data || '{}');
-    if (data.product) data.product.serialNumber = serial;
+    if (data.product) {
+      data.product.serialNumber = serial;
+      for (const c of changes) data.product[c.key] = c.to;
+    }
+    const make  = changes.find(c => c.key === 'make')?.to  ?? contract.make;
+    const model = changes.find(c => c.key === 'model')?.to ?? contract.model;
+    const newUnit = createUnit ? {
+      make: product.make || contract.make || '', series: product.series || '', model: product.model || contract.model || '',
+      year: String(product.year || ''), shellColor: product.shellColor || '', cabinetColor: product.cabinetColor || '',
+      serialNumber: serial, availability: 'Sold', speaker: product.included?.speaker ? 'Yes' : '',
+    } : null;
 
     // Everything below up to the Sheet calls is synchronous — no await between
     // the availability check above and the link, so two requests can't both take the spa.
-    let released = [], removed = [];
-    if (linkUnit) {
-      const previous = db.prepare('SELECT * FROM inventory WHERE contract_id=? AND id<>?').all(contract.id, linkUnit.id);
-      removed  = previous.filter(u => u.created_by_contract_id === contract.id);
-      released = previous.filter(u => u.created_by_contract_id !== contract.id);
-      const taken = db.transaction(() => {
-        for (const u of removed) db.prepare('DELETE FROM inventory WHERE id=?').run(u.id);
-        for (const u of released) db.prepare(`UPDATE inventory SET contract_id=NULL,
-          availability=CASE WHEN availability='Ordered' THEN 'Ordered' ELSE 'In-stock' END, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(u.id);
+    const save = db.transaction(() => {
+      for (const u of removed) db.prepare('DELETE FROM inventory WHERE id=?').run(u.id);
+      for (const u of released) db.prepare(`UPDATE inventory SET contract_id=NULL,
+        availability=CASE WHEN availability='Ordered' THEN 'Ordered' ELSE 'In-stock' END, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(u.id);
+      if (linkUnit) {
         const ok = db.prepare(`UPDATE inventory SET availability='Sold', contract_id=?, updated_at=CURRENT_TIMESTAMP
           WHERE id=? AND contract_id IS NULL AND availability='In-stock'`).run(contract.id, linkUnit.id).changes === 1;
         if (!ok) throw new Error('taken');
-        db.prepare('UPDATE contracts SET serial_number=?,data=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
-          .run(serial, JSON.stringify(data), contract.id);
-        return true;
-      });
-      try { taken(); } catch (e) {
-        if (e.message === 'taken') return res.status(409).json({ error: `Spa ${linkUnit.serial_number} was just taken — check inventory.` });
-        throw e;
       }
-    } else {
-      db.prepare('UPDATE contracts SET serial_number=?,data=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
-        .run(serial, JSON.stringify(data), contract.id);
+      if (newUnit) {
+        db.prepare(`INSERT INTO inventory (make, series, model, year, shell_color, cabinet_color, serial_number,
+            availability, speaker, contract_id, created_by_contract_id, added_by)
+          VALUES (?,?,?,?,?,?,?,'Sold',?,?,?,?)`).run(newUnit.make, newUnit.series, newUnit.model, newUnit.year,
+          newUnit.shellColor, newUnit.cabinetColor, serial, newUnit.speaker, contract.id, contract.id, req.session.username || 'system');
+      }
+      db.prepare('UPDATE contracts SET serial_number=?,make=?,model=?,data=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
+        .run(serial, make, model, JSON.stringify(data), contract.id);
+    });
+    try { save(); } catch (e) {
+      if (e.message === 'taken') return res.status(409).json({ error: `Spa ${linkUnit.serial_number} was just taken — check inventory.` });
+      throw e;
     }
 
     // Sheets (non-fatal)
     try {
       await updateTBOSerial(contract.contract_number, serial);
     } catch(e) { console.error('[Drive serial update failed]', e.message, e.stack); }
+    if (changes.length) {
+      // The spa's make / model / colours changed — the whole contract row is rewritten.
+      const fresh = db.prepare('SELECT * FROM contracts WHERE id=?').get(contract.id);
+      const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(fresh.customer_id);
+      try { await updateContractRowInSheet(fresh.contract_number, buildDriveData(fresh, customer, null)); }
+      catch (e) { console.error('[Drive contract row rewrite failed — non-fatal]', e.message); }
+    }
     // A Scheduled delivery's calendar event shows the serial (title S/N and
     // description) — it must never keep the old one, or the crew could load the
     // wrong spa.
     await syncCalendarEvent(contract.id);
-    if (linkUnit) {
-      try {
-        await updateInventoryItemField(linkUnit.serial_number, 'availability', 'Sold');
-        for (const u of released) if (u.serial_number && u.availability !== 'Ordered') await updateInventoryItemField(u.serial_number, 'availability', 'In-stock');
-        for (const u of removed) if (u.serial_number) await deleteInventoryItem(u.serial_number);
-      } catch (e) { console.error('[Drive inventory link failed — non-fatal]', e.message); }
-    }
+    try {
+      if (linkUnit) await updateInventoryItemField(linkUnit.serial_number, 'availability', 'Sold');
+      if (newUnit) await appendInventoryItem(newUnit);
+      for (const u of released) if (u.serial_number && u.availability !== 'Ordered') await updateInventoryItemField(u.serial_number, 'availability', 'In-stock');
+      for (const u of removed) if (u.serial_number) await deleteInventoryItem(u.serial_number);
+    } catch (e) { console.error('[Drive inventory link failed — non-fatal]', e.message); }
     await syncCustomerRecord(req.params.id);
 
     logActivity(db, { contractId: contract.id, contractNum: contract.contract_number, eventType: 'SERIAL_ASSIGNED',
       actor: req.session.username || 'system',
-      detail: `Serial ${serial}` + (linkUnit ? ' — linked to the inventory item and marked Sold' : '')
+      detail: `Serial ${serial}` + serialWas(contract, serial)
+        + (linkUnit ? ' — linked to the inventory item and marked Sold' : '')
+        + (newUnit ? ' — not in inventory, added as Sold' : '')
+        + (changes.length ? ` | Spa details: ${spaChangeText(changes)}` : '')
         + (released.length ? ` | Returned to stock: ${released.map(u => u.serial_number || `on-order (Web Order # ${u.web_order_number || '—'})`).join(', ')}` : '')
         + (removed.length ? ` | Removed unit created for typed serial: ${removed.map(u => u.serial_number).join(', ')}` : '') });
 
-    res.json({ success: true, linked: !!linkUnit });
+    res.json({ success: true, linked: !!linkUnit, created: !!newUnit, changed: changes.map(c => c.label) });
+    }); // end withLock
   } catch(err) {
     console.error('Serial update error:', err);
     res.status(500).json({ error: 'Failed to update serial number' });
@@ -1589,17 +1730,9 @@ router.post('/:id/images', (req, res) => {
     if (!label) return res.status(400).json({ error: 'Image label is required' });
 
     // Move to contract folder
-    const contractFolder = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
-    fs.mkdirSync(contractFolder, { recursive: true });
     const existing = contract.extra_images ? JSON.parse(contract.extra_images) : [];
-    const safe     = label.replace(/[^a-zA-Z0-9 -]/g,'').trim().replace(/\s+/g,'-').slice(0,30) || 'image';
     const ext      = path.extname(req.file.originalname) || path.extname(req.file.path) || '.jpg';
-    // The next number no file in the folder uses yet — "count + 1" repeated
-    // a number after an image was removed and overwrote another image.
-    const taken = new Set(fs.readdirSync(contractFolder).map(f => (f.match(/^extra-(\d+)-/) || [])[1]).filter(Boolean).map(Number));
-    let n = existing.length + 1;
-    while (taken.has(n)) n++;
-    const destPath = path.join(contractFolder, `extra-${n}-${safe}${ext}`);
+    const destPath = extraImageDest(contract.contract_number, label, ext, existing.length + 1);
     try { fs.renameSync(req.file.path, destPath); } catch(e) { /* keep original path */ }
     let finalPath = fs.existsSync(destPath) ? destPath : req.file.path;
 

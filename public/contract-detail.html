@@ -443,7 +443,6 @@ function renderDetail(c) {
       // Only while money is owed — never on a fully paid or cancelled contract.
       (balDue>0 && c.status!=='cancelled' ? '<button class="btn btn-success" onclick="openPaymentModal()"><i class="fa-solid fa-money-bill-wave"></i> Record Payment</button>' : '') +
       '<button class="btn btn-secondary" onclick="openDetailAddImage()"><i class="fa-solid fa-image"></i> Add Image</button>' +
-      ((c.status==='tbo'||c.status==='assigned'||c.status==='scheduled') ? '<button class="btn btn-secondary" onclick="openDetailSerial()"><i class="fa-solid fa-barcode"></i> Assign SI. No</button>' : '') +
       (isAdmin && c.status==='delivered' && c.acknowledgement_pdf ? '<button class="btn btn-secondary" onclick="openSendAckModal()"><i class="fa-solid fa-paper-plane"></i> Send Acknowledgement</button>' : '') +
       '<button class="btn btn-secondary" disabled style="opacity:.4"><i class="fa-solid fa-envelope"></i> Send Email</button>' +
       (isAdmin ? '<button class="btn btn-danger" onclick="document.getElementById(\'deleteModal\').classList.add(\'open\')"><i class="fa-solid fa-trash"></i> Delete</button>' : '') +
@@ -758,29 +757,6 @@ async function submitDetailAddImage() {
 }
 var _daim=document.getElementById('detailAddImageModal'); if(_daim) _daim.addEventListener('click',function(e){if(e.target===e.currentTarget)closeDetailAddImage();});
 
-// ── Assign SI. No on detail page ──────────────────────────────────────────────
-function openDetailSerial() {
-  document.getElementById('detailSerialInput').value = '';
-  document.getElementById('detailSerialModal').classList.add('open');
-}
-function closeDetailSerial() {
-  document.getElementById('detailSerialModal').classList.remove('open');
-}
-async function submitDetailSerial() {
-  const sn = document.getElementById('detailSerialInput').value.trim();
-  if (!sn) { showToast('Serial number is required','error'); return; }
-  try {
-    const res = await assignSerial(contractId, sn);
-    if (res.cancelled) return; // back to the serial box
-    if (res.error) { showToast(res.error,'error'); return; }
-    closeDetailSerial();
-    showToast(res.linked ? 'Serial assigned — linked to the inventory item' : 'Serial number assigned','success');
-    loadContract();
-  } catch(e) { showToast(e.message||'Failed','error'); }
-}
-var _dsm=document.getElementById('detailSerialModal');
-if(_dsm)_dsm.addEventListener('click',function(e){if(e.target===e.currentTarget)closeDetailSerial();});
-
 // ── Send Acknowledgement (admin) ──────────────────────────────────────────────
 let _ackRecipients = [];
 async function openSendAckModal() {
@@ -913,23 +889,6 @@ function reviewAnswer(f) {
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-secondary" onclick="closeSendAckModal()">Cancel</button>
       <button class="btn btn-primary" id="ackSendBtn" onclick="confirmSendAck()"><i class="fa-solid fa-paper-plane"></i> Send Email</button>
-    </div>
-  </div>
-</div>
-<!-- Detail Serial Modal -->
-<div class="modal-overlay" id="detailSerialModal">
-  <div class="modal-box" style="max-width:400px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign Serial Number</h2>
-      <button onclick="closeDetailSerial()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
-    </div>
-    <div style="margin-bottom:14px">
-      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Serial Number</label>
-      <input type="text" id="detailSerialInput" placeholder="e.g. IIN26D1261148" style="width:100%">
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-secondary" onclick="closeDetailSerial()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitDetailSerial()"><i class="fa-solid fa-check"></i> Confirm & Assign</button>
     </div>
   </div>
 </div>

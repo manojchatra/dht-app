@@ -216,7 +216,7 @@ describe('lists: 50 at a time, Status search', () => {
     expect(page('inventory-list.html')).toMatch(/all\.slice\(0,shownCount\)/);
     const status = page('status.html');
     expect(status).toMatch(/id="statusSearch"/);
-    expect(status).toMatch(/c\.status===currentTab&&matchesSearch\(c,q\)/);
-    expect(status).toMatch(/function updateTabCounts\(q\)/);
+    expect(status).toMatch(/c\.status===currentTab&&matchesFilters\(c,q,r\)/); // search + date filter (Nov 2026)
+    expect(status).toMatch(/function updateTabCounts\(q,r,active\)/);
   });
 });

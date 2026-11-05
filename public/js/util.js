@@ -57,23 +57,40 @@ function confirmDialog(message, opts) {
   });
 }
 
-// assignSerial: Assign SI. No. When the serial is a free In-stock spa in
-// inventory the server asks first: the popup says the contract will be linked
-// to that inventory item; Proceed links it, Cancel goes back to the serial box.
-// Resolves { ok, linked } / { cancelled } / { error }.
-async function assignSerial(contractId, serial) {
-  async function send(link) {
-    var r = await fetch('/api/contracts/' + contractId + '/serial', { method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serialNumber: serial, linkInventory: link }) });
-    return { r: r, j: await r.json() };
-  }
-  var res = await send(false);
-  if (res.r.status === 409 && res.j.needsConfirm) {
-    if (!(await confirmDialog(res.j.message, { title: 'Link to inventory?', okText: 'Proceed' }))) return { cancelled: true };
-    res = await send(true);
-  }
-  if (!res.r.ok) return { error: res.j.error || 'Failed' };
-  return { ok: true, linked: !!res.j.linked };
+// choiceDialog: a popup with several named buttons. choices = [{ value, label,
+// primary }]. Resolves the value picked, or null for outside click / Esc.
+function choiceDialog(message, opts) {
+  opts = opts || {};
+  return new Promise(function (resolve) {
+    var ov = document.createElement('div');
+    ov.className = 'modal-overlay open';
+    ov.style.zIndex = '300';
+    ov.innerHTML = '<div class="modal-box" style="max-width:440px" role="dialog" aria-modal="true">'
+      + '<h2 style="font-size:15px;font-weight:600;margin-bottom:10px">' + escHtml(opts.title || 'Please choose') + '</h2>'
+      + '<p style="font-size:13px;line-height:1.5;margin-bottom:16px;white-space:pre-line">' + escHtml(message) + '</p>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      + (opts.choices || []).map(function (c, i) {
+          return '<button type="button" class="btn ' + (c.primary ? 'btn-primary' : 'btn-secondary') + '" data-i="' + i + '">' + escHtml(c.label) + '</button>';
+        }).join('')
+      + '</div></div>';
+    function done(v) { document.removeEventListener('keydown', onKey); ov.remove(); resolve(v); }
+    function onKey(e) { if (e.key === 'Escape') done(null); }
+    ov.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-i]');
+      if (b) done(opts.choices[+b.dataset.i].value); else if (e.target === ov) done(null);
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(ov);
+    var first = ov.querySelector('.btn-primary') || ov.querySelector('[data-i]');
+    if (first) first.focus();
+  });
+}
+
+// canEditContract: whether the "Edit contract" page is offered — an admin, or
+// the contract's own salesperson (the server checks the same).
+function canEditContract(c) {
+  if (window._userRole === 'admin') return true;
+  return window._userRole === 'sales' && c.salesman_user_id === window._userId;
 }
 
 // shrinkPhoto: a camera photo made smaller before upload (same 2000px / JPEG 80%

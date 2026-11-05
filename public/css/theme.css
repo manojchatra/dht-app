@@ -284,3 +284,7 @@ textarea{resize:vertical;min-height:60px}
 .list-footer .progress{width:220px;height:5px;background:var(--surface2);border-radius:5px;overflow:hidden}
 .list-footer .progress span{display:block;height:100%;background:var(--accent);border-radius:5px;transition:width .25s}
 .link-btn{background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:var(--font);text-decoration:underline;text-underline-offset:2px}
+
+/* Links in the card ⋮ menus (Edit) look like the menu buttons */
+.action-dropdown a{display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;font-size:13px;color:var(--text);font-family:var(--font);text-decoration:none}
+.action-dropdown a:hover{background:var(--surface2)}

@@ -39,8 +39,11 @@
 .sc-received{font-size:11px;color:#b45309;font-weight:500;margin-top:4px}
 .sc-delivered{font-size:11px;color:var(--green);font-weight:500;margin-top:4px}
 .sc-no-serial{font-size:11px;color:var(--red);margin-top:3px}
+.sc-serial-later{font-size:11px;color:var(--text-muted);margin-top:3px}
 .truck-pill{display:inline-flex;align-items:center;gap:5px;background:var(--accent-bg);color:var(--accent);padding:2px 10px;border-radius:12px;font-weight:600;font-size:11px}
 .status-card-actions{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* Scheduled card: the status dropdown on its own row, then [Reschedule] … [Apply] [⋮] */
+.status-card-actions .resched-btn{margin-right:auto}
 .btn-apply{padding:5px 14px;font-size:12px;font-weight:500;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:var(--font)}
 .btn-apply:disabled{opacity:.5;cursor:not-allowed}
 .empty-state{text-align:center;padding:60px;color:var(--text-muted);grid-column:1/-1}
@@ -50,6 +53,13 @@
 .upload-zone-sm{border:2px dashed var(--border);border-radius:6px;padding:10px;text-align:center;cursor:pointer;position:relative;background:var(--surface2);font-size:12px;color:var(--text-muted)}
 .upload-zone-sm input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .upload-zone-sm img{max-width:100%;max-height:80px;object-fit:contain;margin-top:6px;border-radius:4px;display:none}
+.status-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px}
+.status-filters .status-search{flex:1 1 300px;margin-bottom:0}
+.date-filter{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.date-filter-lbl{font-size:12px;color:var(--text-muted);font-weight:500;white-space:nowrap}
+.date-filter .date-input-wrap{width:140px}
+.date-filter .date-input-wrap input[type=text]{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 32px 8px 10px;font-size:13px;color:var(--text);font-family:var(--font)}
+.date-filter-dash{color:var(--text-muted)}
 .status-search{position:relative;max-width:460px;margin-bottom:16px}
 .status-search>i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:13px}
 .status-search input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 34px;color:var(--text);font-size:13px;font-family:var(--font);outline:none}
@@ -76,10 +86,30 @@
     <button class="tab" data-tab="delivered" onclick="switchTab('delivered')"><i class="fa-solid fa-truck-ramp-box"></i>Delivered</button>
     <button class="tab" data-tab="cancelled" onclick="switchTab('cancelled')"><i class="fa-solid fa-ban"></i>Cancelled</button>
   </div>
-  <div class="status-search">
-    <i class="fa-solid fa-magnifying-glass"></i>
-    <input type="text" id="statusSearch" placeholder="Search name, contract #, serial, spa, salesman, web order…" autocomplete="off" oninput="onStatusSearch()">
-    <button type="button" class="clear" id="statusSearchClear" onclick="clearStatusSearch()" title="Clear search"><i class="fa-solid fa-xmark"></i></button>
+  <div class="status-filters">
+    <div class="status-search">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input type="text" id="statusSearch" placeholder="Search name, contract #, serial, spa, salesman, web order…" autocomplete="off" oninput="onStatusSearch()">
+      <button type="button" class="clear" id="statusSearchClear" onclick="clearStatusSearch()" title="Clear search"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <!-- Date range: the date follows the tab (dateFieldFor) -->
+    <div class="date-filter">
+      <span class="date-filter-lbl" id="dateFilterLbl">Sale date</span>
+      <div class="date-input-wrap">
+        <input type="text" id="fromDateText" placeholder="From" maxlength="10" autocomplete="off" oninput="maskUSDateInput(this)"
+               onblur="syncDateFromText('fromDateText','fromDate');renderGrid()" onkeydown="if(event.key==='Enter')this.blur()">
+        <input type="date" id="fromDate" class="date-native-hidden" tabindex="-1" onchange="syncTextFromDate('fromDate','fromDateText');renderGrid()">
+        <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('fromDate')" title="Pick the From date"><i class="fa-solid fa-calendar"></i></button>
+      </div>
+      <span class="date-filter-dash">–</span>
+      <div class="date-input-wrap">
+        <input type="text" id="toDateText" placeholder="To" maxlength="10" autocomplete="off" oninput="maskUSDateInput(this)"
+               onblur="syncDateFromText('toDateText','toDate');renderGrid()" onkeydown="if(event.key==='Enter')this.blur()">
+        <input type="date" id="toDate" class="date-native-hidden" tabindex="-1" onchange="syncTextFromDate('toDate','toDateText');renderGrid()">
+        <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('toDate')" title="Pick the To date"><i class="fa-solid fa-calendar"></i></button>
+      </div>
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" id="clearFiltersBtn" onclick="clearFilters()" style="display:none"><i class="fa-solid fa-filter-circle-xmark"></i> Clear filters</button>
   </div>
   <div class="status-grid" id="statusGrid">
     <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i>Loading...</div>
@@ -101,18 +131,10 @@
         <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('slotDate')"><i class="fa-solid fa-calendar"></i></button>
       </div></div>
     <div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Start Time *</label>
-      <select id="slotStart" style="width:100%">
-        <option value="06:00">6:00 AM</option>
-        <option value="08:00">8:00 AM</option>
-        <option value="10:00">10:00 AM</option>
-        <option value="12:00">12:00 PM</option>
-        <option value="14:00">2:00 PM</option>
-        <option value="16:00">4:00 PM</option>
+      <select id="slotStart" class="slot-starts" style="width:100%">
       </select></div>
     <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Duration *</label>
-      <select id="slotDuration" style="width:100%">
-        <option value="120">1 slot — 2 hours</option>
-        <option value="240">2 slots — 4 hours</option>
+      <select id="slotDuration" class="slot-durations" style="width:100%">
       </select></div>
     <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Assign Team *</label>
       <select id="slotTeam" style="width:100%">
@@ -141,18 +163,10 @@
         <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('reschedDate')"><i class="fa-solid fa-calendar"></i></button>
       </div></div>
     <div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Start Time</label>
-      <select id="reschedStart" style="width:100%">
-        <option value="06:00">6:00 AM</option>
-        <option value="08:00">8:00 AM</option>
-        <option value="10:00">10:00 AM</option>
-        <option value="12:00">12:00 PM</option>
-        <option value="14:00">2:00 PM</option>
-        <option value="16:00">4:00 PM</option>
+      <select id="reschedStart" class="slot-starts" style="width:100%">
       </select></div>
     <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Duration</label>
-      <select id="reschedDuration" style="width:100%">
-        <option value="120">1 slot — 2 hours</option>
-        <option value="240">2 slots — 4 hours</option>
+      <select id="reschedDuration" class="slot-durations" style="width:100%">
       </select></div>
     <div style="margin-bottom:16px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Assign Team</label>
       <select id="reschedTeam" style="width:100%">
@@ -242,21 +256,6 @@
   </div>
 </div>
 
-<!-- Assign SI. No Modal -->
-<div class="modal-overlay" id="serialModal">
-  <div class="modal-box" style="max-width:400px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign Serial Number</h2>
-      <button onclick="closeSerialModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
-    </div>
-    <div style="margin-bottom:14px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Serial Number</label>
-      <input type="text" id="serialInput" placeholder="e.g. IIN26D1261148" style="width:100%"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-secondary" onclick="closeSerialModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSerial()"><i class="fa-solid fa-check"></i> Assign</button>
-    </div>
-  </div>
-</div>
 
 <script>
 
@@ -322,7 +321,7 @@ function toggleActionMenu(e,id){
 </script>
 <script>
 let allContracts=[], currentTab='assigned';
-let slotContractId=null, rescheduleContractId=null, serialContractId=null;
+let slotContractId=null, rescheduleContractId=null;
 let receivedContractId=null, deliverContractId=null;
 
 const TAB_LABELS={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order Placed',received:'Received',scheduled:'Scheduled',delivered:'Delivered',cancelled:'Cancelled'};
@@ -372,32 +371,59 @@ function clearStatusSearch(){
   const box=document.getElementById('statusSearch');
   box.value=''; onStatusSearch(); box.focus();
 }
-function updateTabCounts(q){
+
+// ── Date filter: the date follows the tab ─────────────────────────────────────
+// Scheduled → the delivery slot's date, Delivered → the delivered date, every
+// other tab → the sale date. From / To are each optional (inclusive).
+function dateFieldFor(tab){
+  if(tab==='scheduled') return { label:'Delivery date', of:c=>(c.scheduled_datetime||'').slice(0,10) };
+  if(tab==='delivered') return { label:'Delivered date', of:c=>c.delivery_date||'' };
+  return { label:'Sale date', of:c=>c.date||'' };
+}
+function dateRange(){ return { from:document.getElementById('fromDate').value, to:document.getElementById('toDate').value }; }
+function matchesDate(c,r){
+  if(!r.from&&!r.to) return true;
+  const d=dateFieldFor(c.status).of(c); // each contract by its own tab's date
+  if(!d) return false;
+  return (!r.from||d>=r.from)&&(!r.to||d<=r.to);
+}
+const matchesFilters=(c,q,r)=>matchesSearch(c,q)&&matchesDate(c,r);
+// Search box and both dates emptied in one go.
+function clearFilters(){
+  document.getElementById('statusSearch').value='';
+  ['fromDate','fromDateText','toDate','toDateText'].forEach(id=>{ const el=document.getElementById(id); el.value=''; el.classList.remove('input-error'); });
+  onStatusSearch();
+}
+
+function updateTabCounts(q,r,active){
   const counts={};
-  if(q) allContracts.forEach(c=>{ if(matchesSearch(c,q)) counts[c.status]=(counts[c.status]||0)+1; });
+  if(active) allContracts.forEach(c=>{ if(matchesFilters(c,q,r)) counts[c.status]=(counts[c.status]||0)+1; });
   document.querySelectorAll('.tab').forEach(t=>{
     let badge=t.querySelector('.tab-count');
     if(!badge){ badge=document.createElement('span'); badge.className='tab-count'; t.appendChild(badge); }
     const n=counts[t.dataset.tab]||0;
-    badge.textContent=q?String(n):'';
-    badge.classList.toggle('hit',!!q&&n>0);
+    badge.textContent=active?String(n):'';
+    badge.classList.toggle('hit',active&&n>0);
   });
   return counts;
 }
 
 function renderGrid() {
   const grid=document.getElementById('statusGrid');
-  const q=searchText();
-  const counts=updateTabCounts(q);
-  // A new tab or search starts again at the first 50; a refresh after an
-  // action keeps what was already shown.
-  const key=currentTab+'|'+q;
+  const q=searchText(), r=dateRange();
+  const active=!!(q||r.from||r.to);
+  document.getElementById('dateFilterLbl').textContent=dateFieldFor(currentTab).label;
+  document.getElementById('clearFiltersBtn').style.display=active?'':'none';
+  const counts=updateTabCounts(q,r,active);
+  // A new tab, search or date range starts again at the first 50; a refresh
+  // after an action keeps what was already shown.
+  const key=currentTab+'|'+q+'|'+r.from+'|'+r.to;
   if(key!==shownKey){ shownCount=LIST_PAGE; shownKey=key; }
-  const filtered=allContracts.filter(c=>c.status===currentTab&&matchesSearch(c,q));
+  const filtered=allContracts.filter(c=>c.status===currentTab&&matchesFilters(c,q,r));
   const footer=()=>listFooter(document.getElementById('listFooter'),shownCount,filtered.length,'contracts',
     ()=>{shownCount+=LIST_PAGE;renderGrid();},()=>{shownCount=filtered.length;renderGrid();});
   if (!filtered.length) {
-    if (q) {
+    if (active) {
       const elsewhere=Object.keys(TAB_LABELS).filter(t=>counts[t]);
       grid.innerHTML='<div class="empty-state"><i class="fa-solid fa-magnifying-glass"></i><p>No matches in '+escHtml(TAB_LABELS[currentTab]||currentTab)+'</p>'
         +(elsewhere.length?'<div class="search-elsewhere">Found in'+elsewhere.map(t=>'<button type="button" onclick="switchTab(\''+t+'\')">'+escHtml(TAB_LABELS[t])+' ('+counts[t]+')</button>').join(',')+'</div>':'')+'</div>';
@@ -435,7 +461,10 @@ function buildCard(c) {
   const isAssigned  = c.status === 'assigned';
   const isScheduled = c.status === 'scheduled';
   const isCancelled = c.status === 'cancelled';
-  const needsSerial = !c.serial_number && (isAssigned || isTBO || isOrderPlaced || isReceived || isScheduled);
+  // A spa in hand needs its serial; on order, it comes when the spa is received.
+  const needsSerial = !c.serial_number && (isAssigned || isReceived || isScheduled);
+  const serialLater = !c.serial_number && (isTBO || isOrderPlaced);
+  const canEdit = canEditContract(c) && !isDelivered && !isCancelled;
 
   // Extra status info
   let extraInfo = '';
@@ -455,15 +484,16 @@ function buildCard(c) {
     extraInfo = '<div class="sc-delivered"><i class="fa-solid fa-truck-ramp-box"></i> Delivered: ' + new Date(c.delivery_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + '</div>';
   if (needsSerial)
     extraInfo += '<div class="sc-no-serial"><i class="fa-solid fa-triangle-exclamation"></i> No serial number</div>';
+  if (serialLater)
+    extraInfo += '<div class="sc-serial-later">Serial at receiving</div>';
 
-  // Three-dot menu items
+  // Three-dot menu items. Edit: admin, or the contract's own salesperson.
   var menuItems = [];
+  if (canEdit)
+    menuItems.push('<a href="/contracts/'+c.id+'/edit"><i class="fa-solid fa-pen" style="color:var(--accent)"></i> Edit</a>');
   if (isAdmin) {
-    if (isScheduled || isAssigned) // Assigned: an In Stock sale saved without its serial
-      menuItems.push('<button onclick="openSerialModal('+c.id+')"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign SI. No</button>');
     if (isScheduled) {
       _schedData[c.id] = { dt: c.scheduled_datetime||'', dur: c.scheduled_duration||120, team: c.delivery_team||'team_a' };
-      menuItems.push('<button onclick="openReschedule('+c.id+')" style="color:inherit"><i class="fa-solid fa-calendar" style="color:#553c9a"></i> Reschedule</button>');
       menuItems.push('<a href="/delivery/'+c.id+'" style="display:flex;align-items:center;gap:8px;padding:9px 14px;color:var(--text);text-decoration:none;font-size:13px;font-family:var(--font)"><i class="fa-solid fa-clipboard-check"></i> Acknowledgement Form</a>');
     }
     // Revert to Assigned is only right for In Stock contracts; restoring a
@@ -494,7 +524,10 @@ function buildCard(c) {
         {v:'cancelled', l:'Cancelled'},
       ].filter(Boolean);
       var selHtml = opts.map(function(o){ return '<option value="'+o.v+'"'+(o.v===c.status?' selected':'')+'>'+o.l+'</option>'; }).join('');
+      // The dropdown fills its own row (theme.css); below it on a Scheduled card,
+      // Reschedule is a button like Schedule / Deliver on Received, with Apply and ⋮ on the right.
       actions = '<select class="status-select" id="sel-'+c.id+'" data-current="'+c.status+'" onchange="onDropdownChange('+c.id+',this.value)">'+selHtml+'</select>'
+              + (isScheduled ? '<button class="btn btn-secondary btn-sm resched-btn" onclick="openReschedule('+c.id+')"><i class="fa-solid fa-calendar"></i> Reschedule</button>' : '')
               + '<button class="btn-apply" id="apply-'+c.id+'" onclick="applyDropdown('+c.id+')" disabled>Apply</button>'
               + threeDotsMenu;
     } else if (isTBO) {
@@ -520,6 +553,7 @@ function buildCard(c) {
       _schedData[c.id] = { dt: c.scheduled_datetime||'', dur: c.scheduled_duration||120, team: c.delivery_team||'team_a' };
       actions = '<button class="btn btn-secondary btn-sm" onclick="openReschedule('+c.id+')"><i class="fa-solid fa-calendar"></i> Reschedule</button>';
     }
+    actions += threeDotsMenu; // Edit on their own contracts
   }
   if (isDelivered) {
     actions = '<a href="/contracts/'+c.id+'" class="btn btn-secondary btn-sm"><i class="fa-solid fa-eye"></i> View Contract</a>';
@@ -601,6 +635,17 @@ async function submitSlot() {
   } catch(e){showToast(e.message||'Failed','error');}
   finally{btn.disabled=false;}
 }
+
+// Delivery slots: a start every hour from 6 AM to 5 PM, 1–4 hours long
+// (2 by default). Bookings made with the old 2-hour slots keep their times.
+(function fillSlotOptions(){
+  const hour = h => (h % 12 || 12) + ':00 ' + (h < 12 ? 'AM' : 'PM');
+  let starts = '';
+  for (let h = 6; h <= 17; h++) starts += '<option value="' + String(h).padStart(2,'0') + ':00">' + hour(h) + '</option>';
+  const durs = [1,2,3,4].map(n => '<option value="' + n*60 + '"' + (n===2?' selected':'') + '>' + n + ' hour' + (n>1?'s':'') + '</option>').join('');
+  document.querySelectorAll('.slot-starts').forEach(el => { el.innerHTML = starts; });
+  document.querySelectorAll('.slot-durations').forEach(el => { el.innerHTML = durs; });
+})();
 
 // ── Reschedule modal ──────────────────────────────────────────────────────────
 function openReschedule(id) {
@@ -742,21 +787,6 @@ async function submitDeliver(){
   }catch(e){showToast(e.message||'Failed','error');}
 }
 
-// ── Serial modal ──────────────────────────────────────────────────────────────
-function openSerialModal(id){serialContractId=id;document.getElementById('serialInput').value='';document.getElementById('serialModal').classList.add('open');}
-function closeSerialModal(){document.getElementById('serialModal').classList.remove('open');serialContractId=null;}
-async function submitSerial(){
-  const sn=document.getElementById('serialInput').value.trim();
-  if(!sn){showToast('Serial number is required','error');return;}
-  try{
-    const res=await assignSerial(serialContractId,sn);
-    if(res.cancelled) return; // back to the serial box
-    if(res.error){showToast(res.error,'error');return;}
-    closeSerialModal();showToast(res.linked?'Serial assigned — linked to the inventory item':'Serial number assigned','success');
-    allContracts=await fetch('/api/contracts').then(r=>r.json());renderGrid();
-  }catch(e){showToast(e.message||'Failed','error');}
-}
-
 // ── Cancel / Revert ───────────────────────────────────────────────────────────
 async function cancelContract(id){
   const c=allContracts.find(x=>x.id===id)||{};
@@ -781,7 +811,7 @@ async function revertToAssigned(id){
 }
 
 // Modal overlay clicks
-['slotModal','rescheduleModal','orderPlacedModal','receivedModal','deliverModal','serialModal'].forEach(id=>{
+['slotModal','rescheduleModal','orderPlacedModal','receivedModal','deliverModal'].forEach(id=>{
   var el=document.getElementById(id);
   if(el)el.addEventListener('click',function(e){if(e.target===e.currentTarget)e.currentTarget.classList.remove('open');});
 });

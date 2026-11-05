@@ -728,6 +728,21 @@ async function updateContractRowInSheet(contractNumber, d) {
   return null;
 }
 
+// In Stock ↔ To Be Ordered switched on the Edit contract page: the row leaves
+// Assigned / TBO / Order Placed and is written fresh to Assigned (In Stock) or
+// TBO (To Be Ordered). d = routes/contracts.js buildDriveData().
+async function moveContractRowForSwitch(contractNumber, toInStock, d) {
+  const sheets = getSheets();
+  for (const tab of ['Assigned', 'TBO', 'Order Placed']) {
+    const rowIndex = await findRowByContractId(sheets, tab, contractNumber);
+    if (rowIndex > 0) await deleteRow(sheets, tab, rowIndex);
+  }
+  if (toInStock) await appendRow(sheets, 'Assigned', ASSIGNED_HEADERS, buildAssignedRow(d, 'Assigned', ''));
+  else await appendRow(sheets, 'TBO', TBO_HEADERS, buildTBORow(d, 'TBO'));
+  invalidateCache();
+  console.log('[Drive] Moved for switch →', toInStock ? 'Assigned' : 'TBO', ':', contractNumber);
+}
+
 // Update the serial number wherever the contract's row is (Assign SI. No).
 // Serial is column 8 on TBO / Order Placed / Assigned, column 9 on Received.
 async function updateTBOSerial(contractNumber, serialNumber) {
@@ -892,7 +907,7 @@ const changes = {
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus, updateContractRowInSheet,
-  moveToOrderPlaced,
+  moveToOrderPlaced, moveContractRowForSwitch,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, updatePaymentInSheet,

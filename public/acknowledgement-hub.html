@@ -28,8 +28,16 @@
 .search-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
 .search-bar input,.search-bar select{font-size:13px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:var(--font)}
 .search-bar input{flex:1;min-width:180px}
-.date-input-wrap{position:relative;flex:1;min-width:150px}
-.date-input-wrap input[type=text]{width:100%;padding-right:32px}
+.search-bar #searchName{flex:1 1 260px}
+.date-input-wrap{position:relative;flex:0 1 150px;min-width:130px}
+.date-filter-lbl{font-size:12px;color:var(--text-muted);font-weight:500;white-space:nowrap}
+.date-filter-dash{color:var(--text-muted)}
+.tab-count{font-size:10.5px;font-weight:700;border-radius:10px;padding:1px 7px;background:var(--surface2);color:var(--text-muted)}
+.tab-count:empty{display:none}
+.tab-count.hit{background:var(--accent-bg);color:var(--accent)}
+.search-elsewhere{margin-top:10px;font-size:13px}
+.search-elsewhere button{background:none;border:none;color:var(--accent);cursor:pointer;font-family:var(--font);font-size:13px;text-decoration:underline;text-underline-offset:2px;padding:0 4px}
+.date-input-wrap input[type=text]{width:100%;min-width:0;padding-right:32px}
 .date-input-wrap input[type=text].input-error{border-color:var(--red)}
 .date-pick-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;font-size:13px;line-height:1}
 .date-pick-btn:hover{color:var(--accent)}
@@ -65,12 +73,32 @@
   </div>
 
   <div class="ack-tab-bar">
-    <button class="ack-tab active" onclick="switchAckTab('scheduled')">
-      <i class="fa-solid fa-calendar-check"></i> Scheduled
+    <button class="ack-tab active" data-tab="scheduled" onclick="switchAckTab('scheduled')">
+      <i class="fa-solid fa-calendar-check"></i> Scheduled <span class="tab-count"></span>
     </button>
-    <button class="ack-tab" onclick="switchAckTab('completed')">
-      <i class="fa-solid fa-circle-check"></i> Completed
+    <button class="ack-tab" data-tab="completed" onclick="switchAckTab('completed')">
+      <i class="fa-solid fa-circle-check"></i> Completed <span class="tab-count"></span>
     </button>
+  </div>
+
+  <!-- One filter bar for both tabs (stays set when switching); the date follows the tab -->
+  <div class="search-bar">
+    <input type="text" id="searchName" placeholder="Search name, contract #, serial, address…" autocomplete="off" oninput="renderAll()">
+    <span class="date-filter-lbl" id="dateFilterLbl">Delivery date</span>
+    <div class="date-input-wrap">
+      <input type="text" id="fromDateText" placeholder="From" maxlength="10" autocomplete="off" oninput="maskUSDateInput(this)"
+             onblur="syncDateFromText('fromDateText','fromDate');renderAll()" onkeydown="if(event.key==='Enter')this.blur()">
+      <input type="date" id="fromDate" class="date-native-hidden" tabindex="-1" onchange="syncTextFromDate('fromDate','fromDateText');renderAll()">
+      <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('fromDate')" title="Pick the From date"><i class="fa-solid fa-calendar"></i></button>
+    </div>
+    <span class="date-filter-dash">–</span>
+    <div class="date-input-wrap">
+      <input type="text" id="toDateText" placeholder="To" maxlength="10" autocomplete="off" oninput="maskUSDateInput(this)"
+             onblur="syncDateFromText('toDateText','toDate');renderAll()" onkeydown="if(event.key==='Enter')this.blur()">
+      <input type="date" id="toDate" class="date-native-hidden" tabindex="-1" onchange="syncTextFromDate('toDate','toDateText');renderAll()">
+      <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('toDate')" title="Pick the To date"><i class="fa-solid fa-calendar"></i></button>
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" id="clearFiltersBtn" onclick="clearFilters()" style="display:none"><i class="fa-solid fa-filter-circle-xmark"></i> Clear filters</button>
   </div>
 
   <div id="tab-scheduled">
@@ -78,15 +106,6 @@
   </div>
 
   <div id="tab-completed" style="display:none">
-    <div class="search-bar">
-      <input type="text" id="searchName" placeholder="Search by customer name..." oninput="renderCompleted()">
-      <div class="date-input-wrap">
-        <input type="text" id="filterDateText" placeholder="M-DD-YYYY" maxlength="10" autocomplete="off" oninput="maskUSDateInput(this)" onblur="syncDateFromText('filterDateText','filterDate');renderCompleted()">
-        <input type="date" id="filterDate" class="date-native-hidden" tabindex="-1" onchange="syncTextFromDate('filterDate','filterDateText');renderCompleted()">
-        <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('filterDate')"><i class="fa-solid fa-calendar"></i></button>
-      </div>
-      <button onclick="clearFilters()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);cursor:pointer;font-family:var(--font);font-size:13px">Clear</button>
-    </div>
     <div id="compContent"></div>
   </div>
 </main>
@@ -189,14 +208,58 @@ async function init() {
   // /api/contracts list admin uses — same rule as GET /api/delivery/contract/:id.
   const isDelivery = window._userRole === 'delivery';
   allContracts = await fetch(isDelivery ? '/api/delivery/acknowledgements' : '/api/contracts').then(r=>r.json()).catch(()=>[]);
-  renderScheduled();
-  renderCompleted();
+  renderAll();
 }
 
+let currentAckTab = 'scheduled';
 function switchAckTab(tab) {
-  document.querySelectorAll('.ack-tab').forEach((t,i)=>t.classList.toggle('active',(i===0&&tab==='scheduled')||(i===1&&tab==='completed')));
+  currentAckTab = tab;
+  document.querySelectorAll('.ack-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
   document.getElementById('tab-scheduled').style.display = tab==='scheduled'?'':'none';
   document.getElementById('tab-completed').style.display  = tab==='completed'?'':'none';
+  renderAll();
+}
+
+// ── Filters (both tabs, any role — delivery users get only their team's list) ──
+// Search: name, contract #, serial, address, store. Dates: From / To, each
+// optional and inclusive; the date follows the tab — the delivery slot's date
+// on Scheduled, the delivered date on Completed.
+const ACK_TABS = {
+  scheduled: { label:'Scheduled', dateLabel:'Delivery date', is:c=>c.status==='scheduled', date:c=>(c.scheduled_datetime||'').slice(0,10) },
+  completed: { label:'Completed', dateLabel:'Delivered date', is:c=>c.status==='delivered'&&!!c.acknowledgement_pdf_url, date:c=>c.delivery_date||'' },
+};
+function ackFilters(){
+  return { q:(document.getElementById('searchName').value||'').trim().toLowerCase(),
+           from:document.getElementById('fromDate').value, to:document.getElementById('toDate').value };
+}
+const filtersActive = f => !!(f.q||f.from||f.to);
+function ackMatches(c, tab, f){
+  if (f.q && ![c.customer_name,c.contract_number,c.serial_number,c.address,c.store].join(' ').toLowerCase().includes(f.q)) return false;
+  if (f.from||f.to) {
+    const d = ACK_TABS[tab].date(c);
+    if (!d || (f.from && d<f.from) || (f.to && d>f.to)) return false;
+  }
+  return true;
+}
+function ackRows(tab, f){ return allContracts.filter(c=>ACK_TABS[tab].is(c)&&ackMatches(c,tab,f)); }
+// Empty-tab message: "No matches" plus links to the other tab when it has some.
+function noMatchHtml(tab, f, emptyIcon, emptyText){
+  if (!filtersActive(f)) return '<div style="text-align:center;padding:48px;color:var(--text-muted)"><i class="fa-solid '+emptyIcon+' fa-2x" style="display:block;margin-bottom:12px"></i>'+emptyText+'</div>';
+  const others = Object.keys(ACK_TABS).filter(t=>t!==tab).map(t=>[t,ackRows(t,f).length]).filter(x=>x[1]);
+  return '<div style="text-align:center;padding:48px;color:var(--text-muted)"><i class="fa-solid fa-magnifying-glass fa-2x" style="display:block;margin-bottom:12px"></i>No matches in '+ACK_TABS[tab].label
+    +(others.length?'<div class="search-elsewhere">Found in'+others.map(x=>'<button type="button" onclick="switchAckTab(\''+x[0]+'\')">'+ACK_TABS[x[0]].label+' ('+x[1]+')</button>').join(',')+'</div>':'')+'</div>';
+}
+function renderAll(){
+  const f = ackFilters(), active = filtersActive(f);
+  document.getElementById('dateFilterLbl').textContent = ACK_TABS[currentAckTab].dateLabel;
+  document.getElementById('clearFiltersBtn').style.display = active ? '' : 'none';
+  document.querySelectorAll('.ack-tab').forEach(t=>{
+    const badge = t.querySelector('.tab-count'), n = active ? ackRows(t.dataset.tab,f).length : 0;
+    badge.textContent = active ? String(n) : '';
+    badge.classList.toggle('hit', active && n>0);
+  });
+  renderScheduled();
+  renderCompleted();
 }
 
 // Only admin/delivery can actually complete an acknowledgement (backend:
@@ -210,10 +273,11 @@ function ackActionHtml(c) {
 }
 
 function renderScheduled() {
-  const rows = allContracts.filter(c=>c.status==='scheduled');
+  const f = ackFilters();
+  const rows = ackRows('scheduled', f);
   const el = document.getElementById('schedContent');
   if (!rows.length) {
-    el.innerHTML='<div style="text-align:center;padding:48px;color:var(--text-muted)"><i class="fa-solid fa-calendar-xmark fa-2x" style="display:block;margin-bottom:12px"></i>No scheduled contracts</div>';
+    el.innerHTML = noMatchHtml('scheduled', f, 'fa-calendar-xmark', 'No scheduled contracts');
     return;
   }
   const tableHtml = '<div style="overflow-x:auto"><table class="ack-table">'
@@ -245,14 +309,11 @@ function renderScheduled() {
 }
 
 function renderCompleted() {
-  var search = (document.getElementById('searchName').value||'').toLowerCase();
-  var dateFilter = document.getElementById('filterDate').value;
-  var rows = allContracts.filter(function(c){return c.status==='delivered' && c.acknowledgement_pdf_url;});
-  if (search) rows = rows.filter(function(c){return (c.customer_name||'').toLowerCase().includes(search);});
-  if (dateFilter) rows = rows.filter(function(c){return c.delivery_date===dateFilter;});
+  var f = ackFilters();
+  var rows = ackRows('completed', f);
   var el = document.getElementById('compContent');
   if (!rows.length) {
-    el.innerHTML='<div style="text-align:center;padding:48px;color:var(--text-muted)"><i class="fa-solid fa-inbox fa-2x" style="display:block;margin-bottom:12px"></i>'+(search||dateFilter?'No results for current filter':'No completed acknowledgements')+'</div>';
+    el.innerHTML = noMatchHtml('completed', f, 'fa-inbox', 'No completed acknowledgements');
     return;
   }
   const tableHtml = '<div style="overflow-x:auto"><table class="ack-table">'
@@ -281,11 +342,12 @@ function renderCompleted() {
   el.innerHTML = tableHtml + cardsHtml;
 }
 
+// Search and both dates emptied in one go.
 function clearFilters() {
-  document.getElementById('searchName').value='';
-  document.getElementById('filterDate').value='';
-  document.getElementById('filterDateText').value='';
-  renderCompleted();
+  ['searchName','fromDate','fromDateText','toDate','toDateText'].forEach(function(id){
+    var el=document.getElementById(id); el.value=''; el.classList.remove('input-error');
+  });
+  renderAll();
 }
 
 function openGenModal() {

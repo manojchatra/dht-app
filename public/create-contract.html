@@ -236,8 +236,15 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
     <div style="margin-bottom:14px">
       <label class="lbl">Inventory Search</label>
       <div style="display:flex;gap:10px">
-        <input type="text" id="invTrigger" placeholder="Click Search to browse inventory..." readonly
-               style="flex:1;cursor:pointer;background:var(--surface2)" onclick="openInvModal()">
+        <div style="flex:1;position:relative">
+          <input type="text" id="invTrigger" placeholder="Click Search to browse inventory..." readonly
+                 style="width:100%;cursor:pointer;background:var(--surface2);padding-right:34px" onclick="openInvModal()">
+          <!-- Clears the picked spa and everything it filled in (shown once a spa is picked) -->
+          <button type="button" id="invClear" onclick="clearSpaSelection()" title="Clear the selected spa" aria-label="Clear the selected spa"
+                  style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;font-size:15px;line-height:1">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
         <button class="btn btn-secondary" onclick="openInvModal()" style="white-space:nowrap">
           <i class="fa-solid fa-magnifying-glass"></i> Search
         </button>
@@ -1198,6 +1205,29 @@ function clearOrderedUnit(){
   selectedOrderedUnitId=null;
   document.getElementById('orderedNote').style.display='none';
   document.getElementById('invTrigger').value='';
+  document.getElementById('invClear').style.display='none';
+}
+
+// × on Inventory Search: drops the picked spa and everything the pick filled
+// in. The serial must go too — the server links the spa by its serial, so a
+// serial left behind would still mark the old spa Sold on save. In Stock / To
+// Be Ordered stays as chosen.
+function clearSpaSelection(){
+  selectedOrderedUnitId=null;
+  confirmedSerial='';
+  document.getElementById('orderedNote').style.display='none';
+  ['invTrigger','prodMake','prodSeries','prodModel','prodYear','prodSerial','shellColorOther','cabinetColorOther','prodFinance']
+    .forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('shellColorOther').style.display='none';
+  document.getElementById('cabinetColorOther').style.display='none';
+  document.getElementById('spaSerial').textContent='Serial auto-filled from product section';
+  document.getElementById('inclSpeaker').checked=false;
+  selectedShell=''; selectedCabinet='';
+  updateSeriesDl('');
+  renderColourChips();
+  document.getElementById('invClear').style.display='none';
+  refreshFinanceChoice();
+  showToast('Selection cleared — pick another spa or type a serial','success');
 }
 
 function selectUnit(row){
@@ -1219,6 +1249,7 @@ function selectUnit(row){
   document.getElementById('prodSerial').value=row.serial_number||'';
   document.getElementById('spaSerial').textContent=row.serial_number||'Serial auto-filled';
   document.getElementById('invTrigger').value=(row.make||'')+' '+(row.model||'')+' - '+(row.availability==='Ordered'?'On order (Truck '+(row.truck_number||'—')+')':(row.serial_number||''));
+  document.getElementById('invClear').style.display='block';
   updateSeriesDl(row.make||'');
   renderColourChips(); // this spa's brand
   selectChipFromValue('shellChips',   coloursFor('shell'),   normColour('shell',row.shell_color),     'shellColorOther',   function(v){selectedShell=v});

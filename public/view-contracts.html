@@ -130,24 +130,6 @@
 </div>
 
 
-<!-- Assign Serial Number Modal -->
-<div class="modal-overlay" id="serialModalCard">
-  <div class="modal-box" style="max-width:400px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h2 style="font-size:15px;font-weight:600"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign Serial Number</h2>
-      <button onclick="closeSerialModalCard()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">x</button>
-    </div>
-    <div style="margin-bottom:14px">
-      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-weight:500">Serial Number</label>
-      <input type="text" id="serialInputCard" placeholder="e.g. IIN26D1261148" style="width:100%">
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-secondary" onclick="closeSerialModalCard()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSerialCard()"><i class="fa-solid fa-check"></i> Confirm & Assign</button>
-    </div>
-  </div>
-</div>
-
 <!-- Payment Modal -->
 <div class="modal-overlay" id="paymentModal">
   <div class="modal-box" style="max-width:420px">
@@ -430,7 +412,7 @@ function buildCard(c){
         <div class="action-dropdown" id="dd-${c.id}">
           ${hasPending?`<button onclick="openPaymentModal(${c.id},${parseFloat(c.due_prior||0)})"><i class="fa-solid fa-money-bill-wave" style="color:var(--green)"></i> Record Payment</button>`:''}
           <button onclick="openAddImageModal(${c.id})"><i class="fa-solid fa-image" style="color:var(--accent)"></i> Add Image</button>
-          ${(c.status==='tbo'||c.status==='scheduled')?`<button onclick="openSerialModalCard(${c.id})"><i class="fa-solid fa-barcode" style="color:var(--accent)"></i> Assign SI. No</button>`:''}
+          ${canEditContract(c)&&!['delivered','cancelled'].includes(c.status)?`<a href="/contracts/${c.id}/edit"><i class="fa-solid fa-pen" style="color:var(--accent)"></i> Edit</a>`:''}
           <button disabled style="opacity:.4;cursor:not-allowed"><i class="fa-solid fa-envelope" style="color:var(--accent)"></i> Send Email</button>
           ${adminMenu}
         </div>
@@ -526,32 +508,6 @@ async function submitAddImage() {
   } finally {
     btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Image';
   }
-}
-
-// ── Assign SI. No from card ───────────────────────────────────────────────────
-let serialModalCardContractId = null;
-function openSerialModalCard(id) {
-  serialModalCardContractId = id;
-  document.getElementById('serialInputCard').value = '';
-  document.getElementById('serialModalCard').classList.add('open');
-}
-function closeSerialModalCard() {
-  document.getElementById('serialModalCard').classList.remove('open');
-  serialModalCardContractId = null;
-}
-async function submitSerialCard() {
-  const sn = document.getElementById('serialInputCard').value.trim();
-  if (!sn) { showToast('Serial number is required','error'); return; }
-  try {
-    const r = await fetch('/api/contracts/'+serialModalCardContractId+'/serial',{
-      method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({serialNumber:sn})
-    });
-    const j = await r.json();
-    if (!r.ok) { showToast(j.error||'Failed','error'); return; }
-    closeSerialModalCard();
-    showToast('Serial number assigned','success');
-    loadContracts();
-  } catch(e) { showToast(e.message||'Failed','error'); }
 }
 
 let deleteTarget=null;

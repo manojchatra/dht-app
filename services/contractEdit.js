@@ -12,8 +12,11 @@
  *    spa colours / speaker / year / series (make & model only if no spa is
  *    linked), warranty, electrical, misc notes, monthly cleanings, every line
  *    item and price, services, discount, tax %. Images can be removed.
- *  - Never: contract #, store, sale date, salesperson, In Stock / To Be Ordered,
- *    serial (Assign SI. No), payments (Record / Void), the signature.
+ *    Images can be added (with a label) and removed.
+ *  - The spa, serial and In Stock / To Be Ordered: admin only, in
+ *    services/contractSpa.js (Nov 2026 — replaces Assign SI. No).
+ *  - Never: contract #, store, sale date, salesperson, payments (Record /
+ *    Void), the signature.
  * The server takes only those fields from the form; anything else is ignored.
  */
 'use strict';
@@ -163,7 +166,7 @@ function planContractEdit(db, contract, form = {}, opts = {}) {
     if (opts.linkedUnit) {
       const differs = (a, b) => String(a || '').trim().toLowerCase() !== String(b || '').trim().toLowerCase();
       if (differs(make, pr.make) || differs(model, pr.model)) {
-        return { error: `Make and model come from the linked spa (${opts.linkedUnit.serial_number || 'on order'}) — change the spa with Assign SI. No first.` };
+        return { error: `Make and model come from the linked spa (${opts.linkedUnit.serial_number || 'on order'}) — an admin changes the spa with Inventory Search.` };
       }
     } else {
       if (!make || !model) return { error: 'Spa Make and Model are required' };
