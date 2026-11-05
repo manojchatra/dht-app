@@ -197,7 +197,7 @@ async function loadDash() {
     fetch('/api/contracts').then(r=>r.json()).catch(()=>[]),
     isSales ? Promise.resolve([]) : fetch('/api/sales/active/list').then(r=>r.json()).catch(()=>[]),
   ]);
-  const pending = contracts.filter(c=>parseFloat(c.due_prior||0)>0).length;
+  const pending = contracts.filter(c=>c.status!=="cancelled"&&parseFloat(c.due_prior||0)>0).length;
   const scheduled = contracts.filter(c=>c.status==='scheduled').length;
   const tbo = contracts.filter(c=>c.status==='tbo').length;
   document.getElementById('dashGrid').innerHTML =
