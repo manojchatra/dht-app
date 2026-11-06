@@ -556,7 +556,8 @@ async function deleteInventoryItem(serialNumber) {
 const CUSTOMER_RECORD_TAB = 'Customer Record';
 const CUSTOMER_RECORD_HEADERS = [
   'Customer ID','Contract Number','Name','Phone','Address','City',
-  'Brand','Model','Serial Number','Delivery Date','Salesman','Status'
+  'Brand','Model','Serial Number','Delivery Date','Salesman','Status',
+  'Contract Date','Series' // appended, never inserted: rows are written by column position
 ];
 const CUSTOMER_RECORD_CONTRACT_COL = 2;
 
@@ -564,6 +565,7 @@ function buildCustomerRecordRow(d) {
   return [
     d.customerNumber||'', d.contractNumber||'', d.name||'', d.phone||'', d.address||'', d.city||'',
     d.brand||'', d.model||'', d.serialNumber||'', d.deliveryDate||'', d.salesman||'', d.status||'',
+    d.contractDate||'', d.series||'',
   ];
 }
 
@@ -925,4 +927,5 @@ module.exports = {
   rewriteInventoryItemsTab,
   ...changes,
   _oneAtATime: oneAtATime, // for tests
+  _customerRecord: { headers: CUSTOMER_RECORD_HEADERS, buildRow: buildCustomerRecordRow }, // for tests
 };

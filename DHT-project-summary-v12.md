@@ -71,6 +71,7 @@ GOOGLE_CLIENT_EMAIL=...       # service account used for Sheets + Calendar
 GOOGLE_PRIVATE_KEY=...
 INVENTORY_FILE_ID=...         # the Google Sheet all tabs below live in
 GOOGLE_CALENDAR_ID=...@group.calendar.google.com
+GOOGLE_PLACES_KEY=...         # address suggestions; Places API (New) only, restricted to the server's IPv4 + IPv6. Empty = no suggestions
 SMTP_HOST=smtp-relay.brevo.com
 SMTP_PORT=587
 SMTP_USER=<brevo-login-email>
@@ -171,6 +172,7 @@ The **customer record is the source of truth** for a customer's name, phone and 
   - *Use this customer* → contract links to that record; phone/email/address on the record update to the new contract's, **the name is never overwritten**, old values go to the activity log (`CUSTOMER_LINKED`).
   - *No, this is a new customer* → new customer record with a new ID.
   - *Unlink* (banner) only undoes the link; Preview & Save asks again, so a duplicate customer is only ever created deliberately.
+- **Address suggestions (New Contract + Edit):** typing 3+ characters in Address lists up to 5 addresses from Google (US, Arizona first) with the required "Google Maps" label; a pick fills Address, City, State and Zip. `routes/address.js` asks Google so the key stays in `.env`; logged-in users only, 60 lookups a minute each. No key, or Google down: no list, and the address is typed by hand. Not filtered by place type (Google checks only a place's primary type, which could hide real homes), so a business can appear.
 - **No Customers page yet.** `GET /api/customers/:id` (customer + all contracts, admin) exists so a future Customers tab or the service app is a page-only job. `GET /api/customers/search` backs the popup (admin + sales).
 - **History:** before this change, contract save matched customers by email (or name + zip) and overwrote the record — different people sharing an email were merged into one customer. `scripts/migrate-customers.js` splits those apart (see Scripts).
 
@@ -265,7 +267,7 @@ All tabs live in the one spreadsheet `INVENTORY_FILE_ID`. The Sheet is a **mirro
 | Tab | Written by the app | Row key |
 |---|---|---|
 | Assigned, TBO, Order Placed, Received, Delivered, Cancelled | Each contract is **one row that moves** to the tab matching its status | Contract ID (col A) |
-| **Customer Record** | One row per contract that **never moves**; updated in place on every status/serial/delivery change. Columns: Customer ID, Contract Number, Name, Phone (Cell → Home → Work), Address, City, Brand, Model, Serial Number, Delivery Date (only once delivered), Salesman, Status | Contract Number (col B) |
+| **Customer Record** | One row per contract that **never moves**; updated in place on every status/serial/delivery change. Columns: Customer ID, Contract Number, Name, Phone (Cell → Home → Work), Address, City, Brand, Model, Serial Number, Delivery Date (only once delivered), Salesman, Status, Contract Date, Series. Written by column position, so new columns go at the end and columns must not be moved by hand | Contract Number (col B) |
 | Inventory Items | One row per unit; Availability kept in sync | Serial Number (col A) |
 | SKU List | Read-only (maintained by hand) — SKU lookup source | SKU |
 | Inventory | Legacy read-only tab (old in-stock picker); a sold serial's row is removed | Serial Number |
@@ -414,7 +416,7 @@ All time displays use `America/Phoenix` (MST, no DST):
 | Script | Use |
 |---|---|
 | `backup-db.js` | Online SQLite backup to `backups/db/`. Nightly (from `nightly-backup.sh`) keeps the last 14; `--manual` (run automatically by every `--apply` script, and by hand before any migration) writes `dht-app-manual-*.db`, last 10 kept separately. |
-| `migrate-customers.js` | One-time customer clean-up. No flag = report only. `--apply` splits wrongly merged customers, creates customers for contracts without one, formats phones, deletes customers with no contracts, numbers everyone. `--fix-phone DHT-C00006 cell 6021122111` fixes a reported number. `--sync-sheet` (re)writes every Customer Record row. |
+| `migrate-customers.js` | One-time customer clean-up. No flag = report only. `--apply` splits wrongly merged customers, creates customers for contracts without one, formats phones, deletes customers with no contracts, numbers everyone. `--fix-phone DHT-C00006 cell 6021122111` fixes a reported number. `--sync-sheet` (re)writes every Customer Record row, about 2.5 seconds a row to stay inside Google's quota, and lists any it couldn't write; safe to repeat. It overwrites hand edits in those columns and re-adds rows deleted by hand. |
 | `import-existing-inventory.js` | One-time import of the physical-stock sheet into the DB (quota-aware). |
 | `fix-stock-location.js` | One-off location correction for imported stock. |
 | `list-test-data.js` / `cleanup-test-data.js` | Find / remove test users and contracts before handover. |

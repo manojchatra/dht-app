@@ -169,11 +169,24 @@ function apply({ splits, unlinked, orphans }) {
   console.log('Migration applied.');
 }
 
+// Google allows 60 Sheet reads a minute and each row uses 2; a row refused for
+// going faster would only be logged, so pause and leave room for the running app.
+const SYNC_PAUSE_MS = 2500;
+
 async function syncSheet() {
-  const ids = db.prepare('SELECT id FROM contracts ORDER BY created_at, id').all().map(r => r.id);
-  console.log(`Writing ${ids.length} rows to the Customer Record Sheet tab…`);
-  for (const id of ids) await syncCustomerRecord(id);
-  console.log('Customer Record tab synced.');
+  const rows = db.prepare('SELECT id, contract_number FROM contracts ORDER BY created_at, id').all();
+  console.log(`Writing ${rows.length} rows to the Customer Record Sheet tab (about ${Math.ceil(rows.length * SYNC_PAUSE_MS / 60000)} min)…`);
+  const failed = [];
+  for (const [i, r] of rows.entries()) {
+    if (!(await syncCustomerRecord(r.id))) failed.push(r.contract_number);
+    if ((i + 1) % 25 === 0) console.log(`  ${i + 1} of ${rows.length}`);
+    await new Promise(resolve => setTimeout(resolve, SYNC_PAUSE_MS));
+  }
+  console.log(`Customer Record tab synced: ${rows.length - failed.length} of ${rows.length} rows written.`);
+  if (failed.length) {
+    console.log(`NOT written: ${failed.join(', ')} — run this again (it is safe to repeat).`);
+    process.exitCode = 1;
+  }
 }
 
 // --fix-phone DHT-C00006 cell 602-112-2111 — corrects one reported number

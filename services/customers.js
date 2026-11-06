@@ -126,14 +126,16 @@ const STATUS_LABEL = {
 };
 
 // Name/phone from the customer record; address/city from the contract's own
-// delivery address. Delivery Date only once actually delivered.
+// delivery address. Delivery Date only once actually delivered. Answers whether
+// the row was written (a failed Sheet write never stops the caller).
 async function syncCustomerRecord(contractId) {
   try {
     const c = db.prepare(`SELECT c.*, cu.customer_number, cu.name AS cu_name,
         cu.phone_cell, cu.phone_home, cu.phone_work, cu.address AS cu_address, cu.city AS cu_city
       FROM contracts c LEFT JOIN customers cu ON c.customer_id = cu.id WHERE c.id=?`).get(contractId);
-    if (!c) return;
-    const snap = JSON.parse(c.data || '{}').customer || {};
+    if (!c) return false;
+    const data = JSON.parse(c.data || '{}');
+    const snap = data.customer || {};
     await upsertCustomerRecordRow({
       customerNumber: c.customer_number || '',
       contractNumber: c.contract_number,
@@ -146,9 +148,13 @@ async function syncCustomerRecord(contractId) {
       deliveryDate: c.status === 'delivered' ? (c.delivery_date || '') : '',
       salesman: c.salesman || '',
       status:  STATUS_LABEL[c.status] || c.status || '',
+      contractDate: c.date || data.date || '',
+      series:  (data.product || {}).series || '',
     });
+    return true;
   } catch (e) {
     console.error('[Customer Record sync failed — non-fatal]', e.message);
+    return false;
   }
 }
 

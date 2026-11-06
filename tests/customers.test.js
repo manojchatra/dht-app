@@ -166,6 +166,7 @@ describe('Customer Record sheet tab', () => {
       customerNumber: cust.customer_number, contractNumber, name: 'Sheet Row', phone: '480-111-2222',
       address: '123 Test St', city: 'Mesa', brand: 'Caldera', model: 'Utopia',
       serialNumber: '', deliveryDate: '', salesman: 'Michael Ioli', status: 'To Be Ordered',
+      contractDate: ctx.db.prepare('SELECT date FROM contracts WHERE id=?').get(contractId).date, series: '',
     });
 
     await admin.patch(`/api/contracts/${contractId}/status`).send({ status: 'cancelled' });
@@ -174,4 +175,37 @@ describe('Customer Record sheet tab', () => {
     await admin.delete(`/api/contracts/${contractId}`);
     expect(drive.deleteCustomerRecordRow).toHaveBeenLastCalledWith(contractNumber);
   });
+
+  test('the contract date and the series reach the row', async () => {
+    const { contractId } = await newContract({ name: 'Series Row' }, {
+      date: '2026-10-15',
+      product: { status: 'ordered', serialNumber: '', make: 'Caldera', series: 'Highlife', model: 'Utopia' },
+    });
+    const row = drive.upsertCustomerRecordRow.mock.calls.at(-1)[0];
+    expect(row.contractDate).toBe('2026-10-15');
+    expect(row.series).toBe('Highlife');
+    expect(ctx.db.prepare('SELECT date FROM contracts WHERE id=?').get(contractId).date).toBe('2026-10-15');
+  });
+
+  test('a failed Sheet write is reported to the caller, not thrown', async () => {
+    const { contractId } = await newContract({ name: 'Failed Row' });
+    const { syncCustomerRecord } = require('../services/customers');
+    jest.spyOn(console, 'error').mockImplementationOnce(() => {});
+    drive.upsertCustomerRecordRow.mockRejectedValueOnce(new Error('429'));
+    await expect(syncCustomerRecord(contractId)).resolves.toBe(false);
+    await expect(syncCustomerRecord(contractId)).resolves.toBe(true);
+    await expect(syncCustomerRecord(99999999)).resolves.toBe(false);
+  });
+
+  test('Contract Date and Series are the last two columns; nothing before them moved', () => {
+    const { headers, buildRow } = jest.requireActual('../services/driveInventory')._customerRecord;
+    expect(headers).toEqual(['Customer ID', 'Contract Number', 'Name', 'Phone', 'Address', 'City',
+      'Brand', 'Model', 'Serial Number', 'Delivery Date', 'Salesman', 'Status', 'Contract Date', 'Series']);
+    const row = buildRow({ contractNumber: 'DHT1', model: 'Utopia', status: 'Assigned', contractDate: '2026-10-15', series: 'Highlife' });
+    expect(row).toHaveLength(headers.length);
+    expect(row[headers.indexOf('Model')]).toBe('Utopia');
+    expect(row[headers.indexOf('Status')]).toBe('Assigned');
+    expect(row[headers.indexOf('Contract Date')]).toBe('2026-10-15');
+    expect(row[headers.indexOf('Series')]).toBe('Highlife');
+  }, 60000);
 });

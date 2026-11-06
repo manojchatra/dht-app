@@ -39,6 +39,7 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
 .ac-item{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text)}
 .ac-item:last-child{border-bottom:none}
 .ac-item:hover{background:var(--accent-bg);color:var(--accent)}
+.ac-attrib{padding:4px 12px;font-size:11px;color:var(--text-muted);text-align:right}
 .other-input{display:none;margin-top:8px;max-width:220px}
 .detail-row{display:grid;grid-template-columns:1fr 140px 110px;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--border)}
 .detail-row:last-child{border-bottom:none}
@@ -185,7 +186,10 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
       <div><label class="lbl">Email</label><input type="email" id="custEmail" placeholder="name@email.com" maxlength="100"></div>
     </div>
     <div class="grid-2" style="margin-bottom:14px">
-      <div><label class="lbl">Address</label><input type="text" id="custAddress" placeholder="545 N Fraser Dr" maxlength="150"></div>
+      <div class="ac-wrap">
+        <label class="lbl">Address</label><input type="text" id="custAddress" placeholder="545 N Fraser Dr" maxlength="150" autocomplete="off" oninput="onAddressInput()" onblur="hideAddrDd()">
+        <div class="ac-dropdown" id="addrDd" onmousedown="event.preventDefault()"></div>
+      </div>
       <div class="grid-3" style="gap:8px">
         <div><label class="lbl">City *</label><input type="text" id="custCity" placeholder="Mesa" maxlength="60"></div>
         <div><label class="lbl">State</label><input type="text" id="custState" value="AZ" maxlength="2"></div>
@@ -1011,6 +1015,55 @@ function onModelInput(){var make=document.getElementById('prodMake').value.trim(
 function showModelDd(){clearTimeout(modelBT);var make=document.getElementById('prodMake').value.trim();var q=document.getElementById('prodModel').value.trim().toLowerCase();var pool=make&&MAKE_MODELS[make]?allModels(make):Object.keys(MAKE_MODELS).flatMap(function(m){return allModels(m)});fillDd('modelDd',pool.filter(function(m){return!q||m.toLowerCase().includes(q)}).slice(0,30),'selectModel');}
 function hideModelDd(){modelBT=setTimeout(function(){document.getElementById('modelDd').style.display='none'},160);}
 function selectModel(m){document.getElementById('prodModel').value=m;document.getElementById('modelDd').style.display='none';var make=document.getElementById('prodMake').value.trim();var s=seriesForModel(make,m);if(s)document.getElementById('prodSeries').value=s;}
+
+// ── Address suggestions (from Google, through our server: routes/address.js) ──
+var addrTimer=null,addrSeq=0,addrPick=0,addrSession='';
+function newAddrSession(){var a=new Uint8Array(16);crypto.getRandomValues(a);return Array.from(a,function(b){return b.toString(16).padStart(2,'0')}).join('');}
+// addrSeq: leaving the box, a newer keystroke or a pick makes a list still on its way out of date.
+// addrPick: only typing or another pick cancels a pick's lookup, so tabbing away right after still fills the form.
+function hideAddrDd(){clearTimeout(addrTimer);addrSeq++;document.getElementById('addrDd').style.display='none';}
+function fillAddrDd(items){
+  var dd=document.getElementById('addrDd');dd.innerHTML='';
+  if(!items.length){dd.style.display='none';return;}
+  items.forEach(function(s){
+    var div=document.createElement('div');div.className='ac-item';div.textContent=s.text;
+    div.addEventListener('click',function(){pickAddress(s)});
+    dd.appendChild(div);
+  });
+  // Google requires this label when its results are shown without a map.
+  var by=document.createElement('div');by.className='ac-attrib';by.setAttribute('translate','no');by.textContent='Google Maps';
+  dd.appendChild(by);
+  dd.style.display='block';
+}
+function onAddressInput(){
+  hideAddrDd();addrPick++;
+  var q=document.getElementById('custAddress').value.trim();
+  if(q.length<3)return;
+  var seq=addrSeq;
+  addrTimer=setTimeout(function(){
+    if(!addrSession)addrSession=newAddrSession();
+    fetch('/api/address/suggest?q='+encodeURIComponent(q)+'&session='+addrSession)
+      .then(function(r){return r.ok?r.json():{suggestions:[]}})
+      .then(function(d){if(seq===addrSeq)fillAddrDd(d.suggestions||[])})
+      .catch(function(){});
+  },350);
+}
+function pickAddress(s){
+  hideAddrDd();
+  var pick=++addrPick,session=addrSession;addrSession=''; // a pick ends this address's session
+  var street=s.text.split(',')[0];
+  document.getElementById('custAddress').value=street; // kept if the lookup below fails
+  fetch('/api/address/place/'+encodeURIComponent(s.placeId)+'?session='+session)
+    .then(function(r){return r.ok?r.json():null})
+    .then(function(a){
+      if(!a||pick!==addrPick)return;
+      document.getElementById('custAddress').value=a.address||street;
+      document.getElementById('custCity').value=a.city||'';
+      document.getElementById('custState').value=a.state||'AZ';
+      document.getElementById('custZip').value=a.zip||'';
+    })
+    .catch(function(){});
+}
 
 // ── Crane fee toggle ──────────────────────────────────────────────────────────
 function toggleCraneFee(){
