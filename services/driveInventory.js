@@ -730,6 +730,27 @@ async function updateContractRowInSheet(contractNumber, d) {
   return null;
 }
 
+// A corrected sale date (scripts/fix-contract-date.js): the contract's row,
+// found by its old number, gets the new Contract ID and Contract Date. Returns
+// the tab, or null if the row isn't in the Sheet.
+async function fixContractRowNumberAndDate(oldNumber, newNumber, newDate) {
+  const sheets = getSheets();
+  for (const tab of ['Assigned', 'TBO', 'Order Placed', 'Received', 'Delivered', 'Cancelled']) {
+    const row = await findRowByContractId(sheets, tab, oldNumber);
+    if (row < 0) continue;
+    const head = (await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${tab}!1:1` })).data.values?.[0] || [];
+    const value = { 'Contract ID': newNumber, 'Contract Date': newDate };
+    const data = head.map((h, i) => [String(h).trim(), i + 1])
+      .filter(([h]) => h in value)
+      .map(([h, col]) => ({ range: `${tab}!${colLetter(col)}${row}`, values: [[value[h]]] }));
+    if (data.length) {
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+    }
+    return tab;
+  }
+  return null;
+}
+
 // In Stock ↔ To Be Ordered switched on the Edit contract page: the row leaves
 // Assigned / TBO / Order Placed and is written fresh to Assigned (In Stock) or
 // TBO (To Be Ordered). d = routes/contracts.js buildDriveData().
@@ -909,7 +930,7 @@ const changes = {
   writeToAssigned, writeToTBO, writeToDelivered,
   updateToScheduled, moveToDelivered, moveToCancelled,
   revertToAssigned, updateTBOSerial, updateRowStatus, updateContractRowInSheet,
-  moveToOrderPlaced, moveContractRowForSwitch,
+  moveToOrderPlaced, moveContractRowForSwitch, fixContractRowNumberAndDate,
   moveToReceived, moveFromReceivedToScheduled,
   moveFromReceivedToDelivered, moveFromReceivedToCancelled,
   updateReceivedSerial, updatePaymentInSheet,

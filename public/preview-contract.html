@@ -90,8 +90,9 @@ function toggleActionMenu(e,id){
 <script>
 var draftData = null;
 
+// New Contract fills the form in again from this draft (js/contract-edit.js).
 function continueEditing(){
-  window.location.href = '/contracts/new';
+  window.location.href = '/contracts/new?resume=1';
 }
 
 function pKV(label,val){
@@ -222,6 +223,7 @@ async function saveContract(){
     var j=await r.json();
     if(!r.ok)throw new Error(j.error||'Save failed');
     sessionStorage.removeItem('draftContract');
+    sessionStorage.removeItem('draftContractUi');
     showToast(j.contractNumber+' saved!','success');
     setTimeout(function(){window.location.href='/contracts/'+j.contractId},1500);
   }catch(e){

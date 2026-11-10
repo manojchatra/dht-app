@@ -40,6 +40,11 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
 .ac-item:last-child{border-bottom:none}
 .ac-item:hover{background:var(--accent-bg);color:var(--accent)}
 .ac-attrib{padding:4px 12px;font-size:11px;color:var(--text-muted);text-align:right}
+.kept-uploads{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px}
+.kept-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0}
+.kept-item span{flex:1}
+.kept-x{background:none;border:none;color:var(--text-muted);font-size:18px;line-height:1;cursor:pointer;padding:0 4px}
+.kept-x:hover{color:var(--red)}
 .other-input{display:none;margin-top:8px;max-width:220px}
 .detail-row{display:grid;grid-template-columns:1fr 140px 110px;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--border)}
 .detail-row:last-child{border-bottom:none}
@@ -1459,6 +1464,16 @@ var contractSigPad=(function(){
   return {
     isEmpty:function(){ return !hasInk; },
     clear:function(){ ctx.clearRect(0,0,canvas.width,canvas.height); hasInk=false; },
+    // Continue Editing: the signature saved for the preview, drawn back in the middle of the pad.
+    restore:function(dataUrl){
+      var img=new Image();
+      img.onload=function(){
+        var s=Math.min(canvas.width/img.width,canvas.height/img.height,1), w=img.width*s, h=img.height*s;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img,(canvas.width-w)/2,(canvas.height-h)/2,w,h); hasInk=true;
+      };
+      img.src=dataUrl;
+    },
     // Cropped to the drawn strokes (so it fills the PDF's signature line
     // instead of being shrunk along with the whole wide canvas), on a white
     // background so the image reads correctly anywhere it's shown.
@@ -1552,6 +1567,28 @@ function collectData(){
 }
 
 // ── Preview & Save — upload files first, then navigate ───────────────────────
+// Photos uploaded for an earlier preview (Continue Editing, js/contract-edit.js):
+// kept unless removed, or replaced by a new contract / cheque photo.
+var keptUploads=null;
+function withKeptUploads(paths,kept){
+  kept=kept||{};
+  var out=Object.assign({},paths);
+  if(!out.contractImagePath&&kept.contractImagePath) out.contractImagePath=kept.contractImagePath;
+  if(!out.chequeImagePath&&kept.chequeImagePath) out.chequeImagePath=kept.chequeImagePath;
+  var extras=(kept.extraImages||[]).concat(out.extraImages||[]);
+  if(extras.length) out.extraImages=extras;
+  return out;
+}
+// What Continue Editing needs to show the form as it was (not part of the contract).
+function draftUiState(){
+  return {
+    invTrigger:document.getElementById('invTrigger').value,
+    orderedNote:selectedOrderedUnitId?document.getElementById('orderedNote').textContent.trim():'',
+    confirmedSerial:confirmedSerial,
+    linkedLabel:linkedCustomer?document.getElementById('custLinkedLabel').textContent:'',
+    dismissed:dismissedCustomerIds,
+  };
+}
 async function goToPreview(){
   var data=collectData();
   if(!data.store){showToast('Please select a store location','error');return;}
@@ -1703,8 +1740,9 @@ async function goToPreview(){
       uploadedPaths=j;
     }
 
-    data._uploadedPaths=uploadedPaths;
+    data._uploadedPaths=withKeptUploads(uploadedPaths,keptUploads);
     sessionStorage.setItem('draftContract',JSON.stringify(data));
+    sessionStorage.setItem('draftContractUi',JSON.stringify(draftUiState()));
     window.location.href='/contracts/preview';
   }catch(e){
     showToast('Upload failed: '+e.message,'error');

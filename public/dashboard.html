@@ -223,7 +223,8 @@ const STATUS_LABEL = {assigned:'Assigned',tbo:'To Be Ordered',received:'Received
 
 function renderRecentContracts(contracts) {
   const el = document.getElementById('recentContractsBody');
-  const recent = contracts.slice(0, 5);
+  // Old sales entered after delivery would push today's contracts off the list.
+  const recent = contracts.filter(c => !c.back_entered).slice(0, 5);
   if (!recent.length) { el.innerHTML = '<div class="empty-hint">No contracts yet.</div>'; return; }
   el.innerHTML = '<table class="cust-table"><thead><tr><th>Contract #</th><th>Customer</th><th>Spa</th><th>Salesman</th><th>Status</th></tr></thead><tbody>' +
     recent.map(c => {

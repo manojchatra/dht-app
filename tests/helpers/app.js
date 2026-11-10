@@ -39,6 +39,7 @@ function createTestApp() {
     updateContractRowInSheet:     jest.fn().mockResolvedValue('Assigned'),
     moveToOrderPlaced:            jest.fn().mockResolvedValue(null),
     moveContractRowForSwitch:     jest.fn().mockResolvedValue(null),
+    fixContractRowNumberAndDate:  jest.fn().mockResolvedValue('Delivered'),
     moveToReceived:              jest.fn().mockResolvedValue(null),
     moveFromReceivedToScheduled:  jest.fn().mockResolvedValue(null),
     moveFromReceivedToDelivered:  jest.fn().mockResolvedValue(null),

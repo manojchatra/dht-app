@@ -8,23 +8,16 @@
 //    in place of Preview & Save. The server takes only the editable fields and
 //    does every check (POST /api/contracts/:id/edit, services/contractEdit.js,
 //    services/contractSpa.js).
+//  - /contracts/new?resume=1 (Continue Editing on the preview): New Contract
+//    filled in again from the unsaved draft, with its spa pick, linked
+//    customer, signature and the photos already uploaded for the preview.
 // Needs js/util.js (canEditContract, choiceDialog).
 function contractClosed(c) { return c.status === 'delivered' || c.status === 'cancelled'; }
 
-(function () {
-  var m = location.pathname.match(/^\/contracts\/(\d+)\/edit\/?$/);
-  if (!m) return; // not the edit page
-  var EDIT_ID = +m[1];
-  var removeImages = {};
-
-  // Runs after the page's own start-up (salespeople list) once the login is known.
-  var pageAuthReady = window._onAuthReady;
-  window._onAuthReady = async function () {
-    if (pageAuthReady) await pageAuthReady();
-    try { await startEdit(); }
-    catch (e) { showToast(e.message || 'Could not open the contract', 'error'); }
-  };
-
+// Fills New Contract's form from a contract's saved data `d` (the shape
+// collectData() makes): the Edit page passes the saved contract as `c`;
+// Continue Editing on the preview passes the unsaved draft and {}.
+var contractForm = (function () {
   var $ = function (id) { return document.getElementById(id); };
   function setVal(id, v) { var el = $(id); if (el) el.value = v == null ? '' : v; }
   function setChk(id, on) { var el = $(id); if (el) el.checked = !!on; }
@@ -34,36 +27,14 @@ function contractClosed(c) { return c.status === 'delivered' || c.status === 'ca
     document.querySelectorAll('.' + cls).forEach(function (b) { b.checked = list.indexOf(b.value) >= 0; });
   }
   function setDate(hidden, text, v) { setVal(hidden, v || ''); if (typeof syncTextFromDate === 'function') syncTextFromDate(hidden, text); }
-  function lock(el, note) {
-    if (!el) return;
-    el.classList.add('edit-locked');
-    el.querySelectorAll && el.querySelectorAll('input,select,textarea,button').forEach(function (x) { x.disabled = true; });
-    if (/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(el.tagName)) el.disabled = true;
-    if (note) el.title = note;
-  }
   var yn = function (b) { return b ? 'yes' : (b === false ? 'no' : ''); };
 
-  async function startEdit() {
-    // The form's own buttons get their handlers when the page has loaded.
-    if (document.readyState === 'loading') await new Promise(function (ok) { document.addEventListener('DOMContentLoaded', ok); });
-    var r = await fetch('/api/contracts/' + EDIT_ID);
-    var c = await r.json();
-    if (!r.ok) throw new Error(c.error || 'Contract not found');
-    var d = c.data || {};
-    if (!canEditContract(c) || !(d.customer || d.product || d.costing)) {
-      showToast('This contract can\'t be edited here', 'error');
-      setTimeout(function () { location.href = '/contracts/' + EDIT_ID; }, 1200); return;
-    }
-    var closed = contractClosed(c);
+  function fill(d, c) {
+    c = c || {};
     var cu = d.customer || {}, ph = cu.phone || {}, pr = d.product || {}, w = d.warranty || {},
         sv = d.service || {}, el = d.electrical || {}, mi = d.misc || {}, de = d.details || {}, co = d.costing || {}, pa = d.payment || {};
     var g = function (k) { return de[k] || {}; };
 
-    document.title = 'Edit ' + c.contract_number + ' — DHT';
-    var h1 = document.querySelector('.page-header h1');
-    if (h1) h1.innerHTML = 'Edit Contract <span style="color:var(--accent)">' + escHtml(c.contract_number) + '</span>';
-
-    // ── Fill the form from the contract ──
     selectedStore = d.store || c.store || '';
     document.querySelectorAll('.store-chip').forEach(function (x) { x.classList.toggle('active', x.dataset.store === selectedStore); });
     var sc = d.saleChannel || { channel: 'showroom' };
@@ -85,7 +56,6 @@ function contractClosed(c) { return c.status === 'delivered' || c.status === 'ca
     setVal('custHeard', cu.heardAbout);
     setRadio('gated', cu.gated ? 'yes' : 'no'); setVal('gateCode', cu.gateCode);
     if ($('gateCode')) $('gateCode').style.display = cu.gated ? 'block' : 'none';
-    linkedCustomer = { id: c.customer_id }; // the "existing customer?" popup is for new contracts
 
     selectedStatus = c.product_status || pr.status || ''; // the server compares with product_status
     document.querySelectorAll('.status-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.status === selectedStatus); });
@@ -146,6 +116,53 @@ function contractClosed(c) { return c.status === 'delivered' || c.status === 'ca
     setChk('payFinanceSel', pa.finance && pa.finance.selected); setVal('payFinancePlan', pa.finance && pa.finance.plan); setVal('payFinanceAmt', pa.finance && pa.finance.amount);
     setVal('payDepositDays', pa.depositDays); setVal('payDepositAmt', pa.depositAmount);
     recalcAll();
+  }
+
+  return { fill: fill };
+})();
+
+(function () {
+  var m = location.pathname.match(/^\/contracts\/(\d+)\/edit\/?$/);
+  if (!m) return; // not the edit page
+  var EDIT_ID = +m[1];
+  var removeImages = {};
+
+  // Runs after the page's own start-up (salespeople list) once the login is known.
+  var pageAuthReady = window._onAuthReady;
+  window._onAuthReady = async function () {
+    if (pageAuthReady) await pageAuthReady();
+    try { await startEdit(); }
+    catch (e) { showToast(e.message || 'Could not open the contract', 'error'); }
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  function lock(el, note) {
+    if (!el) return;
+    el.classList.add('edit-locked');
+    el.querySelectorAll && el.querySelectorAll('input,select,textarea,button').forEach(function (x) { x.disabled = true; });
+    if (/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(el.tagName)) el.disabled = true;
+    if (note) el.title = note;
+  }
+
+  async function startEdit() {
+    // The form's own buttons get their handlers when the page has loaded.
+    if (document.readyState === 'loading') await new Promise(function (ok) { document.addEventListener('DOMContentLoaded', ok); });
+    var r = await fetch('/api/contracts/' + EDIT_ID);
+    var c = await r.json();
+    if (!r.ok) throw new Error(c.error || 'Contract not found');
+    var d = c.data || {};
+    if (!canEditContract(c) || !(d.customer || d.product || d.costing)) {
+      showToast('This contract can\'t be edited here', 'error');
+      setTimeout(function () { location.href = '/contracts/' + EDIT_ID; }, 1200); return;
+    }
+    var closed = contractClosed(c);
+
+    document.title = 'Edit ' + c.contract_number + ' — DHT';
+    var h1 = document.querySelector('.page-header h1');
+    if (h1) h1.innerHTML = 'Edit Contract <span style="color:var(--accent)">' + escHtml(c.contract_number) + '</span>';
+
+    contractForm.fill(d, c);
+    linkedCustomer = { id: c.customer_id }; // the "existing customer?" popup is for new contracts
     if ($('payDuePrior')) { $('payDuePrior').value = Number(c.due_prior || 0).toFixed(2); }
 
     // ── Lock what can't change ──
@@ -505,3 +522,87 @@ function contractClosed(c) { return c.status === 'delivered' || c.status === 'ca
     }
   }
 })();
+
+// ── Continue Editing (preview → New Contract) ────────────────────────────────
+// The preview keeps the draft (draftContract) and what the form needs to show
+// it again (draftContractUi, written by goToPreview). Photos can't be put back
+// in a file box, so the ones uploaded for the preview are listed as attached
+// and saved with the contract unless removed or replaced (keptUploads).
+(function () {
+  if (!/^\/contracts\/new\/?$/.test(location.pathname) || !/[?&]resume=1(&|$)/.test(location.search)) return;
+  var draft = null, ui = {};
+  try {
+    draft = JSON.parse(sessionStorage.getItem('draftContract') || 'null');
+    ui = JSON.parse(sessionStorage.getItem('draftContractUi') || '{}') || {};
+  } catch (e) { draft = null; }
+  if (!draft) return;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var pageAuthReady = window._onAuthReady;
+  window._onAuthReady = async function () {
+    if (pageAuthReady) await pageAuthReady();
+    if (document.readyState === 'loading') await new Promise(function (ok) { document.addEventListener('DOMContentLoaded', ok); });
+    try {
+      contractForm.fill(draft, {});
+      restoreSpa(draft.product || {});
+      restoreCustomer(draft.customer || {});
+      if (draft.customerSignature) contractSigPad.restore(draft.customerSignature);
+      keptUploads = draft._uploadedPaths || null;
+      showKeptUploads();
+      showToast('Your contract is back as you left it — make your changes and preview again', 'success');
+    } catch (e) { showToast('Could not fill in the contract again: ' + e.message, 'error'); }
+  };
+
+  function restoreSpa(pr) {
+    refreshFinanceChoice();
+    if ($('prodFinance')) $('prodFinance').value = pr.finance || '';
+    confirmedSerial = ui.confirmedSerial || '';
+    if (ui.invTrigger) { $('invTrigger').value = ui.invTrigger; $('invClear').style.display = 'block'; }
+    if (pr.orderedUnitId) {
+      selectedOrderedUnitId = pr.orderedUnitId;
+      var note = $('orderedNote');
+      note.innerHTML = '<i class="fa-solid fa-truck-fast"></i> ' + escHtml(ui.orderedNote || 'On order — reserved for this customer when you save.');
+      note.style.display = 'block';
+    }
+  }
+
+  function restoreCustomer(cu) {
+    dismissedCustomerIds = ui.dismissed || {};
+    if (!cu.existingCustomerId) return;
+    linkedCustomer = { id: cu.existingCustomerId };
+    $('custLinkedLabel').textContent = ui.linkedLabel || ('#' + cu.existingCustomerId);
+    $('custLinkedBanner').style.display = 'flex';
+  }
+})();
+
+// Photos uploaded for an earlier preview, at the top of Upload Images, each
+// with × to leave it out. A new photo chosen for the contract or cheque box
+// takes that one's place.
+function showKeptUploads() {
+  var k = keptUploads || {}, card = document.getElementById('contractImg') && document.getElementById('contractImg').closest('.card');
+  if (!card) return;
+  var box = document.getElementById('keptUploads');
+  if (!box) {
+    box = document.createElement('div'); box.id = 'keptUploads';
+    card.querySelector('.card-header').after(box);
+  }
+  var items = [];
+  if (k.contractImagePath) items.push({ key: 'contract', label: 'Handwritten contract photo' });
+  if (k.chequeImagePath) items.push({ key: 'cheque', label: 'Cheque photo' });
+  (k.extraImages || []).forEach(function (x, i) { items.push({ key: 'extra' + i, label: x.label || 'Supporting document' }); });
+  if (!items.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="kept-uploads"><div class="helper" style="margin-bottom:6px"><i class="fa-solid fa-paperclip"></i> Already attached from your preview — saved with the contract. Choose a new contract or cheque photo below to replace it.</div>'
+    + items.map(function (it) {
+      return '<div class="kept-item"><i class="fa-solid fa-image"></i><span>' + escHtml(it.label) + '</span>'
+        + '<button type="button" class="kept-x" data-key="' + it.key + '" title="Leave this photo out">×</button></div>';
+    }).join('') + '</div>';
+  box.querySelectorAll('.kept-x').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.dataset.key;
+      if (key === 'contract') delete keptUploads.contractImagePath;
+      else if (key === 'cheque') delete keptUploads.chequeImagePath;
+      else keptUploads.extraImages.splice(+key.slice(5), 1);
+      showKeptUploads();
+    });
+  });
+}

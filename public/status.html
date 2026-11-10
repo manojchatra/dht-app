@@ -388,6 +388,12 @@ function matchesDate(c,r){
   return (!r.from||d>=r.from)&&(!r.to||d<=r.to);
 }
 const matchesFilters=(c,q,r)=>matchesSearch(c,q)&&matchesDate(c,r);
+
+// Delivered tab: newest contract date first (as View Contracts), so an old sale
+// entered today sits at its own date. Same date: newest entered first, as the
+// server sends them — the sort keeps ties in place.
+function contractDay(c){return String(c.date||c.created_at||'').slice(0,10);}
+function byContractDate(list){return list.sort((a,b)=>contractDay(b).localeCompare(contractDay(a)));}
 // Search box and both dates emptied in one go.
 function clearFilters(){
   document.getElementById('statusSearch').value='';
@@ -420,6 +426,7 @@ function renderGrid() {
   const key=currentTab+'|'+q+'|'+r.from+'|'+r.to;
   if(key!==shownKey){ shownCount=LIST_PAGE; shownKey=key; }
   const filtered=allContracts.filter(c=>c.status===currentTab&&matchesFilters(c,q,r));
+  if(currentTab==='delivered') byContractDate(filtered);
   const footer=()=>listFooter(document.getElementById('listFooter'),shownCount,filtered.length,'contracts',
     ()=>{shownCount+=LIST_PAGE;renderGrid();},()=>{shownCount=filtered.length;renderGrid();});
   if (!filtered.length) {

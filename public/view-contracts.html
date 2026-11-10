@@ -13,14 +13,21 @@
 <script src="/js/util.js"></script>
 <script src="/js/gallery.js"></script>
 <style>
-.filter-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
-.filter-bar .search-wrap{flex:2;min-width:220px;position:relative}
+/* Two rows: search + contract date (+ Clear filters), then the dropdowns. */
+.filter-bar{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.filter-bar .search-wrap{flex:2 1 260px;position:relative}
 .filter-bar .search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:13px}
 .filter-bar .search-wrap input{padding-left:34px}
 .filter-bar input,.filter-bar select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:13px;font-family:var(--font);outline:none}
 .filter-bar select{flex:1;min-width:150px}
 .filter-bar input:focus,.filter-bar select:focus{border-color:var(--secondary);box-shadow:0 0 0 3px var(--secondary-bg)}
 .filter-bar .clear-filters-btn{flex:0 0 auto;white-space:nowrap}
+.date-filter{flex:0 1 420px;min-width:300px;display:flex;align-items:center;gap:6px}
+@media(max-width:768px){.date-filter{flex:1 1 100%}}
+.date-filter-lbl{font-size:12px;color:var(--text-muted);font-weight:500;white-space:nowrap}
+.date-filter .date-input-wrap{flex:1;min-width:120px}
+.date-filter-dash{color:var(--text-muted)}
 
 .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px}
@@ -84,15 +91,36 @@
   </div>
   <div class="stats-row" id="statsRow"></div>
   <div class="filter-bar">
-    <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search customer, serial, make…" oninput="filterCards()"></div>
-    <select id="storeFilter" onchange="filterCards()"><option value="">All regions</option><option>Phoenix</option><option>Goodyear</option><option>Chandler</option><option>Surprise</option><option>Tolleson</option></select>
-    <select id="channelFilter" onchange="filterCards()"><option value="">All channels</option><option value="showroom">Showroom</option><option value="costco">Costco</option><option value="walmart">Walmart</option><option value="event">Other event</option></select>
-    <select id="statusFilter" onchange="filterCards()"><option value="">All statuses</option><option value="assigned">Assigned</option><option value="tbo">To Be Ordered</option><option value="order_placed">Order Placed</option><option value="received">Received</option><option value="scheduled">Scheduled</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select>
-    <select id="payFilter" onchange="filterCards()"><option value="">All payments</option><option value="pending">Pending</option><option value="paid">Fully Paid</option></select>
-    <select id="yearFilter" onchange="filterCards()"><option value="">All years</option></select>
-    <select id="brandFilter" onchange="filterCards()"><option value="">All brands</option></select>
-    <select id="salesmanFilter" onchange="filterCards()"><option value="">All salesmen</option></select>
-    <button type="button" class="btn btn-secondary btn-sm clear-filters-btn" id="clearFiltersBtn" onclick="clearFilters()" style="display:none"><i class="fa-solid fa-xmark"></i> Clear filters</button>
+    <div class="filter-row">
+      <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search customer, serial, make…" oninput="filterCards()"></div>
+      <!-- Contract date range -->
+      <div class="date-filter">
+        <span class="date-filter-lbl">Contract date</span>
+        <div class="date-input-wrap">
+          <input type="text" id="fromDateText" placeholder="From" maxlength="10" autocomplete="off" oninput="maskUSDateInput(this)"
+                 onblur="syncDateFromText('fromDateText','fromDate');filterCards()" onkeydown="if(event.key==='Enter')this.blur()">
+          <input type="date" id="fromDate" class="date-native-hidden" tabindex="-1" onchange="syncTextFromDate('fromDate','fromDateText');filterCards()">
+          <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('fromDate')" title="Pick the From date"><i class="fa-solid fa-calendar"></i></button>
+        </div>
+        <span class="date-filter-dash">–</span>
+        <div class="date-input-wrap">
+          <input type="text" id="toDateText" placeholder="To" maxlength="10" autocomplete="off" oninput="maskUSDateInput(this)"
+                 onblur="syncDateFromText('toDateText','toDate');filterCards()" onkeydown="if(event.key==='Enter')this.blur()">
+          <input type="date" id="toDate" class="date-native-hidden" tabindex="-1" onchange="syncTextFromDate('toDate','toDateText');filterCards()">
+          <button type="button" class="date-pick-btn" tabindex="-1" onclick="openDatePicker('toDate')" title="Pick the To date"><i class="fa-solid fa-calendar"></i></button>
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm clear-filters-btn" id="clearFiltersBtn" onclick="clearFilters()" style="display:none"><i class="fa-solid fa-xmark"></i> Clear filters</button>
+    </div>
+    <div class="filter-row">
+      <select id="storeFilter" onchange="filterCards()"><option value="">All regions</option><option>Phoenix</option><option>Goodyear</option><option>Chandler</option><option>Surprise</option><option>Tolleson</option></select>
+      <select id="channelFilter" onchange="filterCards()"><option value="">All channels</option><option value="showroom">Showroom</option><option value="costco">Costco</option><option value="walmart">Walmart</option><option value="event">Other event</option></select>
+      <select id="statusFilter" onchange="filterCards()"><option value="">All statuses</option><option value="assigned">Assigned</option><option value="tbo">To Be Ordered</option><option value="order_placed">Order Placed</option><option value="received">Received</option><option value="scheduled">Scheduled</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select>
+      <select id="payFilter" onchange="filterCards()"><option value="">All payments</option><option value="pending">Pending</option><option value="paid">Fully Paid</option></select>
+      <select id="yearFilter" onchange="filterCards()"><option value="">All years</option></select>
+      <select id="brandFilter" onchange="filterCards()"><option value="">All brands</option></select>
+      <select id="salesmanFilter" onchange="filterCards()"><option value="">All salesmen</option></select>
+    </div>
   </div>
   <div class="contracts-grid" id="contractsGrid">
     <div class="empty-state" style="grid-column:1/-1"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div>
@@ -246,12 +274,18 @@ const STATUS_LABEL={assigned:'Assigned',tbo:'To Be Ordered',order_placed:'Order 
 
 // URL query param -> filter control id. Filters are mirrored into the URL so a
 // filtered view can be bookmarked/shared and survives a page refresh.
-const FILTER_PARAMS={q:'searchInput',region:'storeFilter',channel:'channelFilter',status:'statusFilter',pay:'payFilter',year:'yearFilter',brand:'brandFilter',salesman:'salesmanFilter'};
+const FILTER_PARAMS={q:'searchInput',region:'storeFilter',channel:'channelFilter',status:'statusFilter',pay:'payFilter',year:'yearFilter',brand:'brandFilter',salesman:'salesmanFilter',from:'fromDate',to:'toDate'};
 let filtersRestored=false;
+
+// Newest contract date first, so an old sale entered today sits at its own
+// date, not at the top. Same date: the order they were entered (newest first,
+// as the server sends them — the sort keeps ties in place).
+function contractDay(c){return String(c.date||c.created_at||'').slice(0,10);}
+function byContractDate(list){return list.sort((a,b)=>contractDay(b).localeCompare(contractDay(a)));}
 
 async function loadContracts(){
   try{
-    allContracts=await fetch('/api/contracts').then(r=>r.json());
+    allContracts=byContractDate(await fetch('/api/contracts').then(r=>r.json()));
     populateFilterOptions();
     if(!filtersRestored){restoreFiltersFromUrl();filtersRestored=true;}
     filterCards();
@@ -284,7 +318,10 @@ function populateFilterOptions(){
 function restoreFiltersFromUrl(){
   const params=new URLSearchParams(location.search);
   Object.entries(FILTER_PARAMS).forEach(([key,id])=>{if(params.has(key))document.getElementById(id).value=params.get(key);});
+  syncDateBoxes();
 }
+// The From / To boxes show the dates kept in their hidden inputs.
+function syncDateBoxes(){syncTextFromDate('fromDate','fromDateText');syncTextFromDate('toDate','toDateText');}
 function syncFiltersToUrl(){
   const params=new URLSearchParams();
   Object.entries(FILTER_PARAMS).forEach(([key,id])=>{const v=document.getElementById(id).value.trim();if(v)params.set(key,v);});
@@ -294,6 +331,7 @@ function syncFiltersToUrl(){
 }
 function clearFilters(){
   Object.values(FILTER_PARAMS).forEach(id=>{document.getElementById(id).value='';});
+  syncDateBoxes();
   filterCards();
 }
 
@@ -317,6 +355,7 @@ function filterCards(){
   const year=document.getElementById('yearFilter').value;
   const brand=document.getElementById('brandFilter').value;
   const salesman=document.getElementById('salesmanFilter').value;
+  const from=document.getElementById('fromDate').value,to=document.getElementById('toDate').value;
   const filtered=allContracts.filter(c=>{
     const hay=[c.customer_name,c.serial_number,c.make,c.model,c.contract_number,c.salesman].join(' ').toLowerCase();
     if(q&&!hay.includes(q))return false;
@@ -328,6 +367,8 @@ function filterCards(){
     if(year&&contractYear(c)!==year)return false;
     if(brand&&String(c.make||'').trim()!==brand)return false;
     if(salesman&&String(c.salesman||'').trim()!==salesman)return false;
+    if(from&&contractDay(c)<from)return false;
+    if(to&&contractDay(c)>to)return false;
     return true;
   });
   document.getElementById('totalCount').textContent=filtered.length===allContracts.length
@@ -336,7 +377,7 @@ function filterCards(){
   renderStats(filtered);
   // A new search or filter starts again at the first 50; a reload after an
   // action (payment, image, delete) keeps what was already shown.
-  const key=[q,store,channel,status,pay,year,brand,salesman].join('|');
+  const key=[q,store,channel,status,pay,year,brand,salesman,from,to].join('|');
   if(key!==filterCards.key){shownCount=LIST_PAGE;filterCards.key=key;}
   filteredContracts=filtered;
   renderCards();

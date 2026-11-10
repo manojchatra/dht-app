@@ -239,7 +239,7 @@ router.get('/', (req, res) => {
         c.serial_number, c.make, c.model,
         c.grand_total, c.paid_amount, c.due_prior,
         c.scheduled_datetime, c.scheduled_duration, c.delivery_team, c.acknowledgement_pdf, c.contract_image_path, c.cheque_image_path, c.extra_images, c.created_at,
-        c.web_order_number, c.truck_number,
+        c.web_order_number, c.truck_number, c.back_entered,
         json_extract(c.data,'$.product.shellColor')   AS shell_color,
         json_extract(c.data,'$.product.cabinetColor') AS cabinet_color,
         COALESCE(json_extract(c.data,'$.saleChannel.channel'), 'showroom') AS sale_channel,
@@ -710,11 +710,15 @@ router.post('/', uploadFields, async (req, res) => {
       { method:'finance',     sel:payment?.finance?.selected,    amount:money(payment?.finance?.amount),    chequeNum:null,                            notes:payment?.finance?.plan||'Finance' },
     ];
     const today = phoenixToday();
+    // Taken at signing: dated today, or for an old sale entered after delivery,
+    // its sale date (when that's a real date that isn't in the future).
+    const saleDate = String(cleanData.date || '');
+    const paymentDate = isBackEntry && /^\d{4}-\d{2}-\d{2}$/.test(saleDate) && saleDate <= today ? saleDate : today;
     let totalSeeded = 0;
     for (const pm of pmEntries) {
       if (pm.sel && pm.amount > 0) {
         db.prepare('INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by) VALUES (?,?,?,?,?,?,?)')
-          .run(contractId, pm.amount, pm.method, pm.chequeNum||null, today, pm.notes, req.session?.username||'system');
+          .run(contractId, pm.amount, pm.method, pm.chequeNum||null, paymentDate, pm.notes, req.session?.username||'system');
         totalSeeded += pm.amount;
       }
     }
@@ -814,7 +818,9 @@ router.post('/', uploadFields, async (req, res) => {
     // a linked customer whose phone may just have changed.
     if (existing && customerChanges.length) await syncCustomerRecordsForCustomer(customerId);
     else await syncCustomerRecord(contractId);
-    if (isNew) {
+    // An old sale entered after delivery (isAutoDeliver) is history, not news:
+    // no dashboard notification and no "awaiting order placement" email.
+    if (isNew && !isAutoDeliver) {
       addNotification(db, {
         contractId, contractNum: cnum,
         eventType: 'CONTRACT_CREATED', color: 'green',
