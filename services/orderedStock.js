@@ -9,6 +9,7 @@
  * releaseInventoryForContract in routes/contracts.js).
  */
 const { markInventoryItemReceivedInSheet, updateInventoryItemField, inventoryItemExistsInSheet, appendInventoryItem } = require('./driveInventory');
+const { normalizeMake } = require('../utils/makes');
 
 const norm = s => String(s ?? '').trim().toLowerCase();
 
@@ -27,6 +28,21 @@ function reserveOrdered(db, unitId, contractId) {
 
 function reservedUnitFor(db, contractId) {
   return db.prepare("SELECT * FROM inventory WHERE contract_id=? AND availability='Ordered'").get(contractId) || null;
+}
+
+// Order Placed contracts still waiting for their spa to be added to Inventory:
+// same Web Order #, make and model, and no on-order spa reserved for them yet.
+// Add Inventory → On Order offers to reserve the new spa for one of them, so
+// the spa isn't listed twice (the contract, plus "free" on-order stock).
+function contractsAwaitingSpa(db, webOrderNumber, make, model) {
+  if (!norm(webOrderNumber)) return [];
+  return db.prepare(`SELECT c.id, c.contract_number, c.make, c.model, c.web_order_number, c.truck_number,
+      COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name
+    FROM contracts c LEFT JOIN customers cu ON cu.id = c.customer_id
+    WHERE c.status = 'order_placed' AND lower(trim(c.web_order_number)) = ?
+      AND NOT EXISTS (SELECT 1 FROM inventory i WHERE i.contract_id = c.id)
+    ORDER BY c.created_at`).all(norm(webOrderNumber))
+    .filter(c => norm(normalizeMake(c.make)) === norm(normalizeMake(make)) && norm(c.model) === norm(model));
 }
 
 // Unreserved Ordered units of the same make and model — offered to admin when
@@ -194,4 +210,4 @@ async function keepOrderedSpa(db, contract, addedBy = 'system') {
   return `on-order stock (Web Order # ${webOrder})`;
 }
 
-module.exports = { convertToOnOrder, relinkOrdered, getUnreservedOrdered, reserveOrdered, reservedUnitFor, findOrderedMatches, receiveSerialConflict, receiveReservedUnit, linkReceivedUnit, serialWas, keepOrderedSpa };
+module.exports = { convertToOnOrder, relinkOrdered, getUnreservedOrdered, reserveOrdered, reservedUnitFor, findOrderedMatches, contractsAwaitingSpa, receiveSerialConflict, receiveReservedUnit, linkReceivedUnit, serialWas, keepOrderedSpa };

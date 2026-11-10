@@ -16,7 +16,13 @@ const { requireAdmin, requireRole } = require('../middleware/auth');
 const {
   lookupSku, appendInventoryItem, updateInventoryItemField, deleteInventoryItem,
   markInventoryItemReceivedInSheet, deleteOrderedInventoryItem,
+  deleteContractRowFromSheet, moveToOrderPlaced,
 } = require('../services/driveInventory');
+const { contractsAwaitingSpa, relinkOrdered } = require('../services/orderedStock');
+const { logActivity } = require('../utils/activityLogger');
+const { buildDriveData } = require('./contracts');
+
+const norm = s => String(s ?? '').trim().toLowerCase();
 
 // 'warehouse' isn't a creatable role yet (lands in Stage 5) — included here
 // now so this gate doesn't need a follow-up edit once it is.
@@ -140,17 +146,44 @@ router.post('/', (req, res) => {
       // Web Order Number/Truck Number instead of a serial until warehouse
       // marks it received. No duplicate check: a single web order can
       // legitimately cover multiple units, same as it does on contracts.
+      // But an Order Placed contract with the same Web Order #, make and model
+      // and no spa reserved yet is probably this spa: the page asks first
+      // (409 needsChoice) and sends orderChoice = that contract's id, or
+      // "stock" to add it as general on-order stock anyway.
       if (!hasSerial) {
-        const result = db.prepare(`
-          INSERT INTO inventory
-            (make, series, model, shell_color, cabinet_color, sku_number,
-             availability, added_by, speaker, web_order_number, truck_number, year, line, bay)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        `).run(
-          make.trim(), (series||'').trim(), model.trim(), (shellColor||'').trim(), (cabinetColor||'').trim(),
-          (skuNumber||'').trim(), 'Ordered', req.session.username || 'system', (speaker||'').trim(),
-          webOrderNumber.trim(), truckNumber.trim(), year, line, bay
-        );
+        const matches = contractsAwaitingSpa(db, webOrderNumber, make, model);
+        const choice = String(req.body.orderChoice || '');
+        if (matches.length && !choice) {
+          return res.status(409).json({ needsChoice: true, matches: matches.map(m => ({
+            id: m.id, contractNumber: m.contract_number, customerName: m.customer_name, truckNumber: m.truck_number || '' })) });
+        }
+        let reserveFor = null;
+        if (choice && choice !== 'stock') {
+          reserveFor = matches.find(m => String(m.id) === choice);
+          if (!reserveFor) return res.status(409).json({ error: 'That contract no longer needs this spa (it was linked or received meanwhile) — add it again.' });
+        }
+        const add = db.transaction(() => {
+          const r = db.prepare(`
+            INSERT INTO inventory
+              (make, series, model, shell_color, cabinet_color, sku_number,
+               availability, added_by, speaker, web_order_number, truck_number, year, line, bay)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          `).run(
+            make.trim(), (series||'').trim(), model.trim(), (shellColor||'').trim(), (cabinetColor||'').trim(),
+            (skuNumber||'').trim(), 'Ordered', req.session.username || 'system', (speaker||'').trim(),
+            webOrderNumber.trim(), truckNumber.trim(), year, line, bay
+          );
+          // The contract takes this spa's Web Order # / Truck # (services/orderedStock.js).
+          if (reserveFor) relinkOrdered(db, reserveFor.id, r.lastInsertRowid);
+          return r;
+        });
+        const result = add();
+        if (reserveFor) {
+          logActivity(db, { contractId: reserveFor.id, contractNum: reserveFor.contract_number, eventType: 'ORDER_PLACED',
+            actor: req.session.username || 'system',
+            detail: `Its on-order spa was added to Inventory and reserved for it — Web Order #: ${webOrderNumber.trim()} | Truck #: ${truckNumber.trim()}`
+              + (norm(reserveFor.truck_number) !== norm(truckNumber) ? ` (Truck # was ${reserveFor.truck_number || '—'})` : '') });
+        }
 
         try {
           await appendInventoryItem({
@@ -162,8 +195,17 @@ router.post('/', (req, res) => {
             year, line, bay,
           });
         } catch(e) { console.error('[Drive add inventory item failed — non-fatal]', e.message); }
+        if (reserveFor && norm(reserveFor.truck_number) !== norm(truckNumber)) {
+          // The contract's Order Placed row takes this spa's Truck # (as on the Edit page).
+          try {
+            const fresh = db.prepare('SELECT * FROM contracts WHERE id=?').get(reserveFor.id);
+            const customer = db.prepare('SELECT * FROM customers WHERE id=?').get(fresh.customer_id);
+            await deleteContractRowFromSheet(fresh.contract_number);
+            await moveToOrderPlaced(fresh.contract_number, fresh.web_order_number || '', fresh.truck_number || '', buildDriveData(fresh, customer, null));
+          } catch(e) { console.error('[Drive Order Placed row update failed — non-fatal]', e.message); }
+        }
 
-        return res.json({ success: true, id: result.lastInsertRowid });
+        return res.json({ success: true, id: result.lastInsertRowid, reservedFor: reserveFor ? reserveFor.contract_number : null });
       }
 
       const existing = db.prepare('SELECT id FROM inventory WHERE upper(trim(serial_number)) = upper(trim(?))').get(serialNumber.trim());

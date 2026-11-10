@@ -277,10 +277,25 @@ async function submitInventoryItem(){
   const btn=document.getElementById('submitBtn');
   btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
   try{
-    const r=await fetch('/api/inventory-items',{method:'POST',body:fd});
-    const j=await r.json();
+    let r=await fetch('/api/inventory-items',{method:'POST',body:fd});
+    let j=await r.json();
+    if(r.status===409&&j.needsChoice){
+      // An Order Placed contract is waiting for this spa (same Web Order #, make
+      // and model): reserve it for that customer, or add it as general stock.
+      const choice=await choiceDialog('Web Order # '+fd.get('webOrderNumber')+' — '+make+' '+model+' is on '
+        +(j.matches.length>1?'these Order Placed contracts':'this Order Placed contract')+' with no spa reserved yet:\n'
+        +j.matches.map(function(m){return m.contractNumber+' — '+(m.customerName||'Customer')+(m.truckNumber?' (Truck '+m.truckNumber+')':'');}).join('\n')
+        +'\n\nIs this spa for '+(j.matches.length>1?'one of them':'that customer')+'?',
+        {title:'Spa already on a contract?', choices:j.matches.map(function(m){
+          return {value:String(m.id), label:'Reserve for '+m.contractNumber, primary:j.matches.length===1};
+        }).concat([{value:'stock', label:'Add as general stock'}])});
+      if(!choice) return; // closed: nothing added
+      fd.set('orderChoice',choice);
+      r=await fetch('/api/inventory-items',{method:'POST',body:fd});
+      j=await r.json();
+    }
     if(!r.ok){ showToast(j.error||'Failed to add item','error'); return; }
-    showToast('Added to inventory','success');
+    showToast(j.reservedFor?'Added and reserved for '+j.reservedFor:'Added to inventory','success');
     setTimeout(function(){ window.location.href='/inventory'; }, 800);
   }catch(e){ showToast(e.message||'Failed','error'); }
   finally{ btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-plus"></i> Add to Inventory'; }
