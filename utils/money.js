@@ -30,7 +30,7 @@ function contractMoneyFields(f = {}) {
     ['Upgraded water care price', de.upgradedWaterCare?.price], ['Startup chemicals price', de.startupChemicals?.price],
     ['Cool Zone price', de.coolZone?.price], ['Accessories price', de.accessories?.price],
     ['Spa removal price', de.spaRemoval?.price], ['Fuel surcharge', de.fuelSurcharge?.price],
-    ['Discount', de.discount?.amount], ['Crane fee', sv.craneFee], ['Out-of-town delivery fee', sv.outOfTownDeliveryFee],
+    ['Discount', de.discount?.amount], ['Other service charge', de.otherService?.price], ['Crane fee', sv.craneFee], ['Out-of-town delivery fee', sv.outOfTownDeliveryFee],
     ['Out-of-town warranty fee', sv.outOfTownWarrantyFee], ['Monthly cleaning price', mi.cleaningPrice],
     ['Cheque amount', pm.cheque?.amount], ['Cash amount', pm.cash?.amount], ['Card amount', pm.creditCard?.amount],
     ['Finance amount', pm.finance?.amount], ['Deposit amount', pm.depositAmount],

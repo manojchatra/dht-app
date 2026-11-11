@@ -581,6 +581,20 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
       <input type="text" id="dtDiscountPrice" placeholder="$" oninput="recalcAll()">
       <label class="incl-toggle" style="opacity:.4">-</label>
     </div>
+
+    <div class="detail-row">
+      <div><div class="detail-label">Other Service Charge <span style="font-size:10px;color:var(--text-muted)">(service charge)</span></div>
+        <div class="detail-sub cb-row">
+          <label class="cb-item"><input type="radio" name="otherService" value="yes" onchange="onOtherServiceChange()"> Yes</label>
+          <label class="cb-item"><input type="radio" name="otherService" value="no" onchange="onOtherServiceChange()"> No</label>
+        </div>
+        <div id="otherServiceRow" style="display:none;margin-top:8px">
+          <textarea id="dtOtherServiceDesc" rows="2" maxlength="200" style="width:100%;resize:vertical" placeholder="What is this charge for?"></textarea>
+        </div>
+      </div>
+      <input type="text" id="dtOtherServicePrice" placeholder="$" oninput="recalcAll()">
+      <label class="incl-toggle" style="opacity:.4">-</label>
+    </div>
   </div>
 
   <!-- 9. Costing -->
@@ -1554,6 +1568,7 @@ function collectData(){
       spaRemoval:{yes:rd('spaRemoval')==='yes',price:v('dtSpaRemovalPrice')},
       fuelSurcharge:{yes:rd('fuelSurcharge')==='yes',price:v('dtFuelPrice')},
       discount:{yes:rd('discount')==='yes',amount:v('dtDiscountPrice'),reason:v('dtDiscountReason')},
+      otherService:{yes:rd('otherService')==='yes',description:v('dtOtherServiceDesc'),price:v('dtOtherServicePrice')},
     },
     costing:{subtotal:v('costSubtotal'),taxPercent:v('costTaxPct'),taxAmount:v('costTaxAmt'),productTotal:v('costProductTotal'),serviceTotal:v('costServiceTotal'),discountAmount:v('dtDiscountPrice'),grandTotal:v('costGrandTotal')},
     payment:{
@@ -1608,7 +1623,7 @@ async function goToPreview(){
   var MONEY_IDS={dtSpaPrice:'Spa price',dtCoverPrice:'Cover price',dtStepsPrice:'Steps price',dtSubpanelPrice:'Subpanel price',
     dtWaterSysPrice:'Water care price',dtUpgradedWaterPrice:'Upgraded water care price',dtStartupPrice:'Startup chemicals price',
     dtCoolzonePrice:'Cool Zone price',dtAccPrice:'Accessories price',dtSpaRemovalPrice:'Spa removal price',dtFuelPrice:'Fuel surcharge',
-    dtDiscountPrice:'Discount',craneFee:'Crane fee',svcOutTownFee:'Out-of-town delivery fee',svcOutWarrantyFee:'Out-of-town warranty fee',
+    dtDiscountPrice:'Discount',dtOtherServicePrice:'Other service charge',craneFee:'Crane fee',svcOutTownFee:'Out-of-town delivery fee',svcOutWarrantyFee:'Out-of-town warranty fee',
     miscCleaningPrice:'Monthly cleaning price',payChequeAmt:'Cheque amount',payCashAmt:'Cash amount',payCCAmt:'Card amount',
     payFinanceAmt:'Finance amount',payDepositAmt:'Deposit amount'};
   for(var mid in MONEY_IDS){
@@ -1617,6 +1632,12 @@ async function goToPreview(){
       showToast(MONEY_IDS[mid]+' looks wrong: '+mEl.value.trim()+' — use 20300 or 20,300','error');
       mEl.scrollIntoView({behavior:'smooth',block:'center'}); mEl.focus(); return;
     }
+  }
+  var os=data.details.otherService;
+  if(os.yes && (!os.description || !(numVal('dtOtherServicePrice')>0))){
+    showToast(!os.description?'Other Service Charge: say what the charge is for':'Other Service Charge: enter the amount','error');
+    var osEl=document.getElementById(!os.description?'dtOtherServiceDesc':'dtOtherServicePrice');
+    osEl.scrollIntoView({behavior:'smooth',block:'center'}); osEl.focus(); return;
   }
   var cm=(data.misc.cleaningMonths||'').trim();
   if(data.misc.monthlyCleanings && cm && !(/^\d+$/.test(cm) && +cm>=1 && +cm<=60)){
@@ -1782,6 +1803,17 @@ function onDiscountChange(){
   recalcAll();
 }
 
+// Other Service Charge: a service charge (not taxed) with what it's for.
+function onOtherServiceChange(){
+  var yes=rdVal('otherService')==='yes';
+  document.getElementById('otherServiceRow').style.display=yes?'block':'none';
+  if(!yes){
+    document.getElementById('dtOtherServiceDesc').value='';
+    document.getElementById('dtOtherServicePrice').value='';
+  }
+  recalcAll();
+}
+
 function recalcAll(){
   // Product items (Included items contribute $0 to Subtotal)
   var spa      = numVal('dtSpaPrice');
@@ -1810,7 +1842,8 @@ function recalcAll(){
   // as a customer-notification note only (see contract-detail.html / pdfGenerator.js).
   var spaRem   = rdVal('spaRemoval')==='yes'    ? numVal('dtSpaRemovalPrice') : 0;
   var fuel     = rdVal('fuelSurcharge')==='yes' ? numVal('dtFuelPrice')       : 0;
-  var serviceTotal = cents(crane+outTown+spaRem+fuel);
+  var otherSvc = rdVal('otherService')==='yes'  ? numVal('dtOtherServicePrice') : 0;
+  var serviceTotal = cents(crane+outTown+spaRem+fuel+otherSvc);
   var discount     = rdVal('discount')==='yes'  ? cents(numVal('dtDiscountPrice')) : 0;
   var grandTotal   = cents(Math.max(0, productTotal + serviceTotal - discount));
 

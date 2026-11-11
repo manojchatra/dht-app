@@ -108,6 +108,9 @@ var contractForm = (function () {
     setRadio('discount', yn(g('discount').yes));
     if ($('discountReasonRow')) $('discountReasonRow').style.display = g('discount').yes ? 'block' : 'none';
     setVal('dtDiscountReason', g('discount').reason); setVal('dtDiscountPrice', g('discount').amount);
+    setRadio('otherService', yn(g('otherService').yes));
+    if ($('otherServiceRow')) $('otherServiceRow').style.display = g('otherService').yes ? 'block' : 'none';
+    setVal('dtOtherServiceDesc', g('otherService').description); setVal('dtOtherServicePrice', g('otherService').price);
     setVal('costTaxPct', co.taxPercent);
 
     setChk('payChequeSel', pa.cheque && pa.cheque.selected); setVal('payChequeNum', pa.cheque && pa.cheque.number); setVal('payChequeAmt', pa.cheque && pa.cheque.amount);

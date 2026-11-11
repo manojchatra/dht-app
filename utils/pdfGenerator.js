@@ -446,6 +446,13 @@ async function generateContractPDF(contract) {
           {text:de.discount.amount?'-$'+de.discount.amount:'\u2014',fontSize:8,alignment:'right',margin:[3,5,3,5]},
           {text:'',margin:[3,5,3,5]},
         ]]:[]),
+        // Other Service Charge (a service charge: not taxed)
+        ...((de.otherService&&de.otherService.yes)?[[
+          {text:'Other Service Charge',fontSize:8,margin:[3,5,3,5]},
+          {text:de.otherService.description||'',fontSize:8,bold:true,color:C.dark,margin:[3,5,3,5]},
+          {text:de.otherService.price?'$'+de.otherService.price:'\u2014',fontSize:8,alignment:'right',margin:[3,5,3,5]},
+          {text:'',margin:[3,5,3,5]},
+        ]]:[]),
       ]},
       layout:{ hLineColor:()=>C.border, vLineColor:()=>C.border,
                hLineWidth:()=>0.4, vLineWidth:()=>0.4 },

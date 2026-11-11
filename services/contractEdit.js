@@ -20,7 +20,7 @@
  * The server takes only those fields from the form; anything else is ignored.
  */
 'use strict';
-const { computeTotals, costingFrom, show, cents, num } = require('../utils/contractTotals');
+const { computeTotals, costingFrom, checkOtherService, show, cents, num } = require('../utils/contractTotals');
 const { moneyError } = require('../utils/money');
 const { totalPaid } = require('../utils/paymentTotals');
 const { normalizeContractPhones } = require('./customers');
@@ -72,6 +72,7 @@ const PRICING_FIELDS = {
   spaRemoval:        { yes: B, price: S },
   fuelSurcharge:     { yes: B, price: S },
   discount:          { yes: B, amount: S, reason: S },
+  otherService:      { yes: B, description: S, price: S }, // a service charge: not taxed
 };
 const SERVICE_FIELDS = { inTownDelivery: B, crane: B, craneFee: S, outOfTownDelivery: B, outOfTownDeliveryFee: S,
   outOfTownWarranty: B, outOfTownWarrantyFee: S };
@@ -82,10 +83,11 @@ const MISC_FIELDS = { notes: S, monthlyCleanings: B, cleaningPrice: S, cleaningM
 // ── Labels for the log ────────────────────────────────────────────────────────
 const ITEM_LABEL = { cover: 'Cover', steps: 'Steps', subpanel: 'Subpanel', waterCareSystem: 'Water care',
   upgradedWaterCare: 'Upgraded water care', startupChemicals: 'Startup chemicals', coolZone: 'Cool Zone',
-  accessories: 'Accessories', spaRemoval: 'Spa removal', fuelSurcharge: 'Fuel surcharge', discount: 'Discount' };
+  accessories: 'Accessories', spaRemoval: 'Spa removal', fuelSurcharge: 'Fuel surcharge', discount: 'Discount',
+  otherService: 'Other service charge' };
 const FIELD_LABEL = { coverType: 'type', brand: 'brand', lift: 'lift', otherLift: 'other lift', price: 'price',
   included: 'Included', type: '', provided: 'provided', amperage: 'amps', autoDosing: 'auto dosing', fwssIq: 'FWSS/IQ',
-  yes: '', extWarranty: 'ext. warranty', items: '', other: 'other', amount: 'amount', reason: 'reason' };
+  yes: '', extWarranty: 'ext. warranty', items: '', other: 'other', amount: 'amount', reason: 'reason', description: 'for' };
 const SERVICE_LABEL = { inTownDelivery: 'In-town delivery', crane: 'Crane', craneFee: 'Crane fee',
   outOfTownDelivery: 'Out-of-town delivery', outOfTownDeliveryFee: 'Out-of-town delivery fee',
   outOfTownWarranty: 'Out-of-town warranty', outOfTownWarrantyFee: 'Out-of-town warranty fee' };
@@ -207,6 +209,8 @@ function planContractEdit(db, contract, form = {}, opts = {}) {
       ['Out-of-town delivery fee', service.outOfTownDeliveryFee], ['Out-of-town warranty fee', service.outOfTownWarrantyFee],
       ['Monthly cleaning price', next.misc.cleaningPrice]]);
     if (bad) return { error: bad };
+    const otherServiceError = checkOtherService(details.otherService);
+    if (otherServiceError) return { error: otherServiceError };
     if (!/^\d+(\.\d+)?$/.test(taxPercent || '0') || Number(taxPercent) > 20) return { error: 'Tax % looks wrong: ' + taxPercent };
     if (!(Number(String(details.spaPrice).replace(/[$,]/g, '')) > 0)) return { error: 'Spa price is required' };
     totals = computeTotals(details, service, taxPercent);

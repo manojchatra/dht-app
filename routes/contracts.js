@@ -32,7 +32,7 @@ const { statusName } = require('../utils/contractStatus');
 const { teamName } = require('../utils/teams');
 const { editBlockReason, planContractEdit, changeText, removableImage, TOTALS_MISMATCH } = require('../services/contractEdit');
 const { planSpaChange, contractAfterSpa, linkedAfter, applySpaUnits, spaLogText, spaDetailChanges, spaChangeText } = require('../services/contractSpa');
-const { computeTotals } = require('../utils/contractTotals');
+const { computeTotals, checkOtherService } = require('../utils/contractTotals');
 const { moneyError, contractMoneyFields, moneyOk } = require('../utils/money');
 const { zoneForZip } = require('../utils/deliveryZones');
 // Delivery zone of a zip, for the portal calendar's colours (same as Google's).
@@ -430,6 +430,8 @@ router.post('/', uploadFields, async (req, res) => {
       formData.misc.cleaningMonths = m;
       formData.misc.cleaningIncluded = !!formData.misc.cleaningIncluded;
     }
+    const otherServiceError = checkOtherService(details?.otherService);
+    if (otherServiceError) return res.status(400).json({ error: otherServiceError });
     if (costing && costing.grandTotal !== undefined && costing.grandTotal !== '') costing.grandTotal = String(money(costing.grandTotal));
     for (const k of ['cheque', 'cash', 'creditCard', 'finance']) {
       if (payment?.[k] && payment[k].amount !== undefined && payment[k].amount !== '') payment[k].amount = String(money(payment[k].amount));

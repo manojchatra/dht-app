@@ -183,6 +183,7 @@ function renderPreview(d){
   if(de.spaRemoval&&de.spaRemoval.yes) html+=pRow('Spa Removal','',de.spaRemoval.price,false);
   if(de.fuelSurcharge&&de.fuelSurcharge.yes) html+=pRow('Fuel Surcharge','',de.fuelSurcharge.price,false);
   if(de.discount&&de.discount.yes) html+='<tr><td>Discount</td><td style="font-size:11px;color:var(--text-muted)">'+escHtml(de.discount.reason||'')+'</td><td class="price">-$'+escHtml(de.discount.amount||0)+'</td><td class="incl"></td></tr>';
+  if(de.otherService&&de.otherService.yes) html+=pRow('Other Service Charge',de.otherService.description||'',de.otherService.price,false);
   html+='</tbody></table></div>';
 
   html+='<div class="preview-section"><h3>Costing &amp; Payment</h3><div style="max-width:300px;margin-left:auto;font-size:13px">';

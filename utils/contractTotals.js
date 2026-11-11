@@ -4,7 +4,8 @@
 //               has no Included option)
 //   tax       = subtotal × tax %
 //   services  = crane fee + out-of-town delivery fee + spa removal + fuel
-//               surcharge (the out-of-town WARRANTY fee is a note, not charged)
+//               surcharge + other service charge (not taxed; the out-of-town
+//               WARRANTY fee is a note, not charged)
 //   Grand Total = subtotal + tax + services − discount (never below 0)
 // Every amount is kept to the cent. Used by the contract edit (Pricing).
 'use strict';
@@ -32,7 +33,8 @@ function computeTotals(details = {}, service = {}, taxPercent = 0) {
       (sv.crane ? num(sv.craneFee) : 0)
     + (sv.outOfTownDelivery ? num(sv.outOfTownDeliveryFee) : 0)
     + (de.spaRemoval && de.spaRemoval.yes ? num(de.spaRemoval.price) : 0)
-    + (de.fuelSurcharge && de.fuelSurcharge.yes ? num(de.fuelSurcharge.price) : 0));
+    + (de.fuelSurcharge && de.fuelSurcharge.yes ? num(de.fuelSurcharge.price) : 0)
+    + (de.otherService && de.otherService.yes ? num(de.otherService.price) : 0));
   const discount = de.discount && de.discount.yes ? cents(num(de.discount.amount)) : 0;
   const grandTotal = cents(Math.max(0, productTotal + serviceTotal - discount));
   return { subtotal, tax, productTotal, serviceTotal, discount, grandTotal };
@@ -48,4 +50,12 @@ function costingFrom(t, taxPercent) {
   };
 }
 
-module.exports = { computeTotals, costingFrom, show, cents, num };
+// Other service charge (Yes): needs what it's for and an amount. An error, or null.
+function checkOtherService(os) {
+  if (!os || !os.yes) return null;
+  if (!String(os.description || '').trim()) return 'Other service charge: say what the charge is for';
+  if (!(num(os.price) > 0)) return 'Other service charge: enter the amount';
+  return null;
+}
+
+module.exports = { computeTotals, costingFrom, checkOtherService, show, cents, num };
