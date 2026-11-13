@@ -61,4 +61,8 @@ function zoneKeyForZip(zip) {
 }
 const zoneForZip = zip => ({ key: zoneKeyForZip(zip), ...ZONES[zoneKeyForZip(zip)] });
 
-module.exports = { ZONES, ZIPS, zoneKeyForZip, zoneForZip };
+// A delivered contract keeps its event, greyed out (Google's Graphite) — on
+// Google Calendar and the portal calendar (calendar.html uses the same hex).
+const DELIVERED = { name: 'Delivered', googleColorId: '8', hex: '#616161', text: '#ffffff' };
+
+module.exports = { ZONES, ZIPS, DELIVERED, zoneKeyForZip, zoneForZip };

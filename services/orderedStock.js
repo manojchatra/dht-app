@@ -10,6 +10,7 @@
  */
 const { markInventoryItemReceivedInSheet, updateInventoryItemField, inventoryItemExistsInSheet, appendInventoryItem } = require('./driveInventory');
 const { normalizeMake } = require('../utils/makes');
+const { phoenixToday } = require('../utils/arizona');
 
 const norm = s => String(s ?? '').trim().toLowerCase();
 
@@ -88,20 +89,21 @@ function serialWas(contract, serial) {
 // unit is added. Sheet updates are non-fatal. Used by both Mark Received
 // routes (admin: routes/contracts.js, warehouse: routes/warehouse.js).
 async function linkReceivedUnit(db, contract, { serial, sku = '', skuPhotoPath = null, serialPhotoPath = null, addedBy = 'system', addedDate = '' }) {
-  if (await receiveReservedUnit(db, contract.id, { serial, sku, skuPhotoPath, serialPhotoPath })) return 'reserved';
+  const receivedAt = addedDate || phoenixToday(); // the Warehouse page's Received tab
+  if (await receiveReservedUnit(db, contract.id, { serial, sku, skuPhotoPath, serialPhotoPath, receivedAt })) return 'reserved';
   const product = (() => { try { return JSON.parse(contract.data || '{}').product || {}; } catch (e) { return {}; } })();
   const existing = db.prepare('SELECT id FROM inventory WHERE upper(trim(serial_number))=upper(trim(?))').get(serial);
   if (existing) {
     db.prepare(`UPDATE inventory SET contract_id=?, availability='Sold', sku_number=COALESCE(NULLIF(?,''), sku_number),
         sku_photo_path=COALESCE(?, sku_photo_path), serial_photo_path=COALESCE(?, serial_photo_path),
-        web_order_number=?, truck_number=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(contract.id, sku, skuPhotoPath, serialPhotoPath, contract.web_order_number || '', contract.truck_number || '', existing.id);
+        web_order_number=?, truck_number=?, received_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(contract.id, sku, skuPhotoPath, serialPhotoPath, contract.web_order_number || '', contract.truck_number || '', receivedAt, existing.id);
   } else {
     db.prepare(`INSERT INTO inventory (make, model, shell_color, cabinet_color, serial_number, sku_number,
-        availability, sku_photo_path, serial_photo_path, contract_id, added_by, web_order_number, truck_number)
-      VALUES (?,?,?,?,?,?,'Sold',?,?,?,?,?,?)`).run(
+        availability, sku_photo_path, serial_photo_path, contract_id, added_by, web_order_number, truck_number, received_at)
+      VALUES (?,?,?,?,?,?,'Sold',?,?,?,?,?,?,?)`).run(
       contract.make || product.make || '', contract.model || product.model || '', product.shellColor || '', product.cabinetColor || '',
-      serial, sku, skuPhotoPath, serialPhotoPath, contract.id, addedBy, contract.web_order_number || '', contract.truck_number || '');
+      serial, sku, skuPhotoPath, serialPhotoPath, contract.id, addedBy, contract.web_order_number || '', contract.truck_number || '', receivedAt);
   }
   try {
     if (await inventoryItemExistsInSheet(serial)) await updateInventoryItemField(serial, 'availability', 'Sold');
@@ -116,14 +118,14 @@ async function linkReceivedUnit(db, contract, { serial, sku = '', skuPhotoPath =
 
 // Fills in the contract's reserved unit on receipt (serial, photos, Sold).
 // Returns false when the contract has no reserved unit (normal flow applies).
-async function receiveReservedUnit(db, contractId, { serial, sku = '', skuPhotoPath = null, serialPhotoPath = null }) {
+async function receiveReservedUnit(db, contractId, { serial, sku = '', skuPhotoPath = null, serialPhotoPath = null, receivedAt = phoenixToday() }) {
   const unit = reservedUnitFor(db, contractId);
   if (!unit) return false;
   db.prepare(`UPDATE inventory SET serial_number=?, availability='Sold',
       sku_number=COALESCE(NULLIF(?,''), sku_number),
       sku_photo_path=COALESCE(?, sku_photo_path), serial_photo_path=COALESCE(?, serial_photo_path),
-      updated_at=CURRENT_TIMESTAMP
-    WHERE id=?`).run(serial, sku, skuPhotoPath, serialPhotoPath, unit.id);
+      received_at=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?`).run(serial, sku, skuPhotoPath, serialPhotoPath, receivedAt, unit.id);
   try {
     if (await markInventoryItemReceivedInSheet(unit, serial)) {
       await updateInventoryItemField(serial, 'availability', 'Sold');

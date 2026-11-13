@@ -2,9 +2,10 @@
  * Undo a delivery acknowledgement the crew submitted on the WRONG contract,
  * and give its photos to the contract that was really delivered.
  *
- * The wrong contract goes back to Scheduled (same slot and team, no Google
- * event made — reschedule it from the Status page if it isn't delivered on
- * that slot; the crew can submit its own acknowledgement again straight away).
+ * The wrong contract goes back to Scheduled (same slot and team; its Google
+ * event, greyed out as delivered, gets its zone colour back — reschedule it
+ * from the Status page if it isn't delivered on that slot; the crew can submit
+ * its own acknowledgement again straight away).
  * Its delivery photos, the signed acknowledgement PDF and the signatures move
  * to the right contract's folder and gallery under their own names, so a later
  * acknowledgement on the right contract can't overwrite them. The right
@@ -110,6 +111,16 @@ async function main() {
     await syncCustomerRecord(fresh.id);
     console.log('Google Sheet updated.');
   } catch (e) { console.log(`Google Sheet NOT updated (${e.message}) — the app is correct; fix ${wrong.contract_number}'s Sheet row by hand.`); }
+
+  // Its calendar event was greyed out as delivered — back to its zone colour.
+  try {
+    const fresh = db.prepare('SELECT * FROM contracts WHERE id=?').get(wrong.id);
+    if (fresh.calendar_event_id) {
+      const { updateCalendarEvent } = require(path.join(__dirname, '../services/googleCalendar'));
+      await updateCalendarEvent(fresh.calendar_event_id, fresh, JSON.parse(fresh.data || '{}'));
+      console.log('Google Calendar event back to its zone colour.');
+    }
+  } catch (e) { console.log(`Google Calendar NOT updated (${e.message}) — reschedule ${wrong.contract_number} on the Status page to fix its event.`); }
 }
 
 main().then(() => process.exit(0)).catch(e => { console.error('FAILED:', e.message); process.exit(1); });

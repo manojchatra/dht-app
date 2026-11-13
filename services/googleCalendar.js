@@ -11,7 +11,7 @@ const TZ = 'America/Phoenix';
 // Event colour = the delivery zone of the contract's delivery zip (East Valley
 // blue, Central orange, West yellow, Out of Town green — utils/deliveryZones.js).
 // The team is in the description instead (it used to be the colour).
-const { zoneForZip } = require('../utils/deliveryZones');
+const { zoneForZip, DELIVERED } = require('../utils/deliveryZones');
 const { teamName } = require('../utils/teams');
 const zoneOf = data => zoneForZip(((data || {}).customer || {}).zip);
 
@@ -121,7 +121,21 @@ async function updateCalendarEvent(eventId, contract, data) {
   console.log('[Calendar] Event updated:', eventId);
 }
 
-// ── Delete event on cancel/deliver ───────────────────────────────────────────
+// ── Delivered: the event stays, greyed out (Graphite) ────────────────────────
+// Title, time and description are left as they were. An event already gone
+// from Google is fine.
+async function markEventDelivered(eventId) {
+  if (!calendarConfigured() || !eventId) return;
+  try {
+    await getCalendar().events.patch({ calendarId: CALENDAR_ID, eventId, requestBody: { colorId: DELIVERED.googleColorId } });
+    console.log('[Calendar] Event marked delivered (grey):', eventId);
+  } catch (e) {
+    if (e.code === 404 || e.status === 404) return; // already gone
+    throw e;
+  }
+}
+
+// ── Delete event on cancel / contract delete ─────────────────────────────────
 async function deleteCalendarEvent(eventId) {
   if (!calendarConfigured() || !eventId) return;
   try {
@@ -159,5 +173,5 @@ async function checkCalendarAccess() {
   return { calendarId: CALENDAR_ID, account: process.env.GOOGLE_CLIENT_EMAIL, accessRole: acl ? acl.data.accessRole : 'unknown' };
 }
 
-module.exports = { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarConfigured, calendarEventExists, checkCalendarAccess,
+module.exports = { createCalendarEvent, updateCalendarEvent, markEventDelivered, deleteCalendarEvent, calendarConfigured, calendarEventExists, checkCalendarAccess,
   _buildDescription: buildDescription, _buildSummary: buildSummary }; // for tests

@@ -21,6 +21,7 @@ function createTestApp() {
   jest.doMock('../../services/googleCalendar', () => ({
     createCalendarEvent: jest.fn().mockResolvedValue(null),
     updateCalendarEvent: jest.fn().mockResolvedValue(null),
+    markEventDelivered:  jest.fn().mockResolvedValue(null),
     deleteCalendarEvent: jest.fn().mockResolvedValue(null),
     calendarConfigured:  jest.fn().mockReturnValue(false),
     calendarEventExists: jest.fn().mockResolvedValue(false),

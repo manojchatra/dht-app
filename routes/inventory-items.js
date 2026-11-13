@@ -22,6 +22,8 @@ const { contractsAwaitingSpa, relinkOrdered } = require('../services/orderedStoc
 const { logActivity } = require('../utils/activityLogger');
 const { buildDriveData } = require('./contracts');
 
+const { phoenixToday } = require('../utils/arizona');
+
 const norm = s => String(s ?? '').trim().toLowerCase();
 
 // 'warehouse' isn't a creatable role yet (lands in Stage 5) — included here
@@ -74,6 +76,9 @@ async function finalizeInventoryPhoto(tmpFile, serialNumber, label) {
   return finalPath;
 }
 
+// What a salesperson's Inventory list leaves out (view-only, Nov 2026).
+const SALES_HIDDEN = ['finance', 'sku_number', 'line', 'bay', 'steps', 'cover', 'web_order_number'];
+
 // ── GET / — list all items, non-Sold first, Sold at the bottom ───────────────
 router.get('/', (req, res) => {
   try {
@@ -97,9 +102,10 @@ router.get('/', (req, res) => {
         sku_photo_url:    toUrlPath(r.sku_photo_path),
         serial_photo_url: toUrlPath(r.serial_photo_path),
       };
-      // Sales: no Finance; a contract id (the page's link) only for their own contracts.
+      // Sales: no Finance, SKU #, Line, Bay, Steps, Cover or Web Order # (photos
+      // stay); a contract id (the page's link) only for their own contracts.
       if (isSales) {
-        delete item.finance;
+        for (const k of SALES_HIDDEN) delete item[k];
         if (linked_salesman_user_id !== req.session.userId) item.linked_contract_id = null;
       }
       return item;
@@ -333,9 +339,9 @@ router.patch('/:id/receive', (req, res) => {
       db.prepare(`
         UPDATE inventory
         SET serial_number=?, availability='In-stock',
-            serial_photo_path=COALESCE(?, serial_photo_path), updated_at=CURRENT_TIMESTAMP
+            serial_photo_path=COALESCE(?, serial_photo_path), received_at=?, updated_at=CURRENT_TIMESTAMP
         WHERE id=?
-      `).run(serialNumber, serialPhotoPath, req.params.id);
+      `).run(serialNumber, serialPhotoPath, phoenixToday(), req.params.id);
 
       let sheetSynced = true;
       try { sheetSynced = await markInventoryItemReceivedInSheet(item, serialNumber); }

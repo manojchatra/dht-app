@@ -142,13 +142,14 @@ describe('#6 delivery acknowledgement', () => {
     expect(wrong.status).toBe(400);
     expect(wrong.body.error).toMatch(/another delivery team/);
 
-    const { deleteCalendarEvent } = require('../services/googleCalendar');
-    deleteCalendarEvent.mockClear();
+    const { deleteCalendarEvent, markEventDelivered } = require('../services/googleCalendar');
+    deleteCalendarEvent.mockClear(); markEventDelivered.mockClear();
     const ok = await ack(deliveryA, contractId);
     expect(ok.status).toBe(200);
     const c = ctx.db.prepare('SELECT status, calendar_event_id FROM contracts WHERE id=?').get(contractId);
-    expect(c).toEqual({ status: 'delivered', calendar_event_id: null });
-    expect(deleteCalendarEvent).toHaveBeenCalledWith('evt-ack-1');
+    expect(c).toEqual({ status: 'delivered', calendar_event_id: 'evt-ack-1' }); // the event stays, greyed out
+    expect(markEventDelivered).toHaveBeenCalledWith('evt-ack-1');
+    expect(deleteCalendarEvent).not.toHaveBeenCalled();
   });
 
   test('a scheduled contract with no serial is refused', async () => {

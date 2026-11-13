@@ -17,6 +17,15 @@
 .add-inv-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent);color:#fff;border-radius:12px;padding:18px 22px;margin-bottom:20px}
 .add-inv-banner div{font-size:15px;font-weight:600}
 .add-inv-banner a{background:#fff;color:var(--accent);padding:10px 18px;border-radius:8px;font-weight:600;text-decoration:none;white-space:nowrap}
+/* Awaiting receipt | Received, next to the search (and the Truck filter on Received) */
+.wh-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px}
+.wh-tabs{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:3px}
+.wh-tabs button{border:none;background:none;padding:7px 14px;border-radius:8px;font-family:var(--font);font-size:13px;font-weight:500;color:var(--text-muted);cursor:pointer}
+.wh-tabs button.active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
+.wh-toolbar .search-wrap{flex:1 1 260px;margin-bottom:0}
+.wh-toolbar select{width:auto;min-width:150px}
+.qc-foot{margin-top:12px;font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.qc-foot .qc-contract{font-weight:600;color:var(--text)}
 .search-wrap{position:relative;max-width:360px;margin-bottom:16px}
 .search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px}
 .search-wrap input{width:100%;padding-left:34px}
@@ -43,7 +52,14 @@
     <a href="/inventory/add"><i class="fa-solid fa-plus"></i> Add to Inventory</a>
   </div>
 
-  <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search Web Order # or Truck #…" oninput="renderQueue()"></div>
+  <div class="wh-toolbar">
+    <div class="wh-tabs">
+      <button type="button" id="tab-queue" class="active" onclick="switchWhTab('queue')">Awaiting receipt</button>
+      <button type="button" id="tab-received" onclick="switchWhTab('received')">Received</button>
+    </div>
+    <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="searchInput" placeholder="Search Web Order # or Truck #…" oninput="renderQueue()"></div>
+    <select id="truckFilter" onchange="renderQueue()" style="display:none"><option value="">All trucks</option></select>
+  </div>
 
   <div id="queueGrid" class="queue-grid"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div></div>
 </main>
@@ -136,6 +152,7 @@ function attachPhoto(input,thumbId,clearBtnId,setPhoto){
 }
 
 async function loadQueue(){
+  receivedItems=null; // a receive just happened (or first load): the Received tab reloads when opened
   try{
     const r=await fetch('/api/warehouse/queue');
     if(!r.ok) throw new Error('Failed to load queue');
@@ -146,7 +163,71 @@ async function loadQueue(){
   }
 }
 
+// ── Received tab: spas marked received (GET /api/warehouse/received) ────────
+let whTab='queue', receivedItems=null; // null = not loaded yet (or out of date after a receive)
+function switchWhTab(tab){
+  whTab=tab;
+  document.getElementById('tab-queue').classList.toggle('active',tab==='queue');
+  document.getElementById('tab-received').classList.toggle('active',tab==='received');
+  document.getElementById('truckFilter').style.display=tab==='received'?'':'none';
+  document.getElementById('searchInput').placeholder=tab==='received'?'Search name, contract #, serial, Web Order # or Truck #…':'Search Web Order # or Truck #…';
+  if(tab==='received'&&!receivedItems) loadReceived(); else renderQueue();
+}
+async function loadReceived(){
+  document.getElementById('queueGrid').innerHTML='<div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div>';
+  try{
+    const r=await fetch('/api/warehouse/received');
+    if(!r.ok) throw new Error('Failed to load received spas');
+    receivedItems=await r.json();
+    fillTruckFilter();
+    renderQueue();
+  }catch(e){
+    document.getElementById('queueGrid').innerHTML='<div class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><p>'+escHtml(e.message)+'</p></div>';
+  }
+}
+// Trucks in the order of their latest receipt (newest first); keeps the choice.
+function fillTruckFilter(){
+  const sel=document.getElementById('truckFilter'), keep=sel.value, seen={};
+  const trucks=receivedItems.map(function(it){return (it.truck_number||'').trim();}).filter(function(t){return t&&!seen[t]&&(seen[t]=true);});
+  sel.innerHTML='<option value="">All trucks</option>'+trucks.map(function(t){return '<option>'+escHtml(t)+'</option>';}).join('');
+  sel.value=trucks.indexOf(keep)>=0?keep:'';
+}
+function fmtReceived(iso){
+  const p=String(iso||'').split('-');
+  return p.length===3?new Date(+p[0],+p[1]-1,+p[2]).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+}
+function renderReceived(){
+  const q=document.getElementById('searchInput').value.trim().toLowerCase();
+  const truck=document.getElementById('truckFilter').value;
+  const list=receivedItems.filter(function(it){
+    if(truck&&(it.truck_number||'').trim()!==truck) return false;
+    return !q||[it.customer_name,it.contract_number,it.serial_number,it.web_order_number,it.truck_number,it.make,it.model].join(' ').toLowerCase().includes(q);
+  });
+  const grid=document.getElementById('queueGrid');
+  if(!list.length){
+    grid.innerHTML='<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>'+(q||truck?'No received spas match':'No spas marked received yet')+'</p></div>';
+    return;
+  }
+  // Same card as Awaiting receipt; the button area says where the spa is now.
+  grid.innerHTML=list.map(function(it){
+    const color=[it.shell_color,it.cabinet_color].filter(Boolean).join(' / ');
+    const foot=it.contract_number
+      ? '<span class="qc-contract">'+escHtml(it.contract_number)+'</span>'
+        +(it.contract_id?' <a class="btn btn-secondary btn-sm" href="/contracts/'+it.contract_id+'"><i class="fa-solid fa-eye"></i> View contract</a>':'')
+      : '<span class="badge badge-assigned">'+escHtml(it.availability||'')+'</span>';
+    return '<div class="queue-card">'
+      +'<div class="qc-name">'+(it.contract_number?escHtml(it.customer_name||'—'):'<i class="fa-solid fa-box" style="color:var(--text-muted)"></i> General Stock')+'</div>'
+      +'<div class="qc-sub">'+escHtml(it.make||'')+' '+escHtml(it.model||'')+(color?' · '+escHtml(color):'')+'</div>'
+      +'<div class="qc-sub">S/N '+escHtml(it.serial_number||'—')+' · Received '+escHtml(fmtReceived(it.received_at))+'</div>'
+      +'<div class="qc-sub">Web Order #: '+escHtml(it.web_order_number||'—')+'</div>'
+      +'<div class="truck-pill"><i class="fa-solid fa-truck"></i> '+escHtml(it.truck_number||'—')+'</div>'
+      +'<div class="qc-foot">'+foot+'</div>'
+      +'</div>';
+  }).join('');
+}
+
 function renderQueue(){
+  if(whTab==='received') return renderReceived();
   const q=document.getElementById('searchInput').value.trim().toLowerCase();
   const filtered=queueItems.filter(function(it){
     if(!q) return true;

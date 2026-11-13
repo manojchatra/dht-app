@@ -6,7 +6,7 @@ const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
 const db      = require('../db/database');
-const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarEventExists } = require('../services/googleCalendar');
+const { createCalendarEvent, updateCalendarEvent, markEventDelivered, deleteCalendarEvent, calendarEventExists } = require('../services/googleCalendar');
 const { compressImage, compressAndGate } = require('../utils/imageUtils');
 const { logActivity, addNotification }   = require('../utils/activityLogger');
 const {
@@ -1134,9 +1134,9 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
         } else {
           await moveToDelivered(contract.contract_number, actualDelivery, driveData);
         }
-        // Delete calendar event on delivery
+        // Delivered: the calendar event stays, greyed out (it's kept as history).
         if (contract.calendar_event_id) {
-          try { await deleteCalendarEvent(contract.calendar_event_id); db.prepare('UPDATE contracts SET calendar_event_id=NULL WHERE id=?').run(req.params.id); } catch(e) { console.error('[Calendar delete on deliver failed]', e.message); }
+          try { await markEventDelivered(contract.calendar_event_id); } catch(e) { console.error('[Calendar grey on deliver failed]', e.message); }
         }
       } else if (status === 'cancelled') {
         if (contract.status === 'received') {

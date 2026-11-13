@@ -34,7 +34,7 @@ function getEmailRecipients() {
 const { generateAcknowledgementPDF } = require('../utils/acknowledgementPDF');
 const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered, getSalesmanEmail } = require('../utils/emailSender');
 const { moveToDelivered } = require('../services/driveInventory');
-const { deleteCalendarEvent } = require('../services/googleCalendar');
+const { markEventDelivered } = require('../services/googleCalendar');
 const { buildDriveData } = require('./contracts');
 const { withLock } = require('../utils/asyncLock');
 const { totalPaid: paidTotal } = require('../utils/paymentTotals');
@@ -184,11 +184,12 @@ router.get('/acknowledgements', requireDeliveryOrAdmin, (req, res) => {
   }
 });
 
-// ── GET /api/delivery/calendar — scheduled deliveries for the calendar ──────
+// ── GET /api/delivery/calendar — scheduled + delivered for the calendar ─────
 // The delivery calendar used to load the full contracts list (prices,
 // payments) and filter it in the browser. This returns only what the
-// calendar shows: for a delivery user, their team's bookings (and any with no
-// team yet); for admin, all.
+// calendar shows: for a delivery user, their team's bookings (and any
+// scheduled with no team yet) and their team's deliveries (shown grey); for
+// admin, all.
 router.get('/calendar', requireDeliveryOrAdmin, (req, res) => {
   try {
     const scopedToTeam = req.currentUser.role === 'delivery';
@@ -201,8 +202,8 @@ router.get('/calendar', requireDeliveryOrAdmin, (req, res) => {
         COALESCE(json_extract(c.data,'$.customer.zip'), cu.zip) AS zip
       FROM contracts c
       LEFT JOIN customers cu ON c.customer_id = cu.id
-      WHERE c.status = 'scheduled' AND c.scheduled_datetime IS NOT NULL
-        ${scopedToTeam ? "AND (c.delivery_team = ? OR COALESCE(c.delivery_team,'') = '')" : ''}
+      WHERE c.status IN ('scheduled','delivered') AND COALESCE(c.scheduled_datetime,'') <> ''
+        ${scopedToTeam ? "AND (c.delivery_team = ? OR (c.status = 'scheduled' AND COALESCE(c.delivery_team,'') = ''))" : ''}
       ORDER BY c.scheduled_datetime
     `).all(...(scopedToTeam ? [req.currentUser.team] : []));
     // Zone colour as on the Google event (utils/deliveryZones.js).
@@ -316,13 +317,11 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
         acknowledgement_pdf=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
         .run(today, pdfPath, contract.id);
 
-      // The delivery is done — take it off the Google Calendar, as Mark
-      // Delivered on the Status page does (non-fatal).
+      // The delivery is done — its Google Calendar event stays, greyed out, as
+      // Mark Delivered on the Status page does (non-fatal).
       if (contract.calendar_event_id) {
-        try {
-          await deleteCalendarEvent(contract.calendar_event_id);
-          db.prepare('UPDATE contracts SET calendar_event_id=NULL WHERE id=?').run(contract.id);
-        } catch (e) { console.error('[Calendar delete on acknowledgement failed — non-fatal]', e.message); }
+        try { await markEventDelivered(contract.calendar_event_id); }
+        catch (e) { console.error('[Calendar grey on acknowledgement failed — non-fatal]', e.message); }
       }
 
       // Add PDF + exception images to extra_images

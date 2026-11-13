@@ -91,9 +91,9 @@ tr.row-dirty,.inv-card.row-dirty{box-shadow:inset 3px 0 0 var(--accent)}
     <table class="inv-table">
       <thead><tr>
         <th>Make</th><th>Series</th><th>Model</th><th>Year</th><th>Shell</th><th>Cabinet</th>
-        <th>Serial Number</th><th>SKU Number</th><th>Availability</th><th>Location</th><th>Line</th><th>Bay</th>
-        <th>Steps</th><th>Cover</th><th class="no-sales">Finance</th><th>Speaker</th>
-        <th>Web Order Number</th><th>Truck Number</th><th>Photos</th><th class="no-sales">Actions</th>
+        <th>Serial Number</th><th class="no-sales">SKU Number</th><th>Availability</th><th>Location</th><th class="no-sales">Line</th><th class="no-sales">Bay</th>
+        <th class="no-sales">Steps</th><th class="no-sales">Cover</th><th class="no-sales">Finance</th><th>Speaker</th>
+        <th class="no-sales">Web Order Number</th><th>Truck Number</th><th>Photos</th><th class="no-sales">Actions</th>
       </tr></thead>
       <tbody id="invTbody"><tr><td colspan="20" style="text-align:center;color:var(--text-muted);padding:20px"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
     </table>
@@ -257,6 +257,9 @@ function renderInventory(){
     return;
   }
   const items=all.slice(0,shownCount);
+  // Sales: no SKU #, Line, Bay, Steps, Cover, Finance, Web Order # or Actions
+  // (the server doesn't send them either).
+  const staff=!isSales(), staffOnly=function(html){ return staff?html:''; };
   tbody.innerHTML=items.map(function(it){
     const dirty = !!pendingChanges[it.id];
     return '<tr id="row-'+it.id+'" class="'+(it.availability==='Sold'?'sold-row ':'')+(dirty?'row-dirty':'')+'">'
@@ -267,19 +270,19 @@ function renderInventory(){
       +'<td>'+escHtml(it.shell_color||'')+'</td>'
       +'<td>'+escHtml(it.cabinet_color||'')+'</td>'
       +'<td>'+escHtml(it.serial_number||'')+'</td>'
-      +'<td>'+escHtml(it.sku_number||'')+'</td>'
+      +staffOnly('<td>'+escHtml(it.sku_number||'')+'</td>')
       +'<td>'+availSelect(it)+'</td>'
       +'<td>'+locSelect(it)+'</td>'
-      +'<td>'+textField(it,'line',canEditLocationRef())+'</td>'
-      +'<td>'+textField(it,'bay',canEditLocationRef())+'</td>'
-      +'<td>'+textField(it,'steps')+'</td>'
-      +'<td>'+textField(it,'cover')+'</td>'
-      +(isSales()?'':'<td>'+financeSelect(it)+'</td>')
+      +staffOnly('<td>'+textField(it,'line',canEditLocationRef())+'</td>'
+        +'<td>'+textField(it,'bay',canEditLocationRef())+'</td>'
+        +'<td>'+textField(it,'steps')+'</td>'
+        +'<td>'+textField(it,'cover')+'</td>'
+        +'<td>'+financeSelect(it)+'</td>')
       +'<td>'+speakerSelect(it)+'</td>'
-      +'<td>'+escHtml(it.web_order_number||'')+'</td>'
+      +staffOnly('<td>'+escHtml(it.web_order_number||'')+'</td>')
       +'<td>'+escHtml(it.truck_number||'')+'</td>'
       +'<td>'+photoCell(it)+'</td>'
-      +(isSales()?'':'<td class="actions-cell">'+actionsCell(it)+'</td>')
+      +staffOnly('<td class="actions-cell">'+actionsCell(it)+'</td>')
       +'</tr>';
   }).join('');
 
@@ -287,20 +290,20 @@ function renderInventory(){
     const dirty = !!pendingChanges[it.id];
     return '<div id="card-'+it.id+'" class="inv-card'+(it.availability==='Sold'?' sold-row':'')+(dirty?' row-dirty':'')+'">'
       +'<div class="inv-card-top"><div><div class="inv-card-title">'+escHtml(it.make||'')+' '+escHtml(it.model||'')+(it.year?' · '+escHtml(it.year):'')+'</div>'
-      +'<div class="inv-card-sub">'+escHtml(it.series||'')+' · S/N '+escHtml(it.serial_number||'—')+' · SKU '+escHtml(it.sku_number||'—')+'</div>'
+      +'<div class="inv-card-sub">'+escHtml(it.series||'')+' · S/N '+escHtml(it.serial_number||'—')+staffOnly(' · SKU '+escHtml(it.sku_number||'—'))+'</div>'
       +'<div class="inv-card-sub">'+escHtml(it.shell_color||'')+' / '+escHtml(it.cabinet_color||'')+'</div></div>'
       +'<div>'+photoCell(it)+'</div></div>'
       +'<div class="inv-card-fields">'
       +'<div><label>Availability</label>'+availSelect(it)+'</div>'
       +'<div><label>Location</label>'+locSelect(it)+'</div>'
-      +'<div><label>Line</label>'+textField(it,'line',canEditLocationRef())+'</div>'
-      +'<div><label>Bay</label>'+textField(it,'bay',canEditLocationRef())+'</div>'
+      +staffOnly('<div><label>Line</label>'+textField(it,'line',canEditLocationRef())+'</div>'
+        +'<div><label>Bay</label>'+textField(it,'bay',canEditLocationRef())+'</div>')
       +(isAdmin()?'<div><label>Year</label>'+textField(it,'year')+'</div>':'')
-      +'<div><label>Steps</label>'+textField(it,'steps')+'</div>'
-      +'<div><label>Cover</label>'+textField(it,'cover')+'</div>'
-      +(isSales()?'':'<div><label>Finance</label>'+financeSelect(it)+'</div>')
+      +staffOnly('<div><label>Steps</label>'+textField(it,'steps')+'</div>'
+        +'<div><label>Cover</label>'+textField(it,'cover')+'</div>'
+        +'<div><label>Finance</label>'+financeSelect(it)+'</div>')
       +'<div><label>Speaker</label>'+speakerSelect(it)+'</div>'
-      +(it.web_order_number?'<div><label>Web Order #</label>'+escHtml(it.web_order_number)+'</div>':'')
+      +(staff&&it.web_order_number?'<div><label>Web Order #</label>'+escHtml(it.web_order_number)+'</div>':'')
       +(it.truck_number?'<div><label>Truck #</label>'+escHtml(it.truck_number)+'</div>':'')
       +'</div>'
       +'<div style="margin-top:10px;text-align:right">'+actionsCell(it)+'</div></div>';

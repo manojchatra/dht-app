@@ -423,6 +423,22 @@ if (!db.prepare('PRAGMA table_info(notifications)').all().some(c => c.name === '
   console.log('[DB] notifications.ref column added');
 }
 
+// When a spa was marked received (Mark Received on the Warehouse page, for a
+// contract or general on-order stock) — the Warehouse page's Received tab
+// (Nov 2026). Before it existed only contract receipts left a record: those
+// spas get the date of their contract's "marked received" history entry
+// (Arizona date). General stock received earlier can't be told apart from
+// imported stock, so it stays without one.
+if (!db.prepare('PRAGMA table_info(inventory)').all().some(c => c.name === 'received_at')) {
+  db.exec('ALTER TABLE inventory ADD COLUMN received_at TEXT');
+  const n = db.prepare(`UPDATE inventory SET received_at = (
+      SELECT date(MAX(a.created_at), '-7 hours') FROM activity_log a
+      WHERE a.contract_id = inventory.contract_id AND a.event_type = 'MARK_RECEIVED')
+    WHERE contract_id IS NOT NULL AND COALESCE(serial_number,'') <> ''
+      AND EXISTS (SELECT 1 FROM activity_log a WHERE a.contract_id = inventory.contract_id AND a.event_type = 'MARK_RECEIVED')`).run().changes;
+  console.log(`[DB] inventory.received_at column added (${n} received spa(s) dated from their contract history)`);
+}
+
 seedUsers();
 seedSettings();
 seedContractSequence();

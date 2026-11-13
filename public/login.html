@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Desert Hot Tubs — Login</title>
+<title>GOBI — Login</title>
 <link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--font:"DM Sans",system-ui,sans-serif;--radius:20px;--radius-sm:10px}
@@ -38,8 +38,10 @@ body::after{
   box-shadow:0 20px 60px rgba(0,0,0,.25),0 4px 16px rgba(0,0,0,.15),inset 0 1px 0 rgba(255,255,255,.95);
 }
 .card-header{text-align:center;margin-bottom:32px}
-.logo-wrap{display:flex;justify-content:center;margin-bottom:12px}
-.logo-wrap img{width:210px;height:auto}
+.logo-wrap{display:flex;justify-content:center;margin-bottom:10px}
+.logo-wrap img{width:140px;height:auto}
+/* Anton (Google font, Impact-like) — Impact itself isn't on phones and tablets. */
+.app-name{font-family:"Anton",Impact,"Arial Narrow Bold",sans-serif;font-size:46px;font-weight:400;letter-spacing:.06em;color:#3d2a1c;line-height:1;margin-bottom:6px}
 .card-sub{font-size:13px;color:rgba(90,68,52,.85);font-weight:400}
 .form-group{margin-bottom:14px}
 .form-label{display:block;font-size:11px;font-weight:600;color:rgba(90,68,52,.75);margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase}
@@ -92,6 +94,7 @@ body::after{
     <div class="logo-wrap">
       <img src="/img/logo.webp" alt="Desert Hot Tubs">
     </div>
+    <div class="app-name">GOBI</div>
     <div class="card-sub">Sales &amp; Delivery Portal</div>
   </div>
   <div class="error-msg" id="errorMsg">
@@ -121,7 +124,7 @@ body::after{
       <span class="btn-text">Sign in</span>
     </button>
   </form>
-  <div class="card-footer">Desert Hot Tubs &copy; 2026 &middot; Internal use only</div>
+  <div class="card-footer">GOBI &middot; Desert Hot Tubs &copy; 2026 &middot; Internal use only</div>
 </div>
 <script>
 function togglePw(){

@@ -4,6 +4,8 @@
 
 ---
 
+**App name: GOBI** (Nov 2026) — on the sidebar (badge "G", name GOBI, "Desert Hot Tubs" under it) and the login page. Page tab titles, PDFs, emails and calendar text still say Desert Hot Tubs.
+
 ## Project Overview
 
 Full-stack internal web application for Desert Hot Tubs (DHT), a multi-location spa retailer in the Phoenix metro area. Hosted at `app.deserthottubsaz.com` on a Contabo VPS. Manages sales contracts, customer records, inventory and warehouse receiving, delivery scheduling, payment tracking, delivery acknowledgements, and post-delivery follow-up across five showrooms (regions): Phoenix, Goodyear, Chandler, Surprise, and Tolleson.
@@ -185,6 +187,8 @@ The **customer record is the source of truth** for a customer's name, phone and 
 **DB-backed inventory** (`inventory` table, `routes/inventory-items.js`, pages `/inventory` and `/inventory/add`).
 
 - **Availability:** `In-stock`, `Ordered` (on order, no serial yet — has Web Order # / Truck #), `Hold`, `Sold`.
+- **Warehouse page tabs: Awaiting receipt | Received.** Received lists every spa **marked received** (Mark Received — general on-order stock, or a contract's spa on the Warehouse / Status page), newest first, filtered by a Truck dropdown and the search box; same cards as Awaiting receipt, with the serial and received date, and the customer + contract # once it's tied to a contract (View contract link for admin only; warehouse can't open contracts). `inventory.received_at` is set by both receive flows (Nov 2026); the migration dated earlier contract receipts from their MARK_RECEIVED history — general stock received before then has no date and isn't listed. `GET /api/warehouse/received`.
+- **Salespeople's Inventory** (view-only): no Finance, SKU #, Line, Bay, Steps, Cover or Web Order # (not sent by the server either); photos stay.
 - **Adding an On Order spa that's already on a contract:** if its Web Order #, make and model match an Order Placed contract with no spa reserved yet, Add Inventory asks "Reserve for DHT…" (added reserved for that customer; the contract takes its Truck # and its Order Placed Sheet row is rewritten; logged on the contract) or "Add as general stock" (as before). Without this the spa was listed twice — the contract plus "free" on-order stock someone else could sell.
 - **Locations:** Warehouse, Back Room (formerly "EMP Room" — imports still accept "EMP"), Phoenix / Goodyear / Chandler / Surprise / Tolleson Floor, Costco, Walmart (booth displays).
 - **Colours** (`utils/colours.js`): the **SKU List** tab is the standard. New Contract's shell / cabinet buttons are that brand's SKU List colours (live, via `/api/inventory/colours`) plus extras for brands/colours the SKU List lacks (WLA, LifeSmart, HotSpring Driftwood/Gray/Mocha/Ash), with "Others" always available. Known variants are saved in SKU List spelling (Tuscan Sun → Tuscan, Nickel → Brushed Nickel, HotSpring Diamond → Diamond Weave, Caldera Taupe → Natural Taupe …). `scripts/normalize-colours.js` fixes existing inventory.
@@ -279,7 +283,7 @@ Tabs are created automatically the first time they're needed. Sheet writes are a
 
 **Manual edits to the Sheet:** rows are found by searching the key column every time, so sorting/filtering/deleting rows (right-click → Delete row) is safe. Don't clear a row's contents (leaves a gap new rows can land in), and never rename tabs, change the header row, insert/move columns (the app writes to fixed column positions), or edit the key column. A manually deleted contract row may reappear on the next status move (or not, depending on the move); a deleted Customer Record row is re-added on that contract's next change.
 
-**Calendar:** Team colors — JV Spa Movers = Lavender (1), Clear Choice Movers = Banana (5). Events created/updated/deleted on schedule/reschedule/cancel/deliver/delete.
+**Calendar:** Team colors — JV Spa Movers = Lavender (1), Clear Choice Movers = Banana (5). Events created on schedule, updated on reschedule, **greyed out (Graphite) on deliver and kept** (Nov 2026 — they used to be deleted; older deliveries' events are gone), deleted on cancel / contract delete. The portal Calendar page shows Scheduled in zone colours and Delivered in grey (`DELIVERED` in `utils/deliveryZones.js`); a crew sees its own team's delivered.
 
 ---
 
@@ -300,7 +304,7 @@ Tabs are created automatically the first time they're needed. Sheet writes are a
    - Exceptions + photo
    - Customer + Team signatures (canvas, touch-enabled)
 7. Submit: Save & Mark Delivered / Send Email & Mark Delivered (recipient picker: customer, salesperson, admin list — sends to exactly who's ticked)
-8. On save: photos saved and compressed, PDF generated, contract marked delivered, calendar event deleted, Sheets updated, activity logged, notification created. The server also requires a delivery photo, and uses the contract as read under the lock (an edit saved meanwhile isn't written over).
+8. On save: photos saved and compressed, PDF generated, contract marked delivered, calendar event greyed out (kept), Sheets updated, activity logged, notification created. The server also requires a delivery photo, and uses the contract as read under the lock (an edit saved meanwhile isn't written over).
 9. **Who can email an acknowledgement:** the recipient list (`GET /api/delivery/email-recipients/:id`) — admin, or the delivery team the contract is scheduled for; resending later (`POST /api/delivery/send-ack/:id`, the contract page) — admin only.
 
 ---

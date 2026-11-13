@@ -97,6 +97,32 @@ router.get('/queue', (req, res) => {
   }
 });
 
+// ── GET /received — spas marked received (the Received tab) ──────────────────
+// Every inventory spa with a received date (Mark Received, for a contract or
+// general on-order stock), newest first. A spa tied to a contract — reserved
+// before it came, or sold from stock later — carries the customer and
+// contract number; only admin gets the contract id (the View contract link).
+router.get('/received', (req, res) => {
+  try {
+    const isAdmin = req.session.role === 'admin';
+    const rows = db.prepare(`
+      SELECT i.id, i.make, i.series, i.model, i.shell_color, i.cabinet_color, i.serial_number, i.availability,
+        i.web_order_number, i.truck_number, i.received_at,
+        c.id AS contract_id, c.contract_number,
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name
+      FROM inventory i
+      LEFT JOIN contracts c ON c.id = i.contract_id
+      LEFT JOIN customers cu ON cu.id = c.customer_id
+      WHERE COALESCE(i.received_at,'') <> ''
+      ORDER BY i.received_at DESC, i.id DESC
+    `).all();
+    res.json(rows.map(r => ({ ...r, contract_id: isAdmin ? r.contract_id : null, customer_name: r.contract_number ? r.customer_name : '' })));
+  } catch (err) {
+    console.error('Warehouse received list error:', err);
+    res.status(500).json({ error: 'Failed to load received spas' });
+  }
+});
+
 // ── POST /:id/receive — two-photo mark-received, creates/links an inventory row ─
 router.post('/:id/receive', (req, res) => {
   uploadPhotos(req, res, async (err) => {
