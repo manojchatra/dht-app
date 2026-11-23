@@ -207,6 +207,86 @@ async function notifyPaymentRecorded({ contract, customerName, amount, method, t
   await sendEmail({ to, subject, text, attachments });
 }
 
+const money2 = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const photoAttachments = paths => (paths || []).filter(p => p && fs.existsSync(p)).map(p => ({ filename: path.basename(p), path: p }));
+
+// E2 — cash recorded by a salesperson waits for admin approval → admin
+// recipients, with the photo of the cash when there is one (Nov 2026)
+async function notifyCashPending({ contract, customerName, amount, date, notes, recordedBy, photoPath }) {
+  const subject = `Cash awaiting approval — ${contract.contract_number} — ${customerName || ''}`;
+  const text = [
+    `${recordedBy || 'A salesperson'} recorded a cash payment that needs your approval.`,
+    '',
+    `Contract #: ${contract.contract_number}`,
+    `Customer: ${customerName || ''}`,
+    `Amount: ${money2(amount)} (taken ${fmtDate(date)})`,
+    notes ? `Notes: ${notes}` : null,
+    '',
+    "It isn't counted in the balance until approved.",
+    `Approve or reject it from the bell on the GOBI Dashboard: ${APP_URL}/dashboard`,
+    photoPath ? '\nAttached: photo of the cash.' : '\nNo photo (cash taken on the New Contract form).',
+  ].filter(l => l !== null).join('\n') + footer;
+  await sendEmail({ to: getAdminRecipients(), subject, text, attachments: photoAttachments([photoPath]) });
+}
+
+// E3 — the salesperson's cash was approved (receipt attached) or rejected (with the reason)
+async function notifyCashDecision({ contract, customerName, amount, approved, reason, by, totalPaid, balance, receiptPath }) {
+  const to = [getSalesmanEmail(contract)];
+  const what = `Your cash payment of ${money2(amount)} for ${customerName || 'the customer'} (${contract.contract_number})`;
+  const subject = `Cash payment ${approved ? 'approved' : 'rejected'} — ${contract.contract_number} — ${customerName || ''}`;
+  const text = (approved
+    ? [`${what} was approved by ${by || 'admin'}.`, '', `Total paid: ${money2(totalPaid)}`, `Balance: ${money2(balance)}`, '', 'The receipt is attached.']
+    : [`${what} was rejected by ${by || 'admin'}.`, '', `Reason: ${reason || '—'}`, '', "It doesn't count toward the balance. Please follow up with the customer, or speak to the office."]
+  ).join('\n') + footer;
+  await sendEmail({ to, subject, text, attachments: approved ? photoAttachments([receiptPath]) : [] });
+}
+
+// I — a crew noted an exception / damage on the acknowledgement form → the
+// Settings "Delivery Exception Emails" list, with the exception photos
+// (the signed acknowledgement has its own email). Nov 2026.
+function getExceptionRecipients() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key='exception_email_recipients'").get();
+    return row ? JSON.parse(row.value || '[]') : [];
+  } catch (e) { return []; }
+}
+async function notifyDeliveryException({ contract, exceptions, photoPaths, deliveredBy, submittedBy, teamName, slot, submittedAt }) {
+  const to = getExceptionRecipients();
+  if (!to.length) return;
+  const d  = JSON.parse(contract.data || '{}');
+  const cu = d.customer || {}, pr = d.product || {};
+  const custName = cu.name || contract.customer_name || '';
+  const subject = `Delivery exception — ${contract.contract_number} — ${custName}`;
+  const text = [
+    'A delivery crew noted an exception on the acknowledgement form.',
+    '',
+    'EXCEPTION DETAILS',
+    exceptions || '(none written — photos attached)',
+    '',
+    'CUSTOMER',
+    `Name: ${custName}`,
+    `Phone: ${(cu.phone && (cu.phone.cell || cu.phone.home || cu.phone.work)) || ''}`,
+    `Email: ${cu.email || ''}`,
+    `Delivery address: ${[cu.address, cu.city, cu.state, cu.zip].filter(Boolean).join(', ')}`,
+    '',
+    'CONTRACT',
+    `Contract #: ${contract.contract_number}`,
+    `Spa: ${[contract.make || pr.make, contract.model || pr.model].filter(Boolean).join(' ')}`,
+    `Serial: ${contract.serial_number || pr.serialNumber || ''}`,
+    `Salesperson: ${contract.salesman || d.salesman || ''}`,
+    '',
+    'DELIVERY',
+    `Booked slot: ${slot || '—'}`,
+    `Team: ${teamName || '—'}`,
+    `Delivered by: ${deliveredBy || '—'}`,
+    `Submitted by: ${submittedBy || '—'}${submittedAt ? ' on ' + submittedAt : ''}`,
+    '',
+    `Open the contract: ${APP_URL}/contracts/${contract.id}`,
+    photoPaths && photoPaths.length ? `\nAttached: ${photoPaths.length} exception photo${photoPaths.length > 1 ? 's' : ''}.` : '',
+  ].join('\n') + footer;
+  await sendEmail({ to, subject, text, attachments: photoAttachments(photoPaths) });
+}
+
 // F — contract marked Delivered → salesperson, 48hr follow-up reminder
 async function notifyDelivered({ contract, customerName }) {
   const to = [getSalesmanEmail(contract)];
@@ -273,4 +353,5 @@ module.exports = {
   getAdminRecipients, getSalesmanEmail, getStoreReviewUrl,
   notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived,
   notifyPaymentRecorded, notifyDelivered, sendReviewRequestEmail,
+  notifyCashPending, notifyCashDecision, notifyDeliveryException,
 };

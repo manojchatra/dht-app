@@ -172,6 +172,17 @@
       </select>
     </div>
     <div class="pay-form-row" id="chequeNumRow" style="display:none"><label>Cheque Number</label><input type="text" id="payChequeNum" placeholder="Cheque #"></div>
+    <!-- A salesperson's cash needs a photo and waits for admin approval (Nov 2026) -->
+    <div class="pay-form-row" id="cashPhotoRow" style="display:none"><label>Photo of the cash *</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('cashCam').click()"><i class="fa-solid fa-camera"></i> Take photo</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('cashFile').click()"><i class="fa-solid fa-upload"></i> Upload photo</button>
+        <img id="cashPreview" style="display:none;width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" alt="Photo of the cash">
+      </div>
+      <input type="file" id="cashCam" accept="image/*" capture="environment" style="display:none" onchange="pickCashPhoto(this)">
+      <input type="file" id="cashFile" accept="image/*" style="display:none" onchange="pickCashPhoto(this)">
+      <div style="font-size:12px;background:var(--yellow-bg);color:var(--yellow);border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.4">Cash payments need admin approval before they count toward the balance. Admin is notified now, and you'll get an email when it's approved or rejected.</div>
+    </div>
     <div class="pay-form-row"><label>Amount ($)</label><input type="number" id="payAmount" placeholder="0.00" step="0.01" oninput="updateBalancePreview()"></div>
     <div class="pay-form-row"><label>Date</label>
       <div class="date-input-wrap">
@@ -470,9 +481,14 @@ function openPaymentModal(contractId,balance){
   document.getElementById('payNotes').value='';
   document.getElementById('payMethod').value='cash';
   document.getElementById('chequeNumRow').style.display='none';
+  cashPhoto=null;document.getElementById('cashCam').value='';document.getElementById('cashFile').value='';
+  document.getElementById('cashPreview').style.display='none';
   updateBalancePreview();
   document.getElementById('paymentModal').classList.add('open');
 }
+let cashPhoto=null;
+function pickCashPhoto(input){cashPhoto=input.files[0]||cashPhoto;const img=document.getElementById('cashPreview');if(cashPhoto){img.src=URL.createObjectURL(cashPhoto);img.style.display='';}}
+const cashNeedsApproval=()=>document.getElementById('payMethod').value==='cash'&&window._userRole==='sales';
 function closePaymentModal(){document.getElementById('paymentModal').classList.remove('open');paymentContractId=null;}
 function updateBalancePreview(){
   const amt=parseFloat(document.getElementById('payAmount').value)||0;
@@ -482,6 +498,7 @@ function updateBalancePreview(){
   document.getElementById('prevRemaining').textContent='$'+rem.toFixed(2);
   document.getElementById('prevRemaining').style.color=rem<=0?'var(--green)':'var(--red)';
   document.getElementById('chequeNumRow').style.display=document.getElementById('payMethod').value==='cheque'?'block':'none';
+  document.getElementById('cashPhotoRow').style.display=cashNeedsApproval()?'block':'none';
 }
 async function submitPayment(){
   const btn=document.getElementById('payRecordBtn');
@@ -489,16 +506,20 @@ async function submitPayment(){
   const amount=parseFloat(document.getElementById('payAmount').value);
   if(!amount||amount<=0){showToast('Enter a valid amount','error');return}
   if(amount>currentBalance+0.01){showToast('Amount exceeds remaining balance of $'+currentBalance.toFixed(2),'error');return}
+  const waits=cashNeedsApproval();
+  if(waits&&!cashPhoto){showToast('Add a photo of the cash first','error');return}
   btn.disabled=true;
   try{
-    const r=await fetch('/api/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      contractId:paymentContractId,amount,method:document.getElementById('payMethod').value,
-      chequeNumber:document.getElementById('payChequeNum').value,
-      date:document.getElementById('payDate').value,notes:document.getElementById('payNotes').value,
-    })});
+    // Multipart, so the photo of the cash can ride along.
+    const fd=new FormData();
+    fd.append('contractId',paymentContractId);fd.append('amount',amount);fd.append('method',document.getElementById('payMethod').value);
+    fd.append('chequeNumber',document.getElementById('payChequeNum').value);
+    fd.append('date',document.getElementById('payDate').value);fd.append('notes',document.getElementById('payNotes').value);
+    if(waits)fd.append('cashPhoto',cashPhoto);
+    const r=await fetch('/api/payments',{method:'POST',body:fd});
     const j=await r.json();if(!r.ok)throw new Error(j.error);
     closePaymentModal();
-    showToast('Payment recorded'+(j.fullyPaid?' — Fully Paid!':''),'success');
+    showToast(j.pending?'Cash recorded — awaiting admin approval':'Payment recorded'+(j.fullyPaid?' — Fully Paid!':''),'success');
     loadContracts();
   }catch(e){showToast(e.message||'Failed','error')}
   finally{btn.disabled=false}

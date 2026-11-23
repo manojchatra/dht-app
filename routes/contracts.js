@@ -20,7 +20,7 @@ const {
 } = require('../services/driveInventory');
 const { generateContractPDF } = require('../utils/pdfGenerator');
 const { requireAdmin, requireRole } = require('../middleware/auth');
-const { notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived, notifyDelivered } = require('../utils/emailSender');
+const { notifyContractCreatedTBO, notifyContractCreatedOnOrder, notifyOrderPlaced, notifyReceived, notifyDelivered, notifyCashPending } = require('../utils/emailSender');
 const { getUnreservedOrdered, reserveOrdered, receiveSerialConflict, linkReceivedUnit, serialWas, keepOrderedSpa } = require('../services/orderedStock');
 const { removeContractThumbs } = require('../middleware/thumbnails');
 const { normalizeMake } = require('../utils/makes');
@@ -35,9 +35,10 @@ const { planSpaChange, contractAfterSpa, linkedAfter, applySpaUnits, spaLogText,
 const { computeTotals, checkOtherService } = require('../utils/contractTotals');
 const { moneyError, contractMoneyFields, moneyOk } = require('../utils/money');
 const { zoneForZip } = require('../utils/deliveryZones');
+const { blockingBlock, blockLabel } = require('../utils/calendarBlocks');
 // Delivery zone of a zip, for the portal calendar's colours (same as Google's).
 const zoneFields = zip => { const z = zoneForZip(zip); return { zone_name: z.name, zone_color: z.hex, zone_text_color: z.text }; };
-const { totalPaid: paidTotal } = require('../utils/paymentTotals');
+const { totalPaid: paidTotal, pendingTotal } = require('../utils/paymentTotals');
 const {
   normalizeContractPhones, nextCustomerNumber,
   syncCustomerRecord, syncCustomerRecordsForCustomer, removeCustomerRecord, deleteCustomerIfOrphan,
@@ -299,8 +300,9 @@ router.get('/:id', (req, res) => {
     }
 
     const payments = db.prepare('SELECT * FROM payments WHERE contract_id=? ORDER BY date,created_at').all(req.params.id)
-      .map(p => ({ ...p, cheque_image_url: toUrlPath(p.cheque_image_path) }));
+      .map(p => ({ ...p, cheque_image_url: toUrlPath(p.cheque_image_path), cash_image_url: toUrlPath(p.cash_image_path) }));
     const totalPaid = paidTotal(db, req.params.id);
+    const pendingPaid = pendingTotal(db, req.params.id); // cash awaiting admin approval
 
     const extraRaw = row.extra_images ? JSON.parse(row.extra_images) : [];
     const extraImagesData = extraRaw.map(item =>
@@ -319,6 +321,7 @@ router.get('/:id', (req, res) => {
       extra_images_data:  extraImagesData,
       payments,
       total_paid: totalPaid,
+      pending_paid: pendingPaid,
     });
   } catch (err) {
     console.error('[GET contract error]', err.message);
@@ -717,11 +720,16 @@ router.post('/', uploadFields, async (req, res) => {
     const saleDate = String(cleanData.date || '');
     const paymentDate = isBackEntry && /^\d{4}-\d{2}-\d{2}$/.test(saleDate) && saleDate <= today ? saleDate : today;
     let totalSeeded = 0;
+    // A cash deposit taken by a salesperson waits for admin approval (Nov
+    // 2026) — it doesn't count until approved; admin is emailed below.
+    const pendingCash = [];
     for (const pm of pmEntries) {
       if (pm.sel && pm.amount > 0) {
-        db.prepare('INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by) VALUES (?,?,?,?,?,?,?)')
-          .run(contractId, pm.amount, pm.method, pm.chequeNum||null, paymentDate, pm.notes, req.session?.username||'system');
-        totalSeeded += pm.amount;
+        const waits = pm.method === 'cash' && req.session?.role === 'sales';
+        const pid = db.prepare('INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by,approval) VALUES (?,?,?,?,?,?,?,?)')
+          .run(contractId, pm.amount, pm.method, pm.chequeNum||null, paymentDate, pm.notes, req.session?.username||'system', waits ? 'pending' : null).lastInsertRowid;
+        if (waits) pendingCash.push({ id: pid, amount: pm.amount });
+        else totalSeeded += pm.amount;
       }
     }
     // Correct paid_amount/due_prior to the actual seeded total — the earlier
@@ -837,7 +845,20 @@ router.post('/', uploadFields, async (req, res) => {
       }
     }
 
-    res.json({ success: true, contractId, contractNumber });
+    // A salesperson's cash deposit waits for admin approval (the bell on the Dashboard).
+    if (isNew && pendingCash.length) {
+      const freshContract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+      for (const pc of pendingCash) {
+        logActivity(db, { contractId, contractNum: cnum, eventType: 'PAYMENT_PENDING', actor,
+          detail: `$${pc.amount.toFixed(2)} cash deposit on New Contract — awaiting admin approval` });
+        try {
+          await notifyCashPending({ contract: freshContract, customerName: customer.name, amount: pc.amount, date: paymentDate,
+            notes: 'Cash deposit on New Contract', recordedBy: cleanData.salesman || actor, photoPath: null });
+        } catch (e) { console.error('[Email cash pending failed — non-fatal]', e.message); }
+      }
+    }
+
+    res.json({ success: true, contractId, contractNumber, pendingCash: pendingCash.length > 0 });
 
   } catch (err) {
     console.error('Contract save error:', err);
@@ -1071,11 +1092,18 @@ router.patch('/:id/status', requireRole(['admin','sales']), async (req, res) => 
           const exEnd   = exStart + (ex.scheduled_duration||120)*60000;
           if (startMs < exEnd && endMs > exStart) {
             const teamLabel = teamName(teamVal);
+            // A salesperson isn't told whose delivery it is (it may be another salesperson's).
             return res.status(400).json({
-              error: teamLabel+' is already booked at this time ('+ex.contract_number+'). Choose a different slot or team.'
+              error: teamLabel+' is already booked at this time'+(req.session.role === 'admin' ? ' ('+ex.contract_number+')' : '')+'. Choose a different slot or team.'
             });
           }
         }
+      }
+
+      // Time an admin blocked off on the calendar — nobody books inside it.
+      const block = blockingBlock(db, scheduledDatetime, duration, teamVal);
+      if (block) {
+        return res.status(400).json({ error: 'That time is blocked on the calendar (' + blockLabel(block) + '). Choose a different slot' + (block.team ? ' or team' : '') + '.' });
       }
 
       db.prepare('UPDATE contracts SET status=?,scheduled_datetime=?,scheduled_duration=?,delivery_team=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')

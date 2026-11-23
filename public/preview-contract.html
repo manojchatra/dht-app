@@ -147,7 +147,9 @@ function renderPreview(d){
 
   html+='<div class="preview-section"><h3>Warranty</h3><div class="preview-grid">';
   html+=pKV('Manufacturer Brands',(mfg.brands||[]).join(', '));
-  html+=pKV('Mfg Component Yrs',mfg.componentYrs)+pKV('Mfg Shell Yrs',mfg.shellYrs)+(mfg.extWarrantyYrs?pKV('Mfg Ext Warranty Yrs',mfg.extWarrantyYrs):pKV('Mfg Cabinet Yrs',mfg.cabinetYrs));
+  if((mfg.brands||[]).indexOf('Tylo')>=0) html+=pKV('Tylo Core Components Yrs',mfg.tyloCoreYrs)+pKV('Tylo Bluetooth Sound Yrs',mfg.tyloSoundYrs);
+  else html+=pKV('Mfg Component Yrs',mfg.componentYrs)+pKV('Mfg Shell Yrs',mfg.shellYrs)+(mfg.extWarrantyYrs?pKV('Mfg Ext Warranty Yrs',mfg.extWarrantyYrs):pKV('Mfg Cabinet Yrs',mfg.cabinetYrs));
+  if(mfg.otherText) html+=pKV('Others',mfg.otherText);
   html+=pKV('Dealership Brands',(dlr.brands||[]).join(', '));
   html+=pKV('Dlr Component Yrs',dlr.componentYrs)+pKV('Dlr Shell Yrs',dlr.shellYrs)+(dlr.extWarrantyYrs?pKV('Dlr Ext Warranty Yrs',dlr.extWarrantyYrs):pKV('Dlr Cabinet Yrs',dlr.cabinetYrs));
   html+='</div></div>';

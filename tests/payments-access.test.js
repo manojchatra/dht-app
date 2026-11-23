@@ -14,7 +14,7 @@ function makeUser(username, password, role) {
 
 async function ownedContractAndPayment(agent) {
   const { contractId } = await createContract(agent, { payment: {}, costing: { grandTotal: '5000' } });
-  const pay = await agent.post('/api/payments').send({ contractId, amount: 1000, method: 'cash' });
+  const pay = await agent.post('/api/payments').send({ contractId, amount: 1000, method: 'credit_card' });
   return { contractId, paymentId: pay.body.paymentId };
 }
 
@@ -33,7 +33,7 @@ describe('routes/payments.js access control', () => {
     const list = await other.get(`/api/payments/contract/${contractId}`);
     expect(list.status).toBe(403);
 
-    const pay = await other.post('/api/payments').send({ contractId, amount: 500, method: 'cash' });
+    const pay = await other.post('/api/payments').send({ contractId, amount: 500, method: 'credit_card' });
     expect(pay.status).toBe(403);
 
     const receipt = await other.get(`/api/payments/${paymentId}/receipt`);
@@ -49,7 +49,7 @@ describe('routes/payments.js access control', () => {
 
     for (const agent of [wh, dl]) {
       expect((await agent.get(`/api/payments/contract/${contractId}`)).status).toBe(403);
-      expect((await agent.post('/api/payments').send({ contractId, amount: 500, method: 'cash' })).status).toBe(403);
+      expect((await agent.post('/api/payments').send({ contractId, amount: 500, method: 'credit_card' })).status).toBe(403);
       expect((await agent.get(`/api/payments/${paymentId}/receipt`)).status).toBe(403);
     }
   });
@@ -60,7 +60,7 @@ describe('routes/payments.js access control', () => {
     const { contractId, paymentId } = await ownedContractAndPayment(owner);
 
     expect((await admin.get(`/api/payments/contract/${contractId}`)).status).toBe(200);
-    expect((await admin.post('/api/payments').send({ contractId, amount: 500, method: 'cash' })).status).toBe(200);
+    expect((await admin.post('/api/payments').send({ contractId, amount: 500, method: 'credit_card' })).status).toBe(200);
     expect((await admin.get(`/api/payments/${paymentId}/receipt`)).status).toBe(200);
   });
 
@@ -69,7 +69,7 @@ describe('routes/payments.js access control', () => {
     const { contractId, paymentId } = await ownedContractAndPayment(owner);
 
     expect((await owner.get(`/api/payments/contract/${contractId}`)).status).toBe(200);
-    expect((await owner.post('/api/payments').send({ contractId, amount: 500, method: 'cash' })).status).toBe(200);
+    expect((await owner.post('/api/payments').send({ contractId, amount: 500, method: 'credit_card' })).status).toBe(200);
     expect((await owner.get(`/api/payments/${paymentId}/receipt`)).status).toBe(200);
   });
 

@@ -360,6 +360,16 @@ for (const col of ['voided_at', 'voided_by', 'void_reason']) {
     console.log(`[DB] payments.${col} column added`);
   }
 }
+// Cash recorded by a salesperson waits for admin approval (Nov 2026):
+// approval NULL = an ordinary payment (counts), 'pending' (doesn't count yet),
+// 'approved', 'rejected' (also voided, with the reason). cash_image_path =
+// the photo of the cash — into the gallery when approved, deleted when rejected.
+for (const col of ['approval', 'approved_by', 'approved_at', 'cash_image_path']) {
+  if (!db.prepare('PRAGMA table_info(payments)').all().some(c => c.name === col)) {
+    db.exec(`ALTER TABLE payments ADD COLUMN ${col} TEXT`);
+    console.log(`[DB] payments.${col} column added`);
+  }
+}
 // One-time: paid_amount used to be set only at signing. Bring it in line with
 // the payments recorded since (voided ones excluded) — kept current from now on.
 // Contracts with no payment rows at all (older data) are left as they are.
@@ -438,6 +448,22 @@ if (!db.prepare('PRAGMA table_info(inventory)').all().some(c => c.name === 'rece
       AND EXISTS (SELECT 1 FROM activity_log a WHERE a.contract_id = inventory.contract_id AND a.event_type = 'MARK_RECEIVED')`).run().changes;
   console.log(`[DB] inventory.received_at column added (${n} received spa(s) dated from their contract history)`);
 }
+
+// Time an admin blocks off on the delivery calendar (Nov 2026) — nobody can
+// book a delivery inside it. Phoenix-local "YYYY-MM-DDTHH:mm:ss" like
+// contracts.scheduled_datetime; an all-day block runs midnight to midnight.
+// team NULL = both teams. Mirrored on Google Calendar (google_event_id).
+db.exec(`CREATE TABLE IF NOT EXISTS calendar_blocks (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  start_datetime  TEXT NOT NULL,
+  end_datetime    TEXT NOT NULL,
+  all_day         INTEGER DEFAULT 0,
+  team            TEXT,
+  note            TEXT,
+  created_by      TEXT,
+  google_event_id TEXT,
+  created_at      TEXT DEFAULT (datetime('now'))
+)`);
 
 seedUsers();
 seedSettings();

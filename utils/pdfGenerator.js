@@ -260,11 +260,23 @@ async function generateContractPDF(contract) {
             cb('WLA',      (mfg.brands||[]).includes('WLA')),
             cb('EP',       (mfg.brands||[]).includes('EP')),
           ]},
+          // Tylo and Others (Nov 2026) on a second row; Tylo has its own two lines.
           { columns:[
-            kv('COMPONENTS', mfg.componentYrs?mfg.componentYrs+' yrs':''),
-            kv('SHELL',      mfg.shellYrs?mfg.shellYrs+' yrs':''),
-            mfg.extWarrantyYrs ? kv('EXT. WARRANTY', mfg.extWarrantyYrs+' yrs') : kv('CABINET', mfg.cabinetYrs?mfg.cabinetYrs+' yrs':''),
-          ], columnGap:8 },
+            cb('Tylo',     (mfg.brands||[]).includes('Tylo')),
+            cb('Others',   (mfg.brands||[]).includes('Others')),
+            { text:'' }, { text:'' },
+          ], margin:[0,2,0,0] },
+          (mfg.brands||[]).includes('Tylo')
+            ? { columns:[
+                kv('CORE COMPONENTS',        mfg.tyloCoreYrs?mfg.tyloCoreYrs+' yrs':''),
+                kv('BLUETOOTH SOUND SYSTEM', mfg.tyloSoundYrs?mfg.tyloSoundYrs+' yrs':''),
+              ], columnGap:8 }
+            : { columns:[
+                kv('COMPONENTS', mfg.componentYrs?mfg.componentYrs+' yrs':''),
+                kv('SHELL',      mfg.shellYrs?mfg.shellYrs+' yrs':''),
+                mfg.extWarrantyYrs ? kv('EXT. WARRANTY', mfg.extWarrantyYrs+' yrs') : kv('CABINET', mfg.cabinetYrs?mfg.cabinetYrs+' yrs':''),
+              ], columnGap:8 },
+          mfg.otherText ? kv('OTHERS', mfg.otherText) : { text:'' },
         ]},
         { width:8, text:'' },
         { width:'*', stack:[

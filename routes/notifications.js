@@ -7,6 +7,11 @@ const { logActivity, addNotification } = require('../utils/activityLogger');
 
 function requireAdmin(req,res,next){if(req.session.role==='admin')return next();res.status(403).json({error:'Admin only'});}
 
+// Payment notifications live in the Dashboard's bell (Nov 2026), not in the
+// notification cards: payments recorded / voided, cash approved / rejected.
+const PAYMENT_TYPES = ['PAYMENT', 'PAYMENT_VOIDED', 'CASH_APPROVED', 'CASH_REJECTED'];
+const PAYMENT_IN = `(${PAYMENT_TYPES.map(t => `'${t}'`).join(',')})`;
+
 // GET /api/notifications — fetch active notifications for admin
 router.get('/', requireAdmin, (req, res) => {
   try {
@@ -46,9 +51,43 @@ router.get('/', requireAdmin, (req, res) => {
         AND c.status='scheduled' AND c.scheduled_datetime = n.ref
       ORDER BY n.id DESC`).all();
     const others = db.prepare(
-      "SELECT * FROM notifications WHERE dismissed=0 AND event_type<>'FAILED_DELIVERY' ORDER BY id DESC LIMIT 10"
+      `SELECT * FROM notifications WHERE dismissed=0 AND event_type<>'FAILED_DELIVERY' AND event_type NOT IN ${PAYMENT_IN} ORDER BY id DESC LIMIT 10`
     ).all();
     res.json([...failed, ...others]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/notifications/payments — the bell: cash awaiting approval (always
+// listed until approved or rejected — it can't be dismissed), then the 30
+// newest payment notifications not cleared.
+router.get('/payments', requireAdmin, (req, res) => {
+  try {
+    const toUrl = p => {
+      if (!p) return null;
+      const rel = require('path').relative(process.env.UPLOADS_DIR || require('path').join(__dirname, '../uploads'), p);
+      return rel.startsWith('..') ? null : '/uploads/' + rel.replace(/\\/g, '/');
+    };
+    const pending = db.prepare(`
+      SELECT p.id, p.contract_id, p.amount, p.date, p.notes, p.recorded_by, p.cash_image_path, c.contract_number,
+        COALESCE(cu.name, json_extract(c.data,'$.customer.name'), '') AS customer_name,
+        COALESCE(u.name, p.recorded_by) AS recorded_by_name
+      FROM payments p JOIN contracts c ON c.id = p.contract_id
+      LEFT JOIN customers cu ON cu.id = c.customer_id
+      LEFT JOIN users u ON u.username = p.recorded_by
+      WHERE p.approval = 'pending' AND p.voided_at IS NULL
+      ORDER BY p.id`).all()
+      .map(({ cash_image_path, ...r }) => ({ ...r, photo_url: toUrl(cash_image_path) }));
+    const items = db.prepare(`SELECT * FROM notifications WHERE dismissed=0 AND event_type IN ${PAYMENT_IN} ORDER BY id DESC LIMIT 30`).all();
+    res.json({ pending, items });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/notifications/payments/clear — "Clear all" in the bell (cash
+// awaiting approval isn't a notification, so it stays).
+router.post('/payments/clear', requireAdmin, (req, res) => {
+  try {
+    const n = db.prepare(`UPDATE notifications SET dismissed=1 WHERE dismissed=0 AND event_type IN ${PAYMENT_IN}`).run().changes;
+    res.json({ success: true, cleared: n });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

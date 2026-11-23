@@ -22,7 +22,7 @@ describe('balances are saved rounded to cents', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createContract(agent, { payment: {}, costing: { grandTotal: '1000.3' } });
 
-    const res = await agent.post('/api/payments').send({ contractId, amount: 1000.1, method: 'cash' });
+    const res = await agent.post('/api/payments').send({ contractId, amount: 1000.1, method: 'credit_card' });
 
     expect(res.status).toBe(200);
     expect(row(contractId).due_prior).toBe('0.2');

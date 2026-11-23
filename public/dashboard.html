@@ -88,6 +88,29 @@
 .notif-card.green .notif-icon{color:var(--green)}
 .notif-card.red .notif-icon{color:var(--red)}
 @keyframes nfSlide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+/* Payment bell (admin) */
+.ph-right{display:flex;align-items:center;gap:14px}
+.bell-wrap{position:relative}
+.bell-btn{position:relative;width:40px;height:40px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);font-size:17px}
+.bell-btn:hover{border-color:var(--accent-light)}
+.bell-count{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)}
+.bell-count.wait{background:#d97706}
+.bell-drop{position:absolute;top:48px;right:0;width:min(400px,calc(100vw - 32px));max-height:70vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);z-index:60}
+.bell-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;position:sticky;top:0;background:var(--surface)}
+.bell-clear{background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit}
+.bell-item{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;line-height:1.4;align-items:flex-start}
+.bell-item:last-child{border-bottom:none}
+.bell-item.wait{background:var(--yellow-bg)}
+.bell-item .bi-dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.bell-item .bi-body{flex:1;min-width:0;overflow-wrap:anywhere}
+.bell-item .bi-body a{color:var(--accent);font-weight:600;text-decoration:none}
+.bell-item small{display:block;color:var(--text-muted);font-size:11px;margin-top:2px}
+.bell-item .bi-x{background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;padding:0 2px}
+.bell-item .bi-thumb{width:46px;height:46px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0}
+.bi-acts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.bi-reject{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.bi-reject input{flex:1;min-width:140px;font-size:12px;padding:5px 8px}
+.bell-empty{padding:16px 14px;color:var(--text-muted);font-size:13px}
 </style>
 </head>
 <body>
@@ -96,7 +119,19 @@
 <main class="main">
   <div class="page-header">
     <h1>Dashboard</h1>
-    <span style="font-size:13px;color:var(--text-muted)" id="dateStr"></span>
+    <div class="ph-right">
+      <span style="font-size:13px;color:var(--text-muted)" id="dateStr"></span>
+      <!-- Payment notifications + cash awaiting approval (admin, Nov 2026) -->
+      <div class="bell-wrap" id="bellWrap" style="display:none">
+        <button type="button" class="bell-btn" id="bellBtn" aria-label="Payment notifications" aria-expanded="false" onclick="toggleBell(event)">
+          <i class="fa-regular fa-bell"></i><span class="bell-count" id="bellCount" style="display:none"></span>
+        </button>
+        <div class="bell-drop" id="bellDrop" style="display:none">
+          <div class="bell-head"><span>Payments</span><button type="button" class="bell-clear" onclick="clearBell()">Clear all</button></div>
+          <div id="bellList"><div class="bell-empty">Loading…</div></div>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="dash-grid" id="dashGrid">
     <div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</div>
@@ -144,6 +179,7 @@ async function loadNotifications(){
   const bar = document.getElementById('notifBar');
   if(!bar) return;
   try{
+    loadBell();
     const r = await fetch('/api/notifications');
     if(!r.ok){ bar.innerHTML=''; return; }
     const items = await r.json();
@@ -168,6 +204,88 @@ async function dismissNotif(id){
   const card = document.querySelector('.notif-card[data-id="'+id+'"]');
   if(card) card.remove();
   try{ await fetch('/api/notifications/'+id+'/dismiss',{method:'POST'}); }catch(e){}
+  loadBell();
+}
+
+// ── Payment bell (admin): cash awaiting approval first (Approve / Reject here,
+// no ×), then payment notifications (× each, Clear all). ──
+let bellData = { pending: [], items: [] };
+const money2 = n => '$' + Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+async function loadBell(){
+  const wrap = document.getElementById('bellWrap');
+  if (window._userRole !== 'admin') { wrap.style.display='none'; return; }
+  wrap.style.display='';
+  try {
+    const r = await fetch('/api/notifications/payments');
+    if (!r.ok) return;
+    bellData = await r.json();
+  } catch(e) { return; }
+  renderBell();
+}
+function renderBell(){
+  const n = bellData.pending.length + bellData.items.length;
+  const cnt = document.getElementById('bellCount');
+  cnt.textContent = n; cnt.style.display = n ? '' : 'none';
+  cnt.classList.toggle('wait', bellData.pending.length > 0);
+  document.getElementById('bellBtn').setAttribute('aria-label', 'Payment notifications' + (bellData.pending.length ? ' — ' + bellData.pending.length + ' cash awaiting approval' : ''));
+  const link = (id, num) => '<a href="/contracts/'+id+'">'+escHtml(num)+'</a>';
+  const html = bellData.pending.map(p =>
+      '<div class="bell-item wait" data-pid="'+p.id+'">'
+      + (p.photo_url ? '<a href="'+escHtml(p.photo_url)+'" target="_blank" rel="noopener" title="Photo of the cash"><img class="bi-thumb" src="'+escHtml(p.photo_url)+'" alt="Cash photo"></a>' : '<span class="bi-dot" style="background:#d97706"></span>')
+      + '<div class="bi-body">'+link(p.contract_id, p.contract_number)+' — Cash <b>'+money2(p.amount)+'</b> from '+escHtml(p.recorded_by_name||p.recorded_by||'')+' awaiting approval'
+      + '<small>'+escHtml(p.customer_name||'')+' · taken '+escHtml(p.date ? new Date(p.date+'T12:00:00Z').toLocaleDateString('en-US',{timeZone:'UTC',month:'short',day:'numeric'}) : '')+(p.notes ? ' · '+escHtml(p.notes) : '')+(p.photo_url ? '' : ' · no photo')+'</small>'
+      + '<div class="bi-acts"><button type="button" class="btn btn-success btn-sm" onclick="approveCash('+p.id+',this)"><i class="fa-solid fa-check"></i> Approve</button>'
+      + '<button type="button" class="btn btn-danger btn-sm" onclick="showReject('+p.id+')"><i class="fa-solid fa-xmark"></i> Reject</button></div>'
+      + '<div class="bi-reject" id="rej-'+p.id+'" style="display:none"><input type="text" id="rejReason-'+p.id+'" placeholder="Reason (the salesperson sees it)" maxlength="200">'
+      + '<button type="button" class="btn btn-danger btn-sm" onclick="rejectCash('+p.id+',this)">Reject</button></div>'
+      + '</div></div>').join('')
+    + bellData.items.map(it => {
+      const msg = it.message || '', i = msg.indexOf(' — ');
+      const body = (i>0 && it.contract_id) ? link(it.contract_id, msg.slice(0,i)) + escHtml(msg.slice(i)) : escHtml(msg);
+      return '<div class="bell-item"><span class="bi-dot" style="background:'+(it.color==='red'?'var(--red)':'var(--green)')+'"></span>'
+        + '<div class="bi-body">'+body+'<small>'+escHtml(azDateTime(it.created_at))+'</small></div>'
+        + '<button type="button" class="bi-x" title="Dismiss" onclick="dismissBell('+it.id+')">&times;</button></div>';
+    }).join('');
+  document.getElementById('bellList').innerHTML = html || '<div class="bell-empty">No payment notifications.</div>';
+}
+function toggleBell(e){
+  e.stopPropagation();
+  const d = document.getElementById('bellDrop'), open = d.style.display === 'none';
+  d.style.display = open ? '' : 'none';
+  document.getElementById('bellBtn').setAttribute('aria-expanded', String(open));
+  if (open) loadBell();
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#bellWrap')) { const d = document.getElementById('bellDrop'); if (d) d.style.display = 'none'; }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { const d = document.getElementById('bellDrop'); if (d) d.style.display = 'none'; } });
+async function dismissBell(id){
+  bellData.items = bellData.items.filter(x => x.id !== id); renderBell();
+  try { await fetch('/api/notifications/'+id+'/dismiss',{method:'POST'}); } catch(e){}
+}
+async function clearBell(){
+  bellData.items = []; renderBell();
+  try { await fetch('/api/notifications/payments/clear',{method:'POST'}); } catch(e){}
+}
+function showReject(id){
+  const el = document.getElementById('rej-'+id); el.style.display = 'flex';
+  document.getElementById('rejReason-'+id).focus();
+}
+async function decideCash(id, approve, btn, reason){
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/payments/'+id+'/'+(approve?'approve':'reject'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(approve ? {} : {reason})});
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error(j.error || 'Failed');
+    showToast(approve ? 'Cash approved — the salesperson has been emailed' : 'Cash rejected — the salesperson has been emailed', 'success');
+    loadBell();
+  } catch(e) { showToast(e.message, 'error'); btn.disabled = false; }
+}
+function approveCash(id, btn){ decideCash(id, true, btn); }
+function rejectCash(id, btn){
+  const reason = document.getElementById('rejReason-'+id).value.trim();
+  if (!reason) { showToast('Enter a reason for rejecting', 'error'); document.getElementById('rejReason-'+id).focus(); return; }
+  decideCash(id, false, btn, reason);
 }
 
 // Close action dropdowns on outside click

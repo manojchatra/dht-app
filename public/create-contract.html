@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/theme.css">
 <script src="/js/util.js"></script>
+<script src="/js/warranty-list.js"></script>
 <style>
 .sidebar{visibility:visible}
 body{visibility:visible}
@@ -325,12 +326,24 @@ label.lbl{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px
           <label class="cb-item"><input type="checkbox" class="mfg-brand" value="Caldera"> Caldera</label>
           <label class="cb-item"><input type="checkbox" class="mfg-brand" value="WLA"> WLA</label>
           <label class="cb-item"><input type="checkbox" class="mfg-brand" value="EP"> EP</label>
+          <label class="cb-item"><input type="checkbox" class="mfg-brand" value="Tylo"> Tylo</label>
+          <label class="cb-item"><input type="checkbox" class="mfg-brand" value="Others"> Others</label>
         </div>
-        <div class="grid-3">
+        <!-- Filled in from the spa picked (js/warranty-list.js); one brand only -->
+        <div class="grid-3" id="mfgYears">
           <div><label class="lbl">Components (yrs)</label><input type="text" id="mfgComp"></div>
           <div><label class="lbl">Shell (yrs)</label><input type="text" id="mfgShell"></div>
           <div><label class="lbl">Cabinet (yrs)</label><input type="text" id="mfgCabinet"></div>
         </div>
+        <div class="grid-2" id="mfgTyloBox" style="display:none">
+          <div><label class="lbl">Core components (yrs)</label><input type="text" id="mfgTyloCore" maxlength="10"></div>
+          <div><label class="lbl">Bluetooth sound system (yrs)</label><input type="text" id="mfgTyloSound" maxlength="10"></div>
+        </div>
+        <div id="mfgOtherBox" style="display:none;margin-top:10px">
+          <label class="lbl">Others — brand and warranty</label>
+          <input type="text" id="mfgOther" maxlength="200" placeholder="Type the brand and its warranty">
+        </div>
+        <p id="mfgHint" style="display:none;font-size:11.5px;color:var(--text-muted);margin:6px 0 0"></p>
       </div>
       <div>
         <p style="font-size:12px;font-weight:600;margin-bottom:10px">EMP / Dealership Warranty</p>
@@ -835,9 +848,9 @@ let COLOUR_LISTS=null, COLOUR_ALIASES={'*':{}};
 const COVER_COLORS=['Black','Storm','Gray','Cocoa','Chestnut','Matching','Others'];
 
 const MAKE_MODELS={
-  'HotSpring':{'Highlife':['Grandee','Envoy','Aria','Vanguard','Sovereign','Prodigy','Jetsetter LX','Jetsetter'],'Limelight':['Prism','Pulse','Flash','Flair','Beam'],'Hot Spot':['Rhythm','Relay','Propel','Stride','Pace','SX','TX'],'Freeflow':['Excursion','Monterey Premier','Tristar','Azure','Cascina','Aptos','Mini'],'Cold Plunge':['Vigor']},
-  'Caldera':{'Utopia':['Cantabria','Geneva','Niagara','Tahitian','Florence','Ravello'],'Paradise':['Makena','Salina','Reunion','Seychelles','Martinique','Kauai'],'Vacanza':['Palatino','Marino','Vanto','Tarino','Aventine','Celio','Aspire','Entice','Embrace','Enamor','Drift','Discovery'],'Cold Plunge':['Emerge']},
-  'Endless Pools':{'E-Series':['E2000','E700','E550','E500'],'X-Series':['X2000','X500'],'R-Series':['R500','R220','R200']},
+  'HotSpring':{'Highlife':['Grandee','Envoy','Aria','Vanguard','Sovereign','Triumph','Prodigy','Jetsetter LX','Jetsetter'],'Limelight':['Prism','Pulse','Flash','Flair','Beam'],'Hot Spot':['Rhythm','Relay','Propel','Stride','Pace','SX','TX'],'Freeflow':['Excursion','Monterey Premier','Tristar','Azure','Cascina','Aptos','Mini'],'Cold Plunge':['Vigor']},
+  'Caldera':{'Utopia':['Cantabria','Geneva','Niagara','Tahitian','Florence','Provence','Ravello'],'Paradise':['Makena','Salina','Reunion','Seychelles','Martinique','Kauai'],'Vacanza':['Palatino','Marino','Vanto','Tarino','Aventine','Celio'],'Fantasy':['Bloom','Entice','Splendor','Invite','Aspire'],'Cold Plunge':['Emerge']},
+  'Endless Pools':{'E-Series':['E2000','E700','E550','E500'],'X-Series':['X2000','X500','X200'],'R-Series':['R500','R220','R200']},
   'Tylo':{'Halmstad':['Halmstad 2','Halmstad 3','Halmstad 4'],'Reflection':['Reflection 3','Reflection 4'],'Lulea':['Lulea 3','Lulea 4'],'Infrared':['Kiruna 2','Kiruna 3'],'Hybrid':['Kiruna']},
   'WLA':{'':['532L','735','735L','772L','772']},
   'LifeSmart':{},
@@ -1033,7 +1046,52 @@ function updateSeriesDl(make){var dl=document.getElementById('seriesDl');dl.inne
 function onModelInput(){var make=document.getElementById('prodMake').value.trim();var q=document.getElementById('prodModel').value.trim().toLowerCase();var pool=make&&MAKE_MODELS[make]?allModels(make):Object.keys(MAKE_MODELS).flatMap(function(m){return allModels(m)});fillDd('modelDd',pool.filter(function(m){return!q||m.toLowerCase().includes(q)}).slice(0,30),'selectModel');}
 function showModelDd(){clearTimeout(modelBT);var make=document.getElementById('prodMake').value.trim();var q=document.getElementById('prodModel').value.trim().toLowerCase();var pool=make&&MAKE_MODELS[make]?allModels(make):Object.keys(MAKE_MODELS).flatMap(function(m){return allModels(m)});fillDd('modelDd',pool.filter(function(m){return!q||m.toLowerCase().includes(q)}).slice(0,30),'selectModel');}
 function hideModelDd(){modelBT=setTimeout(function(){document.getElementById('modelDd').style.display='none'},160);}
-function selectModel(m){document.getElementById('prodModel').value=m;document.getElementById('modelDd').style.display='none';var make=document.getElementById('prodMake').value.trim();var s=seriesForModel(make,m);if(s)document.getElementById('prodSeries').value=s;}
+function selectModel(m){document.getElementById('prodModel').value=m;document.getElementById('modelDd').style.display='none';var make=document.getElementById('prodMake').value.trim();var s=seriesForModel(make,m);if(s)document.getElementById('prodSeries').value=s;applySpaWarranty(make,m);}
+// A model typed by hand (not picked from the list) fills the warranty when the box is left.
+document.getElementById('prodModel').addEventListener('change',function(){applySpaWarranty(document.getElementById('prodMake').value.trim(),this.value.trim());});
+
+// ── Manufacturer warranty from the spa (js/warranty-list.js) ─────────────────
+// Only when the spa is picked or changed — never when a saved contract is
+// loaded into the form (the Edit page keeps what was signed).
+function applySpaWarranty(make,model){
+  if(typeof warrantyFor!=='function')return;
+  var w=warrantyFor(make,model);
+  if(!w)return;
+  document.querySelectorAll('.mfg-brand').forEach(function(b){b.checked=b.value===w.brand;});
+  document.getElementById('mfgComp').value=w.componentYrs;
+  document.getElementById('mfgShell').value=w.shellYrs;
+  document.getElementById('mfgCabinet').value=w.cabinetYrs;
+  document.getElementById('mfgTyloCore').value=w.tyloCoreYrs;
+  document.getElementById('mfgTyloSound').value=w.tyloSoundYrs;
+  if(w.brand!=='Others')document.getElementById('mfgOther').value='';
+  updateMfgBoxes();
+  var hint=document.getElementById('mfgHint');
+  hint.textContent=w.series?'Filled in from the warranty list: '+(model||'')+' ('+w.series+'). You can change it.'
+    :w.brand==='Tylo'?'Tylo sauna: core components 5 years, Bluetooth sound system 1 year. You can change it.'
+    :w.brand==='Others'?'Others: type the brand and its warranty.'
+    :w.brand+' is ticked — type the warranty years.';
+  hint.style.display='block';
+}
+// Tylo has its own two lines; Others has a text box. One brand only, in both halves.
+function updateMfgBoxes(){
+  var on=function(v){return !!document.querySelector('.mfg-brand[value="'+v+'"]:checked');};
+  var tylo=on('Tylo');
+  document.getElementById('mfgTyloBox').style.display=tylo?'grid':'none';
+  document.getElementById('mfgYears').style.display=tylo?'none':'';
+  document.getElementById('mfgOtherBox').style.display=on('Others')?'block':'none';
+  if(tylo){
+    if(!document.getElementById('mfgTyloCore').value)document.getElementById('mfgTyloCore').value=TYLO_WARRANTY.tyloCoreYrs;
+    if(!document.getElementById('mfgTyloSound').value)document.getElementById('mfgTyloSound').value=TYLO_WARRANTY.tyloSoundYrs;
+  }
+}
+['mfg-brand','dlr-brand'].forEach(function(cls){
+  document.querySelectorAll('.'+cls).forEach(function(box){
+    box.addEventListener('change',function(){
+      if(this.checked)document.querySelectorAll('.'+cls).forEach(function(o){if(o!==box)o.checked=false;});
+      if(cls==='mfg-brand')updateMfgBoxes();
+    });
+  });
+});
 
 // ── Address suggestions (from Google, through our server: routes/address.js) ──
 var addrTimer=null,addrSeq=0,addrPick=0,addrSession='';
@@ -1327,6 +1385,7 @@ function selectUnit(row){
   selectChipFromValue('shellChips',   coloursFor('shell'),   normColour('shell',row.shell_color),     'shellColorOther',   function(v){selectedShell=v});
   selectChipFromValue('cabinetChips', coloursFor('cabinet'), normColour('cabinet',row.cabinet_color), 'cabinetColorOther', function(v){selectedCabinet=v});
   document.getElementById('inclSpeaker').checked = row.speaker === 'Yes';
+  applySpaWarranty(row.make||'', row.model||'');
   refreshFinanceChoice();
   closeInvModal();
   showToast('Item selected - fields auto-filled','success');
@@ -1544,7 +1603,11 @@ function collectData(){
       included:{speaker:cb('#inclSpeaker')},
     },
     warranty:{
-      manufacturer:{brands:mc('.mfg-brand'),componentYrs:v('mfgComp'),shellYrs:v('mfgShell'),cabinetYrs:v('mfgCabinet')},
+      manufacturer:(function(){
+        var b=mc('.mfg-brand'),tylo=b.indexOf('Tylo')>=0;
+        return {brands:b,componentYrs:tylo?'':v('mfgComp'),shellYrs:tylo?'':v('mfgShell'),cabinetYrs:tylo?'':v('mfgCabinet'),
+          tyloCoreYrs:tylo?v('mfgTyloCore'):'',tyloSoundYrs:tylo?v('mfgTyloSound'):'',otherText:b.indexOf('Others')>=0?v('mfgOther'):''};
+      })(),
       dealership:{brands:mc('.dlr-brand'),componentYrs:v('dlrComp'),shellYrs:v('dlrShell'),cabinetYrs:v('dlrCabinet')},
     },
     service:{

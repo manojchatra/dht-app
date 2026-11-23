@@ -74,7 +74,7 @@ describe('cheque photo on POST /api/payments', () => {
     const { contractId } = await unpaidContract(agent);
 
     const res = await agent.post('/api/payments')
-      .field('contractId', String(contractId)).field('amount', '300').field('method', 'cash')
+      .field('contractId', String(contractId)).field('amount', '300').field('method', 'credit_card')
       .attach('chequePhoto', await jpegBuffer(), { filename: 'x.jpg', contentType: 'image/jpeg' });
 
     expect(res.status).toBe(200);

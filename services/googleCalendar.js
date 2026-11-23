@@ -135,6 +135,32 @@ async function markEventDelivered(eventId) {
   }
 }
 
+// ── Admin time block (calendar_blocks) — red (Tomato), "BLOCKED – note" ──────
+// An all-day block is an all-day event (end date is exclusive, as Google wants).
+const BLOCK_COLOR_ID = '11';
+function blockEventBody(block) {
+  const team = block.team ? teamName(block.team) : 'Both teams';
+  const body = {
+    summary:     'BLOCKED' + (block.note ? ' – ' + block.note : ''),
+    description: 'Team: ' + team + '\nNo deliveries can be booked in this time.\nBlocked in GOBI' + (block.created_by ? ' by ' + block.created_by : ''),
+    colorId:     BLOCK_COLOR_ID,
+  };
+  if (block.all_day) {
+    body.start = { date: block.start_datetime.slice(0, 10) };
+    body.end   = { date: block.end_datetime.slice(0, 10) };
+  } else {
+    body.start = { dateTime: block.start_datetime, timeZone: TZ };
+    body.end   = { dateTime: block.end_datetime,   timeZone: TZ };
+  }
+  return body;
+}
+async function createBlockEvent(block) {
+  if (!calendarConfigured()) { console.warn('[Calendar] Not configured — skipping'); return null; }
+  const res = await getCalendar().events.insert({ calendarId: CALENDAR_ID, requestBody: blockEventBody(block) });
+  console.log('[Calendar] Block event created:', res.data.id);
+  return res.data.id;
+}
+
 // ── Delete event on cancel / contract delete ─────────────────────────────────
 async function deleteCalendarEvent(eventId) {
   if (!calendarConfigured() || !eventId) return;
@@ -174,4 +200,5 @@ async function checkCalendarAccess() {
 }
 
 module.exports = { createCalendarEvent, updateCalendarEvent, markEventDelivered, deleteCalendarEvent, calendarConfigured, calendarEventExists, checkCalendarAccess,
-  _buildDescription: buildDescription, _buildSummary: buildSummary }; // for tests
+  createBlockEvent,
+  _buildDescription: buildDescription, _buildSummary: buildSummary, _blockEventBody: blockEventBody }; // for tests

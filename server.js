@@ -82,6 +82,7 @@ app.use('/api/delivery',     requireAuth, require('./routes/delivery'));
 app.use('/api/post-delivery', requireAuth, require('./routes/post-delivery'));
 app.use('/api/customers',    requireAuth, require('./routes/customers'));
 app.use('/api/address',      requireAuth, require('./routes/address'));
+app.use('/api/calendar',     requireAuth, require('./routes/calendar'));
 // Contract history — admins only (the contract page only shows it to admins).
 app.get('/api/activity/:contractId', requireAuth, require('./middleware/auth').requireAdmin, (req,res) => {
   const db = require('./db/database');

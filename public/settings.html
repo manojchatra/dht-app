@@ -94,6 +94,17 @@
     </div>
   </div>
 
+  <!-- Delivery exception emails (admin only) -->
+  <div class="card admin-only" style="display:none">
+    <div class="card-header"><i class="fa-solid fa-triangle-exclamation"></i>Delivery Exception Emails <span style="font-size:11px;background:var(--accent-bg);color:var(--accent);padding:2px 8px;border-radius:10px;margin-left:8px">Admin Only</span></div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">When a crew notes an exception or damage on the acknowledgement form, these addresses get an email with the exception photos, what was written, and the customer, contract and delivery details.</p>
+    <div id="excEmailList"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <input type="email" id="newExcEmailInput" placeholder="email@example.com" style="flex:1">
+      <button class="btn btn-primary" onclick="addExcEmail()"><i class="fa-solid fa-plus"></i> Add</button>
+    </div>
+  </div>
+
   <!-- User management (admin only) -->
   <div class="card admin-only" style="display:none">
     <div class="card-header"><i class="fa-solid fa-users-gear"></i>User Management <span style="font-size:11px;background:var(--accent-bg);color:var(--accent);padding:2px 8px;border-radius:10px;margin-left:8px">Admin Only</span></div>
@@ -214,7 +225,7 @@ function toggleActionMenu(e,id){
 </script>
 <script>
 const STORES = ['Phoenix','Goodyear','Chandler','Surprise','Tolleson'];
-let taxRates = {}, emailRecipients = [], reviewUrls = {};
+let taxRates = {}, emailRecipients = [], reviewUrls = {}, excEmails = [];
 
 async function loadSettings() {
   try {
@@ -226,6 +237,10 @@ async function loadSettings() {
     if (!er.ok) throw new Error('Email API: ' + er.status);
     emailRecipients = await er.json();
     renderEmails();
+    const xe = await fetch('/api/settings/exception-emails');
+    if (!xe.ok) throw new Error('Exception emails API: ' + xe.status);
+    excEmails = await xe.json();
+    renderExcEmails();
     const ru = await fetch('/api/settings/review-urls');
     if (!ru.ok) throw new Error('Review links API: ' + ru.status);
     reviewUrls = await ru.json();
@@ -314,6 +329,34 @@ async function removeEmail(idx) {
 
 async function saveEmails() {
   await fetch('/api/settings/email-recipients', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emails:emailRecipients})});
+}
+
+// Delivery exception emails
+function renderExcEmails() {
+  const el = document.getElementById('excEmailList');
+  if (!el) return;
+  if (!excEmails.length) { el.innerHTML = '<p style="font-size:13px;color:var(--text-muted)">No one yet — exception emails aren\'t sent until an address is added.</p>'; return; }
+  el.innerHTML = excEmails.map((email,i) =>
+    '<div class="email-row"><span style="font-size:13px">' + escHtml(email) + '</span>' +
+    '<button class="btn btn-danger btn-sm" onclick="removeExcEmail(' + i + ')"><i class="fa-solid fa-trash"></i></button></div>'
+  ).join('');
+}
+async function saveExcEmails(list) {
+  const r = await fetch('/api/settings/exception-emails', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emails:list})});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Failed to save');
+  excEmails = j.emails; renderExcEmails();
+}
+async function addExcEmail() {
+  const val = document.getElementById('newExcEmailInput').value.trim().toLowerCase();
+  if (!val || !val.includes('@')) { showToast('Enter a valid email', 'error'); return; }
+  if (excEmails.includes(val)) { showToast('Already added', 'error'); return; }
+  try { await saveExcEmails(excEmails.concat(val)); document.getElementById('newExcEmailInput').value = ''; showToast('Email added', 'success'); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+async function removeExcEmail(idx) {
+  try { await saveExcEmails(excEmails.filter((_, i) => i !== idx)); showToast('Email removed', 'success'); }
+  catch (e) { showToast(e.message, 'error'); }
 }
 
 async function changePassword() {

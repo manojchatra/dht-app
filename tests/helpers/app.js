@@ -26,6 +26,7 @@ function createTestApp() {
     calendarConfigured:  jest.fn().mockReturnValue(false),
     calendarEventExists: jest.fn().mockResolvedValue(false),
     checkCalendarAccess: jest.fn().mockResolvedValue({ accessRole: 'writer' }),
+    createBlockEvent:    jest.fn().mockResolvedValue(null),
   }));
 
   jest.doMock('../../services/driveInventory', () => ({
@@ -73,6 +74,9 @@ function createTestApp() {
     getStoreReviewUrl:         jest.fn().mockReturnValue('https://g.page/r/test/review'),
     getSalesmanEmail:          jest.fn().mockReturnValue(null),
     smtpConfigured:            jest.fn().mockReturnValue(false),
+    notifyCashPending:         jest.fn().mockResolvedValue(null),
+    notifyCashDecision:        jest.fn().mockResolvedValue(null),
+    notifyDeliveryException:   jest.fn().mockResolvedValue(null),
   }));
 
   const app = require('../../server');

@@ -32,7 +32,8 @@ function getEmailRecipients() {
   } catch(e) { return []; }
 }
 const { generateAcknowledgementPDF } = require('../utils/acknowledgementPDF');
-const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered, getSalesmanEmail } = require('../utils/emailSender');
+const { sendAcknowledgementEmail, smtpConfigured, notifyDelivered, getSalesmanEmail, notifyDeliveryException } = require('../utils/emailSender');
+const { teamName } = require('../utils/teams');
 const { moveToDelivered } = require('../services/driveInventory');
 const { markEventDelivered } = require('../services/googleCalendar');
 const { buildDriveData } = require('./contracts');
@@ -332,6 +333,26 @@ router.post('/acknowledgement/:id', requireDeliveryOrAdmin,
       exImgPaths.forEach((p, i) => existing.push({ path:p, label:`Exception Photo ${i+1}` }));
       db.prepare('UPDATE contracts SET extra_images=? WHERE id=?')
         .run(JSON.stringify(existing), contract.id);
+
+      // An exception / damage noted → the Settings "Delivery Exception Emails"
+      // list, with the exception photos and the details (non-fatal).
+      if (exceptions || exImgPaths.length) {
+        try {
+          const dur = contract.scheduled_duration || 120;
+          const phx = { timeZone: 'America/Phoenix' };
+          const start = contract.scheduled_datetime ? new Date(contract.scheduled_datetime + '-07:00') : null;
+          const slot = start ? start.toLocaleDateString('en-US', { ...phx, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ', '
+            + start.toLocaleTimeString('en-US', { ...phx, hour: 'numeric', minute: '2-digit' }) + ' – '
+            + new Date(start.getTime() + dur * 60000).toLocaleTimeString('en-US', { ...phx, hour: 'numeric', minute: '2-digit' }) : '';
+          await notifyDeliveryException({
+            contract: { ...contract, customer_name: customerNameTyped.trim() },
+            exceptions, photoPaths: exImgPaths, deliveredBy: deliveredBy.trim(),
+            submittedBy: req.currentUser.name ? `${req.currentUser.name} (${req.currentUser.username})` : req.currentUser.username,
+            teamName: teamName(contract.delivery_team), slot,
+            submittedAt: new Date().toLocaleString('en-US', { ...phx, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }),
+          });
+        } catch (e) { console.error('[Email delivery exception failed — non-fatal]', e.message); }
+      }
 
       // Google Sheets (non-fatal)
       try {

@@ -37,6 +37,22 @@ router.put('/email-recipients', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// GET / PUT /api/settings/exception-emails (admin only) — who gets the
+// "Delivery exception" email (photos + details) when a crew notes an exception
+// on the acknowledgement form (Nov 2026). Empty = no email.
+router.get('/exception-emails', requireAdmin, (req, res) => {
+  res.json(getSetting('exception_email_recipients') || []);
+});
+router.put('/exception-emails', requireAdmin, (req, res) => {
+  const { emails } = req.body || {};
+  if (!Array.isArray(emails)) return res.status(400).json({ error: 'emails must be an array' });
+  const clean = [...new Set(emails.map(e => String(e || '').trim().toLowerCase()).filter(Boolean))];
+  const bad = clean.find(e => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  if (bad) return res.status(400).json({ error: `Not an email address: ${bad}` });
+  setSetting('exception_email_recipients', clean);
+  res.json({ success: true, emails: clean });
+});
+
 // GET /api/settings/review-urls (admin only) — per-store Google review links
 router.get('/review-urls', requireAdmin, (req, res) => {
   res.json(getSetting('review_urls') || {});

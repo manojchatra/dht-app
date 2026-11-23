@@ -70,7 +70,7 @@ describe('payment idempotency', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await unpaidContract(agent, 'ZZPAY-IDEM-1');
 
-    const body = { contractId, amount: 500, method: 'cash', idempotencyKey: 'idem-pay-1' };
+    const body = { contractId, amount: 500, method: 'credit_card', idempotencyKey: 'idem-pay-1' };
     const r1 = await agent.post('/api/payments').send(body);
     const r2 = await agent.post('/api/payments').send(body);
 
@@ -87,8 +87,8 @@ describe('payment idempotency', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await unpaidContract(agent, 'ZZPAY-DIFF-1');
 
-    const r1 = await agent.post('/api/payments').send({ contractId, amount: 500, method: 'cash' });
-    const r2 = await agent.post('/api/payments').send({ contractId, amount: 300, method: 'cash' });
+    const r1 = await agent.post('/api/payments').send({ contractId, amount: 500, method: 'credit_card' });
+    const r2 = await agent.post('/api/payments').send({ contractId, amount: 300, method: 'credit_card' });
 
     expect(r1.body.success).toBe(true);
     expect(r2.body.success).toBe(true);
@@ -101,8 +101,8 @@ describe('payment idempotency', () => {
     const { contractId } = await unpaidContract(agent, 'ZZPAY-RACE-1'); // $5000 balance
 
     const [r1, r2] = await Promise.all([
-      agent.post('/api/payments').send({ contractId, amount: 3000, method: 'cash' }),
-      agent.post('/api/payments').send({ contractId, amount: 3000, method: 'cash' }),
+      agent.post('/api/payments').send({ contractId, amount: 3000, method: 'credit_card' }),
+      agent.post('/api/payments').send({ contractId, amount: 3000, method: 'credit_card' }),
     ]);
     const statuses = [r1.status, r2.status].sort();
     expect(statuses).toEqual([200, 400]);

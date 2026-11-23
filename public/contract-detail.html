@@ -45,6 +45,12 @@
 .pay-voided .pay-amt{text-decoration:line-through;color:var(--text-muted) !important}
 .pay-voided td,.pay-card.pay-voided{opacity:.75}
 .pay-void-note{font-size:12px;color:var(--red);margin-top:4px}
+/* Cash awaiting admin approval (Nov 2026) */
+.pay-wait td,.pay-card.pay-wait{background:var(--yellow-bg)}
+.pay-wait .pay-amt{color:var(--yellow) !important}
+.pay-wait-badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--yellow-bg);color:var(--yellow);border:1px solid var(--yellow);margin-top:4px}
+.pay-thumb{width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border);vertical-align:middle}
+.cash-hint{font-size:12px;background:var(--yellow-bg);color:var(--yellow);border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.4}
 .pay-void-btn{color:var(--red)}
 .pay-void-link{font-size:12px;color:var(--red);background:none;border:none;cursor:pointer;margin:8px 0 0 12px;padding:0;font-family:inherit}
 .payment-table th{text-align:left;padding:7px 10px;font-size:11px;color:var(--text-muted);font-weight:600;border-bottom:2px solid var(--border)}
@@ -121,6 +127,17 @@
     <div class="pay-form-row" id="chequeRow" style="display:none"><label>Cheque #</label><input type="text" id="payChequeNum">
       <label style="margin-top:10px">Photo of cheque <span style="font-weight:400;color:var(--text-muted)">(optional — emailed to admin with the receipt)</span></label>
       <input type="file" id="payChequePhoto" accept="image/*">
+    </div>
+    <!-- A salesperson's cash needs a photo and waits for admin approval (Nov 2026) -->
+    <div class="pay-form-row" id="cashPhotoRow" style="display:none"><label>Photo of the cash *</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('cashCam').click()"><i class="fa-solid fa-camera"></i> Take photo</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('cashFile').click()"><i class="fa-solid fa-upload"></i> Upload photo</button>
+        <img id="cashPreview" class="pay-thumb" style="display:none" alt="Photo of the cash">
+      </div>
+      <input type="file" id="cashCam" accept="image/*" capture="environment" style="display:none" onchange="pickCashPhoto(this)">
+      <input type="file" id="cashFile" accept="image/*" style="display:none" onchange="pickCashPhoto(this)">
+      <div class="cash-hint">Cash payments need admin approval before they count toward the balance. Admin is notified now, and you'll get an email when it's approved or rejected.</div>
     </div>
     <div class="pay-form-row"><label>Amount ($)</label><input type="number" id="payAmount" step="0.01" oninput="updateBal()"></div>
     <div class="pay-form-row"><label>Date</label>
@@ -229,7 +246,8 @@ function financeIcon(finance){
 async function loadContract() {
   try {
     const c = await fetch('/api/contracts/' + contractId).then(r => r.json());
-    currentBalance = parseFloat(c.due_prior || 0);
+    // What can still be recorded: the balance less cash awaiting approval.
+    currentBalance = Math.max(0, Math.round((parseFloat(c.due_prior || 0) - parseFloat(c.pending_paid || 0)) * 100) / 100);
     renderDetail(c);
   } catch(e) {
     document.getElementById('detailContent').innerHTML = '<p style="color:var(--red);text-align:center;padding:40px">Failed to load</p>';
@@ -343,20 +361,31 @@ function renderDetail(c) {
   let paymentsSection = '';
   if (c.payments && c.payments.length) {
     // A voided payment stays listed, crossed out with the reason; it doesn't count toward Total Paid.
+    // Rejected cash is voided too: shown as "Rejected" with the reason.
     const voidNote = p => p.voided_at
-      ? '<div class="pay-void-note"><i class="fa-solid fa-ban"></i> Voided ' + escHtml(String(p.voided_at).slice(0,16)) + ' MST' + (p.voided_by ? ' by ' + escHtml(p.voided_by) : '') + ' \u2014 ' + escHtml(p.void_reason||'') + '</div>'
+      ? '<div class="pay-void-note"><i class="fa-solid fa-ban"></i> ' + (p.approval === 'rejected' ? 'Rejected ' : 'Voided ') + escHtml(String(p.voided_at).slice(0,16)) + ' MST' + (p.voided_by ? ' by ' + escHtml(p.voided_by) : '') + ' \u2014 ' + escHtml(String(p.void_reason||'').replace(/^Rejected: /, '')) + '</div>'
       : '';
-    const voidBtn = (p, cls) => (isAdmin && !p.voided_at)
+    const isWait = p => p.approval === 'pending' && !p.voided_at;
+    const waitNote = p => isWait(p) ? '<div><span class="pay-wait-badge"><i class="fa-solid fa-hourglass-half"></i> Awaiting approval</span></div>' : '';
+    const cashThumb = p => p.cash_image_url ? ' <a href="' + escHtml(p.cash_image_url) + '" target="_blank" rel="noopener" title="Photo of the cash"><img class="pay-thumb" src="' + escHtml(p.cash_image_url) + '" alt="Photo of the cash"></a>' : '';
+    const decideBtns = p => (isAdmin && isWait(p))
+      ? ' <button class="btn btn-success btn-sm" onclick="decideCashPay(' + p.id + ',true,this)"><i class="fa-solid fa-check"></i> Approve</button>'
+      + ' <button class="btn btn-danger btn-sm" onclick="decideCashPay(' + p.id + ',false,this)"><i class="fa-solid fa-xmark"></i> Reject</button>'
+      : '';
+    const voidBtn = (p, cls) => (isAdmin && !p.voided_at && !isWait(p))
       ? ' <button class="' + cls + '" onclick="voidPayment(' + p.id + ')" title="Void this payment"><i class="fa-solid fa-ban"></i>' + (cls === 'pay-void-link' ? ' Void' : '') + '</button>'
       : '';
+    const rowCls = p => p.voided_at ? ' class="pay-voided"' : isWait(p) ? ' class="pay-wait"' : '';
     const rows = c.payments.map(p =>
-      '<tr' + (p.voided_at ? ' class="pay-voided"' : '') + '><td>' + (p.date||'\u2014') + '</td>' +
+      '<tr' + rowCls(p) + '><td>' + (p.date||'\u2014') + '</td>' +
       '<td><span class="pay-method-chip">' + (METHOD_LABELS[p.method]||p.method) + '</span></td>' +
       '<td class="pay-amt" style="font-weight:600;color:var(--green)">$' + parseFloat(p.amount).toFixed(2) + '</td>' +
-      '<td style="color:var(--text-muted)">' + escHtml(p.notes||'\u2014') + voidNote(p) + '</td>' +
+      '<td style="color:var(--text-muted)">' + escHtml(p.notes||'\u2014') + waitNote(p) + voidNote(p) + '</td>' +
       '<td style="color:var(--text-muted)">' + escHtml(p.recorded_by||'\u2014') + '</td>' +
-      '<td style="white-space:nowrap"><a href="/api/payments/' + p.id + '/receipt" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i></a>' +
+      '<td style="white-space:nowrap">' +
+        (isWait(p) ? '' : '<a href="/api/payments/' + p.id + '/receipt" class="btn btn-secondary btn-sm" download><i class="fa-solid fa-download"></i></a>') +
         (p.cheque_image_url ? ' <a href="' + escHtml(p.cheque_image_url) + '" class="btn btn-secondary btn-sm" target="_blank" rel="noopener" title="Cheque photo"><i class="fa-solid fa-image"></i></a>' : '') +
+        cashThumb(p) + decideBtns(p) +
         voidBtn(p, 'btn btn-secondary btn-sm pay-void-btn') + '</td>' +
       '</tr>'
     ).join('');
@@ -364,11 +393,12 @@ function renderDetail(c) {
       '<table class="payment-table"><thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Notes</th><th>By</th><th>Receipt</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table>' +
       c.payments.map(function(p){return(
-        '<div class="pay-card' + (p.voided_at ? ' pay-voided' : '') + '">'+
+        '<div class="pay-card' + (p.voided_at ? ' pay-voided' : isWait(p) ? ' pay-wait' : '') + '">'+
         '<div class="pay-card-top"><span class="pay-card-method">'+(METHOD_LABELS[p.method]||p.method)+'</span><span class="pay-card-amt pay-amt">$'+parseFloat(p.amount).toFixed(2)+'</span></div>'+
         '<div class="pay-card-meta">'+(p.date||'—')+(p.notes?' &middot; '+escHtml(p.notes):'')+(p.recorded_by?' &middot; '+escHtml(p.recorded_by):'')+'</div>'+
-        voidNote(p)+
-        '<a href="/api/payments/'+p.id+'/receipt" download style="font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px;display:inline-block"><i class=\'fa-solid fa-download\'></i> Receipt</a>'+
+        waitNote(p)+voidNote(p)+
+        (cashThumb(p) || decideBtns(p) ? '<div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+cashThumb(p)+decideBtns(p)+'</div>' : '')+
+        (isWait(p) ? '' : '<a href="/api/payments/'+p.id+'/receipt" download style="font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px;display:inline-block"><i class=\'fa-solid fa-download\'></i> Receipt</a>')+
         (p.cheque_image_url ? ' <a href="'+escHtml(p.cheque_image_url)+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;margin:8px 0 0 12px;display:inline-block"><i class=\'fa-solid fa-image\'></i> Cheque photo</a>' : '')+
         voidBtn(p, 'pay-void-link')+
         '</div>'
@@ -489,6 +519,9 @@ function renderDetail(c) {
         (mfg.shellYrs ? '<div style="font-size:12px;color:var(--text-muted)">Shell: <strong>' + mfg.shellYrs + ' yrs</strong></div>' : '') +
         (mfg.cabinetYrs ? '<div style="font-size:12px;color:var(--text-muted)">Cabinet: <strong>' + escHtml(mfg.cabinetYrs) + ' yrs</strong></div>' : '') +
         (mfg.extWarrantyYrs ? '<div style="font-size:12px;color:var(--text-muted)">Ext. Warranty: <strong>' + escHtml(mfg.extWarrantyYrs) + ' yrs</strong></div>' : '') +
+        (mfg.tyloCoreYrs ? '<div style="font-size:12px;color:var(--text-muted)">Core components: <strong>' + escHtml(mfg.tyloCoreYrs) + ' yrs</strong></div>' : '') +
+        (mfg.tyloSoundYrs ? '<div style="font-size:12px;color:var(--text-muted)">Bluetooth sound system: <strong>' + escHtml(mfg.tyloSoundYrs) + ' yrs</strong></div>' : '') +
+        (mfg.otherText ? '<div style="font-size:12px;color:var(--text-muted)">Others: <strong>' + escHtml(mfg.otherText) + '</strong></div>' : '') +
       '</div>' +
       '<div><div style="font-size:12px;font-weight:600;margin-bottom:8px">EMP / Dealership</div>' +
         (dlr.brands||[]).map(function(b){return cbHtml(b,true)}).join('') +
@@ -543,7 +576,8 @@ function renderDetail(c) {
       (co.productTotal ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Product Total</span><span>$' + co.productTotal + '</span></div>' : '') +
       (co.serviceTotal ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Service Total</span><span>$' + co.serviceTotal + '</span></div>' : '') +
       (co.discountAmount ? '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text-muted)">Discount</span><span>-$' + co.discountAmount + '</span></div>' : '') +
-      '<div class="totals-box"><div class="grand">Grand Total: $' + (co.grandTotal||'\u2014') + '</div><div style="font-size:13px;margin-top:6px;color:var(--green)">Total Paid: $' + totalPaid.toFixed(2) + '</div></div>' +
+      '<div class="totals-box"><div class="grand">Grand Total: $' + (co.grandTotal||'\u2014') + '</div><div style="font-size:13px;margin-top:6px;color:var(--green)">Total Paid: $' + totalPaid.toFixed(2) + '</div>' +
+        (parseFloat(c.pending_paid||0) > 0 ? '<div style="font-size:13px;margin-top:4px;color:var(--yellow);font-weight:600"><i class="fa-solid fa-hourglass-half"></i> Awaiting approval: $' + parseFloat(c.pending_paid).toFixed(2) + '</div>' : '') + '</div>' +
       (c.status === 'cancelled'
         ? '<div class="pending-box" style="background:var(--surface2);color:var(--text-muted)"><i class="fa-solid fa-ban"></i> Cancelled — nothing more is collected</div>'
         : balDue > 0
@@ -616,6 +650,32 @@ async function voidPayment(id) {
   } catch(e) { showToast(e.message || 'Failed', 'error'); }
 }
 
+// Admin: approve or reject cash a salesperson recorded (also in the Dashboard bell).
+async function decideCashPay(id, approve, btn) {
+  let reason = '';
+  if (!approve) {
+    reason = prompt('Reject this cash payment?\n\nIt stays on record, crossed out, and never counts. Its photo is deleted and the salesperson is emailed the reason.\n\nReason (required):');
+    if (reason === null) return;
+    if (!reason.trim()) { showToast('A reason is required to reject a cash payment', 'error'); return; }
+  }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/payments/' + id + '/' + (approve ? 'approve' : 'reject'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(approve ? {} : {reason:reason.trim()})});
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Failed');
+    showToast(approve ? 'Cash approved — balance now $' + Number(j.newBalance).toFixed(2) : 'Cash rejected', 'success');
+    loadContract();
+  } catch(e) { showToast(e.message || 'Failed', 'error'); btn.disabled = false; }
+}
+
+// Photo of the cash (salesperson) — camera or file.
+let cashPhoto = null;
+function pickCashPhoto(input) {
+  cashPhoto = input.files[0] || cashPhoto;
+  const img = document.getElementById('cashPreview');
+  if (cashPhoto) { img.src = URL.createObjectURL(cashPhoto); img.style.display = ''; }
+}
+const cashNeedsApproval = () => document.getElementById('payMethod').value === 'cash' && window._userRole === 'sales';
+
 function paymentIdemStorageKey() { return 'dht-payment-idem:' + contractId; }
 function openPaymentModal() {
   // Reuse a key already sitting in sessionStorage for THIS contract (an
@@ -637,6 +697,9 @@ function openPaymentModal() {
   document.getElementById('payChequeNum').value = '';
   document.getElementById('payChequePhoto').value = '';
   document.getElementById('chequeRow').style.display = 'none';
+  cashPhoto = null;
+  document.getElementById('cashCam').value = ''; document.getElementById('cashFile').value = '';
+  document.getElementById('cashPreview').style.display = 'none';
   updateBal();
   document.getElementById('paymentModal').classList.add('open');
 }
@@ -649,6 +712,7 @@ function updateBal() {
   document.getElementById('bp3').textContent = '$' + rem.toFixed(2);
   document.getElementById('bp3').style.color = rem <= 0 ? 'var(--green)' : 'var(--red)';
   document.getElementById('chequeRow').style.display = document.getElementById('payMethod').value === 'cheque' ? 'block' : 'none';
+  document.getElementById('cashPhotoRow').style.display = cashNeedsApproval() ? 'block' : 'none';
 }
 async function submitPayment() {
   const btn = document.getElementById('payRecordBtn');
@@ -656,6 +720,8 @@ async function submitPayment() {
   const amount = parseFloat(document.getElementById('payAmount').value);
   if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
   if (amount > currentBalance + 0.01) { showToast('Amount exceeds remaining balance of $' + currentBalance.toFixed(2), 'error'); return; }
+  const waits = cashNeedsApproval();
+  if (waits && !cashPhoto) { showToast('Add a photo of the cash first', 'error'); return; }
   btn.disabled = true;
   try {
     // Multipart (not JSON) so an optional cheque photo can ride along. The
@@ -671,11 +737,12 @@ async function submitPayment() {
     fd.append('idempotencyKey', paymentIdempotencyKey);
     const photo = document.getElementById('payChequePhoto').files[0];
     if (method === 'cheque' && photo) fd.append('chequePhoto', photo);
+    if (waits) fd.append('cashPhoto', cashPhoto);
     const r = await fetch('/api/payments', {method:'POST', body:fd});
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
     closePaymentModal(); currentBalance = j.newBalance;
     sessionStorage.removeItem(paymentIdemStorageKey()); // confirmed success — the NEXT payment gets a fresh key
-    showToast('Payment recorded' + (j.fullyPaid ? ' — Fully Paid!' : ''), 'success');
+    showToast(j.pending ? 'Cash recorded — awaiting admin approval' : 'Payment recorded' + (j.fullyPaid ? ' — Fully Paid!' : ''), 'success');
     loadContract();
   } catch(e) { showToast(e.message || 'Failed', 'error'); }
   finally { btn.disabled = false; }

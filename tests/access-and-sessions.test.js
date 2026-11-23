@@ -122,7 +122,8 @@ describe('#18 "not delivered" alerts', () => {
     const failedFor = list => list.filter(n => n.event_type === 'FAILED_DELIVERY' && n.contract_id === contractId);
 
     expect(failedFor((await admin.get('/api/notifications')).body)).toHaveLength(1);
-    for (let i = 0; i < 15; i++) addNotification(ctx.db, { eventType: 'PAYMENT', message: `x${i}` });
+    // (payment notifications live in the bell now — another kind fills the 10)
+    for (let i = 0; i < 15; i++) addNotification(ctx.db, { eventType: 'CONTRACT_CREATED', message: `x${i}` });
     const list = (await admin.get('/api/notifications')).body;
     expect(list[0]).toMatchObject({ event_type: 'FAILED_DELIVERY', contract_id: contractId });
     expect(list.filter(n => n.event_type !== 'FAILED_DELIVERY')).toHaveLength(10);

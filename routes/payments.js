@@ -7,11 +7,13 @@ const db      = require('../db/database');
 const { compressAndGate } = require('../utils/imageUtils');
 const { generateReceiptPDF } = require('../utils/receiptGenerator');
 const { logActivity, addNotification } = require('../utils/activityLogger');
-const { notifyPaymentRecorded } = require('../utils/emailSender');
+const { notifyPaymentRecorded, notifyCashPending, notifyCashDecision } = require('../utils/emailSender');
 const { withLock } = require('../utils/asyncLock');
 const { requireRole, requireAdmin } = require('../middleware/auth');
 const { phoenixToday } = require('../utils/arizona');
-const { totalPaid: paidTotal, paidThrough } = require('../utils/paymentTotals');
+const { totalPaid: paidTotal, paidThrough, pendingTotal } = require('../utils/paymentTotals');
+// "Ana Ruiz" for the logged-in user (falls back to the username).
+const salesName = req => (db.prepare('SELECT name FROM users WHERE id=?').get(req.session.userId) || {}).name || req.session.username || '';
 const { moneyOk } = require('../utils/money');
 
 // Payment data is financial/customer data — only admin and sales have any
@@ -27,7 +29,7 @@ function existingPaymentResponse(paymentId) {
   const contract = db.prepare('SELECT data FROM contracts WHERE id=?').get(payment.contract_id);
   const grandTotal = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
   const newBalance = Math.max(0, grandTotal - totalPaid);
-  return { success: true, paymentId, totalPaid, newBalance, fullyPaid: newBalance <= 0 };
+  return { success: true, paymentId, totalPaid, newBalance, fullyPaid: newBalance <= 0, pending: payment.approval === 'pending' };
 }
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
@@ -52,9 +54,10 @@ async function buildReceipt(paymentId) {
   return { buf, pdfPath, contract };
 }
 
-// Optional photo of the cheque, sent as multipart alongside the payment fields.
-// Plain JSON requests (no photo) pass straight through multer untouched.
-const chequeUpload = multer({
+// Optional photo of the cheque, or the photo of the cash a salesperson must
+// add (Nov 2026), sent as multipart alongside the payment fields. Plain JSON
+// requests (no photo) pass straight through multer untouched.
+const photoUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
       const dir = path.join(UPLOADS_DIR, 'payment-tmp');
@@ -70,28 +73,36 @@ const chequeUpload = multer({
   // payment recorded with no photo attached, no error shown.
   fileFilter: (req, file, cb) => {
     if (/^image\//.test(file.mimetype)) return cb(null, true);
-    cb(new Error('Cheque photo must be an image file (got "' + (file.mimetype || 'unknown') + '")'));
+    cb(new Error((file.fieldname === 'cashPhoto' ? 'Cash' : 'Cheque') + ' photo must be an image file (got "' + (file.mimetype || 'unknown') + '")'));
   },
-}).single('chequePhoto');
+}).fields([{ name: 'chequePhoto', maxCount: 1 }, { name: 'cashPhoto', maxCount: 1 }]);
 
-function withChequePhoto(req, res, next) {
-  chequeUpload(req, res, (err) => {
+function withPhotos(req, res, next) {
+  photoUpload(req, res, (err) => {
     if (err) return res.status(400).json({ error: 'Upload failed: ' + err.message });
     next();
   });
 }
 
+// Cash a salesperson records waits for admin approval; everything else counts at once.
+const needsApproval = (method, role) => method === 'cash' && role === 'sales';
+const money2 = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const customerNameOf = contract => { try { return JSON.parse(contract.data || '{}').customer?.name || ''; } catch (e) { return ''; } };
+
 // ── Record payment ────────────────────────────────────────────────────────────
-router.post('/', withChequePhoto, async (req, res) => {
-  // The upload lands in a temp folder before validation runs, so every early
-  // exit has to throw it away.
-  const discardUpload = () => { if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) { /* already gone */ } } };
+router.post('/', withPhotos, async (req, res) => {
+  // The uploads land in a temp folder before validation runs, so every early
+  // exit has to throw them away.
+  const chequeFile = req.files?.chequePhoto?.[0] || null;
+  const cashFile   = req.files?.cashPhoto?.[0] || null;
+  const discardUpload = () => { for (const f of [chequeFile, cashFile]) if (f) { try { fs.unlinkSync(f.path); } catch (e) { /* already gone */ } } };
   try {
     const { contractId, amount, method, chequeNumber, date, notes, idempotencyKey } = req.body;
     if (!contractId || !amount || !method) {
       discardUpload();
       return res.status(400).json({ error: 'contractId, amount and method are required' });
     }
+    const pending = needsApproval(method, req.session.role);
 
     // Duplicate-submission fast path — a resubmit of the exact same attempt
     // (browser Back, double-click) returns the already-recorded payment
@@ -139,26 +150,32 @@ router.post('/', withChequePhoto, async (req, res) => {
       return res.status(400).json({ error: `Amount looks wrong: ${String(amount).trim()} — use 1500 or 1,500` });
     }
 
+    // Cash already waiting for approval is taken off too, so waiting payments
+    // can never add up to more than what's owed.
     const totalPaidBefore = paidTotal(db, contractId);
+    const waiting         = pendingTotal(db, contractId);
     const grandTotalCheck = parseFloat(JSON.parse(contract.data)?.costing?.grandTotal || 0);
-    const balanceBefore   = Math.max(0, grandTotalCheck - totalPaidBefore);
+    const balanceBefore   = Math.max(0, Math.round((grandTotalCheck - totalPaidBefore - waiting) * 100) / 100);
     if (amt > balanceBefore + 0.01) {
       discardUpload();
-      return res.status(400).json({ error: `Amount exceeds remaining balance of $${balanceBefore.toFixed(2)}` });
+      return res.status(400).json({ error: `Amount exceeds remaining balance of $${balanceBefore.toFixed(2)}`
+        + (waiting ? ` (after ${money2(waiting)} cash awaiting approval)` : '') });
+    }
+    if (pending && !cashFile) {
+      discardUpload();
+      return res.status(400).json({ error: 'Add a photo of the cash — cash payments need admin approval.' });
     }
 
-    // Compress the cheque photo up front, so an oversized/unreadable one is
-    // rejected before the payment is recorded rather than after. A photo sent
-    // with a non-cheque method is simply ignored.
-    let chequeTmpPath = null;
-    if (req.file) {
-      if (method !== 'cheque') {
-        discardUpload();
-      } else {
-        const comp = await compressAndGate(req.file.path);
-        if (comp.error || !comp.path) return res.status(400).json({ error: comp.error || 'Could not process the cheque photo' });
-        chequeTmpPath = comp.path;
-      }
+    // Compress the photo up front, so an oversized/unreadable one is rejected
+    // before the payment is recorded rather than after. A cheque photo sent
+    // with another method (or a cash photo with no approval needed) is ignored.
+    let chequeTmpPath = null, cashTmpPath = null;
+    for (const [f, use, label] of [[chequeFile, method === 'cheque', 'cheque'], [cashFile, pending, 'cash']]) {
+      if (!f) continue;
+      if (!use) { try { fs.unlinkSync(f.path); } catch (e) { /* gone */ } continue; }
+      const comp = await compressAndGate(f.path);
+      if (comp.error || !comp.path) { discardUpload(); return res.status(400).json({ error: comp.error || `Could not process the ${label} photo` }); }
+      if (label === 'cheque') chequeTmpPath = comp.path; else cashTmpPath = comp.path;
     }
 
     // Insert payment. A UNIQUE violation on idempotency_key means a
@@ -168,10 +185,10 @@ router.post('/', withChequePhoto, async (req, res) => {
     let ins;
     try {
       ins = db.prepare(`
-        INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by,idempotency_key)
-        VALUES (?,?,?,?,?,?,?,?)
+        INSERT INTO payments (contract_id,amount,method,cheque_number,date,notes,recorded_by,idempotency_key,approval)
+        VALUES (?,?,?,?,?,?,?,?,?)
       `).run(contractId, amt, method, chequeNumber||null,
-          date||phoenixToday(), notes||null, req.session.username, idempotencyKey||null);
+          date||phoenixToday(), notes||null, req.session.username, idempotencyKey||null, pending ? 'pending' : null);
     } catch (e) {
       if (idempotencyKey && /UNIQUE constraint failed/.test(e.message)) {
         discardUpload();
@@ -179,6 +196,29 @@ router.post('/', withChequePhoto, async (req, res) => {
         if (dup) return res.json(existingPaymentResponse(dup.id));
       }
       throw e;
+    }
+
+    // Cash waiting for approval: nothing counts yet — no balance / Sheet
+    // change, no receipt. Its photo is filed (cash-<id>.jpg), admin is told.
+    if (pending) {
+      const paymentId = ins.lastInsertRowid;
+      let photoPath = null;
+      try {
+        const dir = path.join(UPLOADS_DIR, 'contracts', contract.contract_number);
+        fs.mkdirSync(dir, { recursive: true });
+        photoPath = path.join(dir, `cash-${paymentId}.jpg`);
+        fs.renameSync(cashTmpPath, photoPath);
+        db.prepare('UPDATE payments SET cash_image_path=? WHERE id=?').run(photoPath, paymentId);
+      } catch (e) { console.error('[Cash photo save failed]', e.message); photoPath = null; }
+      try {
+        await notifyCashPending({ contract, customerName: customerNameOf(contract), amount: amt, date: date || phoenixToday(),
+          notes, recordedBy: salesName(req), photoPath });
+      } catch (e) { console.error('[Email cash pending failed — non-fatal]', e.message); }
+      logActivity(db, { contractId, contractNum: contract.contract_number, eventType: 'PAYMENT_PENDING', actor: req.session.username || 'system',
+        detail: `${money2(amt)} cash recorded — awaiting admin approval` });
+      const totalPaid = paidTotal(db, contractId);
+      const newBalance = Math.max(0, Math.round((grandTotalCheck - totalPaid) * 100) / 100);
+      return res.json({ success: true, paymentId, pending: true, totalPaid, newBalance, fullyPaid: false });
     }
 
     // Recalculate balance = grand_total - all payments recorded
@@ -277,6 +317,87 @@ router.get('/contract/:contractId', (req, res) => {
   }
 });
 
+// ── Approve / reject cash a salesperson recorded (admin, Nov 2026) ───────────
+// Approve: it counts from now — balance, Sheet, receipt, the photo into the
+// gallery, the usual "payment recorded" email, and the salesperson is told.
+// Reject (reason required): it stays on record, voided with the reason, and
+// never counts; its photo is deleted; the salesperson is told.
+async function decideCash(req, res, approve) {
+  const reason = String(req.body?.reason ?? '').trim();
+  if (!approve && !reason) return res.status(400).json({ error: 'A reason is required to reject a cash payment.' });
+  try {
+    const found = db.prepare('SELECT contract_id FROM payments WHERE id=?').get(req.params.id);
+    if (!found) return res.status(404).json({ error: 'Payment not found' });
+    const contractId = found.contract_id;
+    return await withLock('contract-payment:' + contractId, async () => {
+      const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(req.params.id);
+      if (payment.approval !== 'pending' || payment.voided_at) {
+        return res.status(400).json({ error: payment.approval === 'approved' ? 'This cash payment was already approved.' : payment.approval === 'rejected' ? 'This cash payment was already rejected.' : 'This payment isn\'t waiting for approval.' });
+      }
+      const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
+      const grandTotal = parseFloat(JSON.parse(contract.data || '{}')?.costing?.grandTotal || 0);
+      const customerName = customerNameOf(contract);
+      const by = req.session.username || 'admin';
+      const amt = parseFloat(payment.amount);
+      const takenBy = (db.prepare('SELECT name FROM users WHERE username=?').get(payment.recorded_by) || {}).name || payment.recorded_by || 'sales';
+
+      if (!approve) {
+        db.prepare("UPDATE payments SET approval='rejected', voided_at=datetime('now','-7 hours'), voided_by=?, void_reason=?, cash_image_path=NULL WHERE id=?")
+          .run(by, 'Rejected: ' + reason, payment.id);
+        if (payment.cash_image_path) { try { fs.unlinkSync(payment.cash_image_path); } catch (e) { /* already gone */ } }
+        logActivity(db, { contractId, contractNum: contract.contract_number, eventType: 'CASH_REJECTED', actor: by,
+          detail: `${money2(amt)} cash of ${payment.date || '—'} rejected — ${reason}` });
+        addNotification(db, { contractId, contractNum: contract.contract_number, eventType: 'CASH_REJECTED', color: 'red',
+          message: `${contract.contract_number} — Cash ${money2(amt)} from ${takenBy} rejected by ${by}: ${reason}` });
+        try { await notifyCashDecision({ contract, customerName, amount: amt, approved: false, reason, by }); }
+        catch (e) { console.error('[Email cash rejected failed — non-fatal]', e.message); }
+        const totalPaid = paidTotal(db, contractId);
+        return res.json({ success: true, rejected: true, totalPaid, newBalance: Math.max(0, Math.round((grandTotal - totalPaid) * 100) / 100) });
+      }
+
+      // The Grand Total may have been lowered by an edit since it was taken.
+      const before = paidTotal(db, contractId);
+      if (before + amt > grandTotal + 0.01) {
+        return res.status(409).json({ error: `Approving ${money2(amt)} would take Total Paid past the Grand Total (${money2(grandTotal)}, ${money2(before)} already paid). Reject it, or correct the contract first.` });
+      }
+      db.prepare("UPDATE payments SET approval='approved', approved_by=?, approved_at=datetime('now','-7 hours') WHERE id=?").run(by, payment.id);
+      const totalPaid  = paidTotal(db, contractId);
+      const newBalance = Math.max(0, Math.round((grandTotal - totalPaid) * 100) / 100);
+      db.prepare('UPDATE contracts SET paid_amount=?,due_prior=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(String(totalPaid), String(newBalance), contractId);
+      try {
+        const { updatePaymentInSheet } = require('../services/driveInventory');
+        await updatePaymentInSheet(contract.contract_number, totalPaid, newBalance);
+      } catch (e) { console.error('[Drive payment update failed — non-fatal]', e.message); }
+
+      // The photo goes into the contract's gallery.
+      if (payment.cash_image_path && fs.existsSync(payment.cash_image_path)) {
+        const imgs = JSON.parse(db.prepare('SELECT extra_images FROM contracts WHERE id=?').get(contractId).extra_images || '[]');
+        const day = new Date((payment.date || phoenixToday()) + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+        imgs.push({ path: payment.cash_image_path, label: `Cash payment ${money2(amt)} — ${day}` });
+        db.prepare('UPDATE contracts SET extra_images=? WHERE id=?').run(JSON.stringify(imgs), contractId);
+      }
+
+      let receiptPath = null;
+      try { receiptPath = (await buildReceipt(payment.id)).pdfPath; } catch (e) { console.error('[Receipt save failed — non-fatal]', e.message); }
+      try {
+        await notifyPaymentRecorded({ contract, customerName, amount: amt, method: 'cash', totalPaid, balance: newBalance, receiptPath, chequeImagePath: payment.cash_image_path });
+      } catch (e) { console.error('[Email notify PAYMENT_RECORDED failed — non-fatal]', e.message); }
+      try { await notifyCashDecision({ contract, customerName, amount: amt, approved: true, by, totalPaid, balance: newBalance, receiptPath }); }
+      catch (e) { console.error('[Email cash approved failed — non-fatal]', e.message); }
+      logActivity(db, { contractId, contractNum: contract.contract_number, eventType: 'CASH_APPROVED', actor: by,
+        detail: `${money2(amt)} cash of ${payment.date || '—'} (recorded by ${payment.recorded_by || '—'}) approved` });
+      addNotification(db, { contractId, contractNum: contract.contract_number, eventType: 'CASH_APPROVED', color: 'green',
+        message: `${contract.contract_number} — Cash ${money2(amt)} from ${takenBy} approved by ${by}` });
+      res.json({ success: true, approved: true, totalPaid, newBalance, fullyPaid: newBalance <= 0 });
+    });
+  } catch (err) {
+    console.error('Cash approval error:', err);
+    res.status(500).json({ error: 'Failed to ' + (approve ? 'approve' : 'reject') + ' the payment' });
+  }
+}
+router.post('/:id/approve', requireAdmin, (req, res) => decideCash(req, res, true));
+router.post('/:id/reject',  requireAdmin, (req, res) => decideCash(req, res, false));
+
 // ── Void a payment (admin) ────────────────────────────────────────────────────
 // For a payment recorded by mistake (wrong amount, twice, wrong contract) or
 // one that didn't go through (bounced cheque, reversed card). It stays on
@@ -295,6 +416,7 @@ router.post('/:id/void', requireAdmin, async (req, res) => {
     return await withLock('contract-payment:' + contractId, async () => {
     const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(req.params.id);
     if (payment.voided_at) return res.status(400).json({ error: 'This payment is already voided.' });
+    if (payment.approval === 'pending') return res.status(400).json({ error: 'This cash payment is waiting for approval — approve or reject it instead.' });
     const contract = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
 
     // voided_at is Arizona time (MST), as shown on the page and the receipt.
@@ -340,6 +462,7 @@ router.get('/:id/receipt', async (req, res) => {
   try {
     const payment = db.prepare('SELECT * FROM payments WHERE id=?').get(req.params.id);
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    if (payment.approval === 'pending') return res.status(400).json({ error: 'No receipt yet — this cash payment is waiting for admin approval.' });
     const contract = db.prepare('SELECT contract_number, salesman_user_id FROM contracts WHERE id=?').get(payment.contract_id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
     if (req.session.role === 'sales' && contract.salesman_user_id !== req.session.userId) {

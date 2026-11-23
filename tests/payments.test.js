@@ -22,7 +22,7 @@ describe('POST /api/payments', () => {
   test('rejects an unauthenticated request', async () => {
     const res = await request(ctx.app)
       .post('/api/payments')
-      .send({ contractId: 1, amount: 100, method: 'cash' });
+      .send({ contractId: 1, amount: 100, method: 'credit_card' });
 
     expect(res.status).toBe(401);
   });
@@ -30,7 +30,7 @@ describe('POST /api/payments', () => {
   test('rejects a request missing contractId, amount, or method', async () => {
     const agent = await loginAgent(ctx.app);
 
-    const res = await agent.post('/api/payments').send({ amount: 100, method: 'cash' });
+    const res = await agent.post('/api/payments').send({ amount: 100, method: 'credit_card' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/contractId, amount and method are required/);
@@ -40,7 +40,7 @@ describe('POST /api/payments', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createUnpaidContract(agent);
 
-    const res = await agent.post('/api/payments').send({ contractId, amount: 0, method: 'cash' });
+    const res = await agent.post('/api/payments').send({ contractId, amount: 0, method: 'credit_card' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/contractId, amount and method are required/);
@@ -50,7 +50,7 @@ describe('POST /api/payments', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createUnpaidContract(agent);
 
-    const res = await agent.post('/api/payments').send({ contractId, amount: -50, method: 'cash' });
+    const res = await agent.post('/api/payments').send({ contractId, amount: -50, method: 'credit_card' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Amount must be a positive number');
@@ -62,7 +62,7 @@ describe('POST /api/payments', () => {
 
     // The route allows a 1-cent floating-point tolerance over the balance,
     // so use an overage well past that to actually trigger the rejection.
-    const res = await agent.post('/api/payments').send({ contractId, amount: 5001, method: 'cash' });
+    const res = await agent.post('/api/payments').send({ contractId, amount: 5001, method: 'credit_card' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/exceeds remaining balance/);
@@ -72,7 +72,7 @@ describe('POST /api/payments', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createUnpaidContract(agent);
 
-    const res = await agent.post('/api/payments').send({ contractId, amount: 2000, method: 'cash' });
+    const res = await agent.post('/api/payments').send({ contractId, amount: 2000, method: 'credit_card' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -88,7 +88,7 @@ describe('POST /api/payments', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createUnpaidContract(agent);
 
-    await agent.post('/api/payments').send({ contractId, amount: 2000, method: 'cash' });
+    await agent.post('/api/payments').send({ contractId, amount: 2000, method: 'credit_card' });
     const res = await agent.post('/api/payments').send({ contractId, amount: 3000, method: 'cheque', chequeNumber: '77' });
 
     expect(res.status).toBe(200);
@@ -104,9 +104,9 @@ describe('POST /api/payments', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createUnpaidContract(agent);
 
-    await agent.post('/api/payments').send({ contractId, amount: 4000, method: 'cash' }); // balance now 1000
+    await agent.post('/api/payments').send({ contractId, amount: 4000, method: 'credit_card' }); // balance now 1000
 
-    const res = await agent.post('/api/payments').send({ contractId, amount: 1500, method: 'cash' });
+    const res = await agent.post('/api/payments').send({ contractId, amount: 1500, method: 'credit_card' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/exceeds remaining balance of \$1000/);
@@ -118,7 +118,7 @@ describe('GET /api/payments/contract/:contractId', () => {
     const agent = await loginAgent(ctx.app);
     const { contractId } = await createUnpaidContract(agent);
 
-    await agent.post('/api/payments').send({ contractId, amount: 1200, method: 'cash' });
+    await agent.post('/api/payments').send({ contractId, amount: 1200, method: 'credit_card' });
     await agent.post('/api/payments').send({ contractId, amount: 800,  method: 'cheque', chequeNumber: '42' });
 
     const res = await agent.get(`/api/payments/contract/${contractId}`);

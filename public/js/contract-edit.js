@@ -74,6 +74,8 @@ var contractForm = (function () {
 
     var mfg = w.manufacturer || {}, dlr = w.dealership || {};
     setMulti('mfg-brand', mfg.brands); setVal('mfgComp', mfg.componentYrs); setVal('mfgShell', mfg.shellYrs); setVal('mfgCabinet', mfg.cabinetYrs);
+    setVal('mfgTyloCore', mfg.tyloCoreYrs); setVal('mfgTyloSound', mfg.tyloSoundYrs); setVal('mfgOther', mfg.otherText);
+    if (typeof updateMfgBoxes === 'function') updateMfgBoxes();
     setMulti('dlr-brand', dlr.brands); setVal('dlrComp', dlr.componentYrs); setVal('dlrShell', dlr.shellYrs); setVal('dlrCabinet', dlr.cabinetYrs);
 
     setChk('svcInTown', sv.inTownDelivery); setChk('svcOutTown', sv.outOfTownDelivery);

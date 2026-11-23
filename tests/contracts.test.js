@@ -99,7 +99,8 @@ describe('POST /api/contracts', () => {
   });
 
   test('accepts payments exactly equal to the Grand Total, ignoring unselected methods', async () => {
-    const agent = await loginAgent(ctx.app);
+    // admin: a salesperson's cash deposit waits for approval (tests/cash-approval.test.js)
+    const agent = await loginAgent(ctx.app, { username: 'admin', password: 'admin123' });
     const formData = contractFormData({
       payment: {
         cheque: { selected: true, number: '1002', amount: '600' },

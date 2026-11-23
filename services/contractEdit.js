@@ -77,6 +77,10 @@ const PRICING_FIELDS = {
 const SERVICE_FIELDS = { inTownDelivery: B, crane: B, craneFee: S, outOfTownDelivery: B, outOfTownDeliveryFee: S,
   outOfTownWarranty: B, outOfTownWarrantyFee: S };
 const WARRANTY_FIELDS = { brands: A, componentYrs: S, shellYrs: S, cabinetYrs: S };
+// Manufacturer also has Tylo's two lines and the Others text (Nov 2026).
+const MFG_WARRANTY_FIELDS = { ...WARRANTY_FIELDS, tyloCoreYrs: S, tyloSoundYrs: S, otherText: S };
+const WARRANTY_LABEL = { brands: 'brands', componentYrs: 'components yrs', shellYrs: 'shell yrs', cabinetYrs: 'cabinet yrs',
+  tyloCoreYrs: 'Tylo core components yrs', tyloSoundYrs: 'Tylo Bluetooth sound yrs', otherText: 'others' };
 const ELECTRICAL_FIELDS = { pamphletProvided: B, ownElectrician: B, notes: S };
 const MISC_FIELDS = { notes: S, monthlyCleanings: B, cleaningPrice: S, cleaningMonths: S, cleaningIncluded: B };
 
@@ -100,8 +104,8 @@ const DIFF_FIELDS = [
   ['product.make', 'Make'], ['product.series', 'Series'], ['product.model', 'Model'], ['product.year', 'Year'],
   ['product.shellColor', 'Shell colour'], ['product.cabinetColor', 'Cabinet colour'], ['product.coverColor', 'Cover colour'],
   ['product.included.speaker', 'Speaker'],
-  ...['manufacturer', 'dealership'].flatMap(w => Object.keys(WARRANTY_FIELDS).map(f =>
-    [`warranty.${w}.${f}`, `${w === 'manufacturer' ? 'Manufacturer' : 'Dealership'} warranty ${{ brands: 'brands', componentYrs: 'components yrs', shellYrs: 'shell yrs', cabinetYrs: 'cabinet yrs' }[f]}`])),
+  ...Object.keys(MFG_WARRANTY_FIELDS).map(f => [`warranty.manufacturer.${f}`, `Manufacturer warranty ${WARRANTY_LABEL[f]}`]),
+  ...Object.keys(WARRANTY_FIELDS).map(f => [`warranty.dealership.${f}`, `Dealership warranty ${WARRANTY_LABEL[f]}`]),
   ['electrical.pamphletProvided', 'Pamphlet provided'], ['electrical.ownElectrician', 'Own electrician'], ['electrical.notes', 'Electrical notes'],
   ['misc.notes', 'Notes'], ['misc.monthlyCleanings', 'Monthly cleanings'], ['misc.cleaningPrice', 'Cleaning price/mo'],
   ['misc.cleaningMonths', 'Cleaning months'], ['misc.cleaningIncluded', 'Cleanings included'],
@@ -184,7 +188,7 @@ function planContractEdit(db, contract, form = {}, opts = {}) {
 
     // Warranty, electrical, misc (+ monthly cleanings)
     const w = data.warranty || {}, fw = form.warranty || {};
-    next.warranty = { ...w, manufacturer: pickInto(w.manufacturer, fw.manufacturer, WARRANTY_FIELDS),
+    next.warranty = { ...w, manufacturer: pickInto(w.manufacturer, fw.manufacturer, MFG_WARRANTY_FIELDS),
       dealership: pickInto(w.dealership, fw.dealership, WARRANTY_FIELDS) };
     next.electrical = pickInto(data.electrical, form.electrical, ELECTRICAL_FIELDS);
     next.misc = pickInto(data.misc, form.misc, MISC_FIELDS);

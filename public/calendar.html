@@ -16,8 +16,12 @@
 .page-header{flex-shrink:0}
 .zone-key{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--text-muted);margin-top:6px}
 .zone-key span{display:inline-flex;align-items:center;gap:6px}
-.zone-key i{width:12px;height:12px;border-radius:3px;display:inline-block}
-#calendarWrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; box-shadow:var(--shadow); flex:1; display:flex; flex-direction:column; min-height:0; }
+.zone-key i.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.zone-key i.sw.blk{background:repeating-linear-gradient(135deg,#fbdcdc 0 3px,#fff4f4 3px 6px);border-left:3px solid #c53030}
+.team-filter{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;font-size:13px;margin-top:8px}
+.team-filter label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.team-filter .tf-note{font-size:12px;color:var(--text-muted)}
+#calendarWrap { position:relative; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; box-shadow:var(--shadow); flex:1; display:flex; flex-direction:column; min-height:0; }
 #calendar { flex:1; min-height:0; }
 .fc { font-family:var(--font); font-size:13px; height:100%; }
 
@@ -29,12 +33,15 @@
 .fc-button-active, .fc-button-active:hover { background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; outline:none !important; box-shadow:none !important; }
 .fc-button:focus { outline:none !important; box-shadow:0 0 0 3px rgba(43,108,176,.15) !important; }
 .fc-today-button { text-transform:capitalize; }
+.fc .fc-addBtn-button { background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; font-weight:600 !important; }
 .fc-icon { font-size:15px; }
 
 /* Grid */
 .fc-theme-standard td, .fc-theme-standard th { border-color:var(--border); }
 .fc-col-header-cell { background:var(--surface2); padding:8px 0; }
 .fc-col-header-cell-cushion { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); text-decoration:none; }
+#calendar.halves .fc-col-header-cell-cushion { display:block; }
+.fc-col-header-cell-cushion .lanes { display:flex; justify-content:space-around; font-size:9px; font-weight:500; color:var(--text-light); margin-top:2px; }
 .fc-daygrid-day-number { font-size:12px; color:var(--text); text-decoration:none; padding:6px; }
 .fc-day-today { background:var(--accent-bg) !important; }
 .fc-day-today .fc-daygrid-day-number { color:var(--accent); font-weight:700; }
@@ -43,20 +50,37 @@
 
 /* Events */
 .fc-event { cursor:pointer; border-radius:8px; font-size:11px; border-width:0 0 0 3px; box-shadow:var(--shadow); }
-.fc-daygrid-event { white-space:nowrap; overflow:hidden; margin-top:2px; }
+.fc-daygrid-event { white-space:nowrap; overflow:hidden; margin-top:2px; border-radius:5px; }
 .fc-timegrid-event { border-radius:8px; padding:2px; }
 .fc-timegrid-slot { height:60px !important; }
 .fc-timeGridDay-view .fc-timegrid-slot { height:100px !important; }
 .fc-timegrid-event:has(.event-day) { overflow-y:auto; }
+.fc-event.ev-other { cursor:default; }
+.ev-lock { display:inline-flex; align-items:center; gap:4px; font-weight:600; }
+/* Blocked time: red stripes */
+.fc-event.cal-block { background:repeating-linear-gradient(135deg,#fbdcdc 0 6px,#fff4f4 6px 12px) !important; border-color:#c53030 !important; border-width:0 0 0 3px; color:#9b2c2c !important; box-shadow:none; }
+.fc-event.cal-block .fc-event-main { color:#9b2c2c; }
+/* Both teams ticked: each day splits in halves — Classic Spa left, Installation right */
+#calendar.halves .fc-timegrid-event-harness:has(> .lane-a) { left:0 !important; right:50% !important; inset-inline-start:0 !important; inset-inline-end:50% !important; }
+#calendar.halves .fc-timegrid-event-harness:has(> .lane-b) { left:50% !important; right:0 !important; inset-inline-start:50% !important; inset-inline-end:0 !important; }
+#calendar.halves .fc-timegrid-event-harness:has(> .lane-full) { left:0 !important; right:0 !important; inset-inline-start:0 !important; inset-inline-end:0 !important; }
+#calendar.halves .fc-timegrid-col-frame { background-image:linear-gradient(to right,transparent calc(50% - .5px),var(--border) calc(50% - .5px),var(--border) calc(50% + .5px),transparent calc(50% + .5px)); }
+
+/* The + to book */
+#calPlus { position:absolute; z-index:5; width:26px; height:26px; border-radius:50%; border:1px solid var(--accent); background:var(--accent-bg); color:var(--accent); font-size:16px; font-weight:700; line-height:1; cursor:pointer; display:none; align-items:center; justify-content:center; padding:0; box-shadow:var(--shadow); }
+#calPlus.show { display:flex; }
+.day-plus { width:20px; height:20px; border-radius:50%; border:1px solid var(--accent); background:var(--accent-bg); color:var(--accent); font-weight:700; font-size:14px; line-height:1; cursor:pointer; padding:0; margin:4px 4px 0 0; opacity:0; transition:opacity .12s; }
+.fc-daygrid-day:hover .day-plus, .day-plus:focus-visible { opacity:1; }
+.fc-daygrid-day-top { justify-content:space-between; flex-direction:row-reverse; }
+@media (hover:none) { .day-plus { display:none; } }
 
 @media(max-width:768px){
   .fc-toolbar-title { font-size:15px !important; }
   .fc-button { padding:6px 10px !important; font-size:11px !important; }
   .fc .fc-toolbar.fc-header-toolbar { flex-direction:column; align-items:stretch; }
 }
-.event-month { padding:2px 4px; line-height:1.3; }
-.event-month .ev-num { font-weight:600; font-size:11px; }
-.event-month .ev-name { font-size:10px; opacity:.85; }
+.event-month { padding:1px 3px; line-height:1.3; overflow:hidden; text-overflow:ellipsis; }
+.event-month .ev-t { font-weight:600; margin-right:3px; }
 .event-time .ev-num { font-weight:600; display:block; }
 .event-time .ev-model { opacity:.75; display:block; font-size:10px; }
 .event-time .ev-addr { opacity:.65; display:block; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -67,6 +91,36 @@
 .event-day .ev-serial { font-size:10px; opacity:.7; display:block; }
 .event-day .ev-sal { font-size:10px; opacity:.7; display:block; }
 .event-day .ev-addr { font-size:10px; opacity:.7; display:block; }
+
+/* Add-to-calendar box */
+#addModal .modal-box { max-width:760px; width:94%; padding:0; max-height:92vh; display:flex; flex-direction:column; }
+.am-head { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--border); }
+.am-head h2 { font-size:15px; font-weight:600; }
+.am-x { background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-muted); }
+.am-tabs { display:flex; gap:4px; padding:8px 18px 0; border-bottom:1px solid var(--border); }
+.am-tabs button { font:inherit; font-size:13px; font-weight:500; padding:8px 12px; border:0; border-bottom:2px solid transparent; background:none; color:var(--text-muted); cursor:pointer; }
+.am-tabs button.on { color:var(--accent); border-bottom-color:var(--accent); }
+.am-body { padding:16px 18px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
+.am-when { background:var(--accent-bg); color:var(--accent); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:500; }
+.am-sum { font-size:12px; color:var(--text-muted); }
+.am-sum b { color:var(--text); font-weight:600; }
+.am-lbl { display:block; font-size:11px; color:var(--text-muted); font-weight:500; margin-bottom:5px; }
+.am-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+.am-grid select, .am-grid input, #amSearch { width:100%; }
+.am-list { border:1px solid var(--border); border-radius:10px; max-height:240px; overflow:auto; }
+.am-list table { width:100%; border-collapse:collapse; font-size:12.5px; min-width:640px; }
+.am-list th { position:sticky; top:0; background:var(--surface2); text-align:left; font-size:11px; font-weight:600; color:var(--text-muted); padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+.am-list td { padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+.am-list tr.pick { cursor:pointer; }
+.am-list tr.pick:hover td { background:var(--surface2); }
+.am-list tr.sel td { background:var(--accent-bg); }
+.am-list tr.off td { color:var(--text-light); }
+.am-chip { display:inline-block; font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:20px; background:var(--surface2); color:var(--text-muted); border:1px solid var(--border); }
+.am-chip.why { background:var(--red-bg); color:var(--red); border-color:transparent; }
+.am-msg { font-size:12.5px; border-radius:8px; padding:9px 12px; background:var(--red-bg); color:var(--red); }
+.am-msg ul { margin:4px 0 0; padding-left:18px; }
+.am-msg a { color:inherit; }
+.am-foot { display:flex; gap:8px; justify-content:flex-end; padding:12px 18px; border-top:1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -76,19 +130,71 @@
   <div class="page-header"><h1>Delivery Calendar</h1>
     <!-- Delivery zone colours (same on Google Calendar) — utils/deliveryZones.js -->
     <div class="zone-key">
-      <span><i style="background:#039BE5"></i>East Valley</span>
-      <span><i style="background:#F4511E"></i>Central Valley</span>
-      <span><i style="background:#F6BF26"></i>West Valley</span>
-      <span><i style="background:#0B8043"></i>Out of Town</span>
-      <span><i style="background:#616161"></i>Delivered</span>
+      <span><i class="sw" style="background:#039BE5"></i>East Valley</span>
+      <span><i class="sw" style="background:#F4511E"></i>Central Valley</span>
+      <span><i class="sw" style="background:#F6BF26"></i>West Valley</span>
+      <span><i class="sw" style="background:#0B8043"></i>Out of Town</span>
+      <span><i class="sw" style="background:#616161"></i>Delivered</span>
+      <span><i class="sw blk"></i>Blocked</span>
+      <span id="keyOther" style="display:none"><i class="fa-solid fa-lock" style="font-size:11px"></i>Another salesperson's booking</span>
+    </div>
+    <!-- Which team's bookings to show (not for delivery crews, who see their own team) -->
+    <div class="team-filter" id="teamFilter" style="display:none">
+      <label><input type="checkbox" id="showTeamA" checked> Classic Spa Team</label>
+      <label><input type="checkbox" id="showTeamB"> Installation Team</label>
+      <span class="tf-note" id="teamNote"></span>
     </div>
   </div>
   <div id="calendarWrap">
     <div id="calendar"></div>
+    <button type="button" id="calPlus" aria-label="Book this time">+</button>
   </div>
 </main>
-<script>
 
+<!-- Add to calendar: book a delivery (sales, admin) or block time (admin) -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="amTitle">
+    <div class="am-head"><h2 id="amTitle">Add to calendar</h2><button type="button" class="am-x" onclick="closeAdd()" aria-label="Close">×</button></div>
+    <div class="am-tabs" id="amTabs" style="display:none">
+      <button type="button" id="tabSched" class="on" onclick="amTab('sched')">Schedule delivery</button>
+      <button type="button" id="tabBlock" onclick="amTab('block')">Block time</button>
+    </div>
+    <div class="am-body" id="paneSched">
+      <div class="am-when" id="amWhen"></div>
+      <div class="am-sum" id="amSum"></div>
+      <div><label class="am-lbl" for="amSearch">Assigned and Received contracts</label>
+        <input type="text" id="amSearch" placeholder="Search name, contract #, address or zip" oninput="renderPickList()" autocomplete="off"></div>
+      <div class="am-list"><table><thead><tr><th></th><th>Contract #</th><th>Name</th><th>Salesperson</th><th>Address</th><th>Zip</th><th>Status</th></tr></thead><tbody id="amRows"></tbody></table></div>
+      <div class="am-grid">
+        <div><label class="am-lbl" for="amStart">Start time</label><select id="amStart" onchange="refreshSched()"></select></div>
+        <div><label class="am-lbl" for="amDur">Duration</label><select id="amDur" onchange="refreshSched()"></select></div>
+        <div><label class="am-lbl" for="amTeam">Team</label><select id="amTeam"></select></div>
+      </div>
+      <div id="amSchedMsg"></div>
+    </div>
+    <div class="am-body" id="paneBlock" style="display:none">
+      <div class="am-grid">
+        <div><label class="am-lbl" for="blDate">Date</label><input type="date" id="blDate"></div>
+        <div><label class="am-lbl" for="blFrom">From</label><select id="blFrom"></select></div>
+        <div><label class="am-lbl" for="blTo">To</label><select id="blTo"></select></div>
+      </div>
+      <label style="display:inline-flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="blAll" onchange="blAllDay()"> All day</label>
+      <div class="am-grid">
+        <div><label class="am-lbl" for="blTeam">Team</label>
+          <select id="blTeam"><option value="">Both teams</option><option value="team_a">Classic Spa Team</option><option value="team_b">Installation Team</option></select></div>
+        <div style="grid-column:span 2;min-width:0"><label class="am-lbl" for="blNote">Note (optional — everyone sees it, also on Google Calendar)</label>
+          <input type="text" id="blNote" maxlength="60" placeholder="e.g. Dave's off"></div>
+      </div>
+      <div id="amBlockMsg"></div>
+    </div>
+    <div class="am-foot">
+      <button type="button" class="btn btn-secondary" onclick="closeAdd()">Cancel</button>
+      <button type="button" class="btn btn-primary" id="amSave" onclick="saveAdd()"><i class="fa-solid fa-calendar-check"></i> Confirm schedule</button>
+    </div>
+  </div>
+</div>
+
+<script>
 // Toast
 function showToast(msg,type='success'){
   let t=document.getElementById('_toast');
@@ -96,24 +202,15 @@ function showToast(msg,type='success'){
   t.textContent=msg;t.className='toast '+type+' show';
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3500);
 }
-
-// Close action dropdowns on outside click
-document.addEventListener('click',function(e){
-  if(!e.target.closest('.action-menu')){
-    document.querySelectorAll('.action-dropdown.open').forEach(d=>d.classList.remove('open'));
-  }
-});
-
-function toggleActionMenu(e,id){
-  e.stopPropagation();
-  const dd=document.getElementById('dd-'+id);
-  document.querySelectorAll('.action-dropdown.open').forEach(d=>{if(d!==dd)d.classList.remove('open')});
-  dd.classList.toggle('open');
-}
-
 </script>
 <script>
 let calendarInstance = null;
+let bookings = [], blocks = [];
+
+const TEAM_NAMES = { team_a:'Classic Spa', team_b:'Installation' };
+const TEAM_FULL  = { team_a:'Classic Spa Team', team_b:'Installation Team' };
+const DELIVERED_GREY = '#616161';
+const DAY_START = 6, LAST_START = 17, DAY_END = 20; // bookable starts 6 AM – 5 PM; calendar shows 6 AM – 8 PM
 
 // Phoenix is fixed UTC-7, no DST — add minutes to a naive Phoenix-local
 // "YYYY-MM-DDTHH:mm:ss" string and return the result in the same naive form.
@@ -121,94 +218,424 @@ function addMinutesPhoenix(naiveStr, mins) {
   const instant = new Date(naiveStr + '-07:00').getTime() + mins * 60000;
   return new Date(instant - 7 * 3600000).toISOString().slice(0, 19);
 }
+const phxMs = naive => new Date(naive + '-07:00').getTime();
+const hh = h => String(h).padStart(2,'0');
+const hourText = h => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
+function rangeText(startNaive, mins) {
+  const s = +startNaive.slice(11,13), e = new Date(phxMs(startNaive) + mins*60000 - 7*3600000).getUTCHours();
+  return hourText(s).replace(/ [AP]M$/, (s < 12) === (e < 12) ? '' : '$&') + '–' + hourText(e);
+}
+function dayText(date, long) {
+  return new Date(date + 'T12:00:00-07:00').toLocaleDateString('en-US', { timeZone:'America/Phoenix', weekday: long ? 'long' : 'short', month: long ? 'long' : 'short', day:'numeric' });
+}
 
-async function loadCalendar() {
-  // Delivery users get their team's bookings only, without prices
-  // (/api/delivery/calendar); admin and sales use the contracts list.
-  const userRole = window._userRole;
-  const contracts = await fetch(userRole === 'delivery' ? '/api/delivery/calendar' : '/api/contracts').then(r=>r.json()).catch(()=>[]);
-  const filtered = (Array.isArray(contracts) ? contracts : [])
-    .filter(c=>(c.status==='scheduled'||c.status==='delivered')&&c.scheduled_datetime);
+const role = () => window._userRole;
+const canAdd = () => role() === 'admin' || role() === 'sales';
 
-  // Colour = delivery zone of the delivery zip (East blue, Central orange, West
-  // yellow, Out of Town green) — the same as the Google Calendar event; the
-  // server sends it (utils/deliveryZones.js). Delivered stays on, grey (as on
-  // Google: DELIVERED in utils/deliveryZones.js). The team is shown in the text.
-  const TEAM_NAMES = { team_a:'Classic Spa', team_b:'Installation' };
-  const DELIVERED_GREY = '#616161';
+// ── Teams shown (sales + admin; remembered per browser) ─────────────────────
+const show = { team_a: true, team_b: false };
+try { const s = JSON.parse(localStorage.getItem('gobi.calTeams') || 'null'); if (s && (s.team_a || s.team_b)) { show.team_a = !!s.team_a; show.team_b = !!s.team_b; } } catch (e) {}
+const bothTeams = () => role() !== 'delivery' && show.team_a && show.team_b;
+const teamShown = t => role() === 'delivery' || !t || show[t];
+const shownTeams = () => ['team_a','team_b'].filter(t => show[t]);
+function setTeams() {
+  show.team_a = document.getElementById('showTeamA').checked;
+  show.team_b = document.getElementById('showTeamB').checked;
+  if (!show.team_a && !show.team_b) { show.team_a = true; document.getElementById('showTeamA').checked = true; }
+  try { localStorage.setItem('gobi.calTeams', JSON.stringify(show)); } catch (e) {}
+  updateTeamNote();
+  if (calendarInstance) { applyHalves(); calendarInstance.refetchEvents(); }
+}
+function updateTeamNote() {
+  document.getElementById('teamNote').textContent = bothTeams()
+    ? 'Week and Day split each day: Classic Spa left, Installation right.' : '';
+}
+function applyHalves() {
+  const el = document.getElementById('calendar');
+  el.classList.toggle('halves', bothTeams());
+  // Header lane labels follow the setting
+  calendarInstance.setOption('dayHeaderContent', arg => ({ html: escHtml(arg.text) + (bothTeams() && arg.view.type !== 'dayGridMonth' ? '<span class="lanes"><span>Classic</span><span>Install</span></span>' : '') }));
+}
+document.getElementById('showTeamA').addEventListener('change', setTeams);
+document.getElementById('showTeamB').addEventListener('change', setTeams);
 
-  const events = filtered.map(c => {
-    const dur   = parseInt(c.scheduled_duration||120);
+// ── Busy / blocked checks (the server checks the same when booking) ─────────
+// Why `team` can't take a delivery at `startNaive` for `mins`, or ''.
+function busyReason(startNaive, mins, team) {
+  const s = phxMs(startNaive), e = s + mins*60000;
+  for (const b of blocks) {
+    if (b.team && b.team !== team) continue;
+    if (s < phxMs(b.end_datetime) && e > phxMs(b.start_datetime))
+      return 'blocked ' + (b.all_day ? 'all day' : rangeText(b.start_datetime, (phxMs(b.end_datetime)-phxMs(b.start_datetime))/60000)) + (b.note ? ' (' + b.note + ')' : '');
+  }
+  for (const c of bookings) {
+    if (c.status !== 'scheduled' || (c.delivery_team && c.delivery_team !== team)) continue;
+    const cs = phxMs(c.scheduled_datetime), ce = cs + (c.scheduled_duration||120)*60000;
+    if (s < ce && e > cs) return 'busy ' + rangeText(c.scheduled_datetime, c.scheduled_duration||120);
+  }
+  return '';
+}
+function daySummary(date, team) {
+  const out = [];
+  blocks.filter(b => (!b.team || b.team === team) && b.start_datetime.slice(0,10) <= date && b.end_datetime.slice(0,10) >= date && phxMs(b.end_datetime) > phxMs(date+'T00:00:00'))
+    .forEach(b => out.push('blocked ' + (b.all_day ? 'all day' : rangeText(b.start_datetime, (phxMs(b.end_datetime)-phxMs(b.start_datetime))/60000)) + (b.note ? ' (' + escHtml(b.note) + ')' : '')));
+  bookings.filter(c => c.status === 'scheduled' && c.scheduled_datetime.slice(0,10) === date && (!c.delivery_team || c.delivery_team === team))
+    .forEach(c => out.push('busy ' + rangeText(c.scheduled_datetime, c.scheduled_duration||120)));
+  return out.length ? out.join(', ') : 'free all day';
+}
+const isFuture = naive => phxMs(naive) > Date.now();
+
+// ── Events ───────────────────────────────────────────────────────────────────
+function buildEvents() {
+  const lane = t => bothTeams() ? (t === 'team_a' ? 'lane-a' : t === 'team_b' ? 'lane-b' : 'lane-full') : 'lane-full';
+  const evs = bookings.filter(c => teamShown(c.delivery_team)).map(c => {
+    const dur = parseInt(c.scheduled_duration||120);
     const delivered = c.status === 'delivered';
+    const limited = c.mine === false;
+    const bg = delivered ? DELIVERED_GREY : (c.zone_color || '#0B8043');
     return {
-      id:    String(c.id),
-      title: (c.contract_number||'')+'|'+(c.customer_name||'')+'|'+(c.make||'')+' '+(c.model||'')+'|'+(c.serial_number||'')+'|'+(c.salesman||'')+'|'+(c.address||'')+(c.city?', '+c.city:''),
+      id: limited ? undefined : String(c.id),
       start: c.scheduled_datetime,
       end:   addMinutesPhoenix(c.scheduled_datetime, dur),
-      backgroundColor: delivered ? DELIVERED_GREY : (c.zone_color || '#0B8043'),
-      borderColor:     delivered ? DELIVERED_GREY : (c.zone_color || '#0B8043'),
-      textColor:       delivered ? '#ffffff' : (c.zone_text_color || '#ffffff'),
+      backgroundColor: bg, borderColor: bg,
+      textColor: delivered ? '#ffffff' : (c.zone_text_color || '#ffffff'),
+      classNames: [lane(c.delivery_team)].concat(limited ? ['ev-other'] : []),
       extendedProps: {
+        kind: limited ? 'other' : 'booking',
+        salesFirst: c.salesman_first || '',
         team: TEAM_NAMES[c.delivery_team] || '',
         zone: c.zone_name || '',
         contractNumber: c.contract_number,
         customerName:   c.customer_name,
-        make:  c.make, model: c.model,
+        make: c.make, model: c.model,
         serial: c.serial_number,
         salesman: c.salesman,
         address: (c.address||'')+(c.city?', '+c.city:''),
         contractId: c.id,
-        duration: dur,
       }
     };
   });
+  blocks.filter(b => teamShown(b.team)).forEach(b => {
+    // An all-day block covers the calendar's whole visible day.
+    const start = b.all_day ? b.start_datetime.slice(0,10) + 'T' + hh(DAY_START) + ':00:00' : b.start_datetime;
+    const end   = b.all_day ? b.start_datetime.slice(0,10) + 'T' + hh(DAY_END)   + ':00:00' : b.end_datetime;
+    evs.push({ id: 'block-' + b.id, start, end, classNames: ['cal-block', b.team ? lane(b.team) : 'lane-full'],
+      extendedProps: { kind: 'block', block: b } });
+  });
+  return evs;
+}
+
+function eventHtml(info) {
+  const p = info.event.extendedProps, view = info.view.type;
+  if (p.kind === 'block') {
+    const b = p.block, label = 'Blocked' + (b.note ? ' · ' + escHtml(b.note) : '');
+    if (view === 'dayGridMonth') return '<div class="event-month">' + (b.all_day ? '' : '<span class="ev-t">' + escHtml(info.timeText) + '</span>') + label + '</div>';
+    return '<div class="event-time"><span class="ev-num">Blocked</span>' + (b.note ? '<span class="ev-model">' + escHtml(b.note) + '</span>' : '') + '<span class="ev-model">' + escHtml(b.team_name) + '</span></div>';
+  }
+  if (p.kind === 'other') {
+    const who = '<span class="ev-lock"><i class="fa-solid fa-lock" style="font-size:9px"></i>' + escHtml(p.salesFirst || 'Booked') + '</span>';
+    if (view === 'dayGridMonth') return '<div class="event-month"><span class="ev-t">' + escHtml(info.timeText) + '</span>' + who + '</div>';
+    return '<div class="event-time" style="padding:2px">' + who + '</div>';
+  }
+  if (view === 'dayGridMonth') {
+    return '<div class="event-month"><span class="ev-t">' + escHtml(info.timeText) + '</span>' + escHtml(p.contractNumber||'') + ' · ' + escHtml(p.customerName||'') + '</div>';
+  } else if (view === 'timeGridWeek') {
+    return '<div class="event-time"><span class="ev-num">'+escHtml(p.contractNumber||'')+'</span>'+(p.team?'<span class="ev-model">'+escHtml(p.team)+'</span>':'')+'<span class="ev-model">'+escHtml(p.customerName||'')+'</span><span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span></div>';
+  }
+  return '<div class="event-day" style="padding:3px">'
+    +'<span class="ev-num">'+escHtml(p.contractNumber||'')+'</span>'
+    +((p.team||p.zone)?'<span class="ev-sal">'+escHtml([p.team,p.zone].filter(Boolean).join(' · '))+'</span>':'')
+    +'<span class="ev-name">'+escHtml(p.customerName||'')+'</span>'
+    +'<span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span>'
+    +(p.serial?'<span class="ev-serial">S/N: '+escHtml(p.serial)+'</span>':'')
+    +(p.salesman?'<span class="ev-sal">&#128100; '+escHtml(p.salesman)+'</span>':'')
+    +(p.address?'<span class="ev-addr">&#128205; '+escHtml(p.address)+'</span>':'')
+    +'</div>';
+}
+
+async function loadData() {
+  const bUrl = role() === 'delivery' ? '/api/delivery/calendar' : '/api/calendar/bookings';
+  const [bk, bl] = await Promise.all([
+    fetch(bUrl).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch('/api/calendar/blocks').then(r => r.ok ? r.json() : []).catch(() => []),
+  ]);
+  bookings = (Array.isArray(bk) ? bk : []).filter(c => (c.status==='scheduled'||c.status==='delivered') && c.scheduled_datetime);
+  blocks = Array.isArray(bl) ? bl : [];
+}
+async function reload() { await loadData(); if (calendarInstance) calendarInstance.refetchEvents(); }
+
+async function loadCalendar() {
+  if (role() !== 'delivery') {
+    document.getElementById('teamFilter').style.display = '';
+    document.getElementById('showTeamA').checked = show.team_a;
+    document.getElementById('showTeamB').checked = show.team_b;
+    updateTeamNote();
+  }
+  if (role() === 'sales') document.getElementById('keyOther').style.display = '';
+  await loadData();
 
   const el = document.getElementById('calendar');
   calendarInstance = new FullCalendar.Calendar(el, {
-    initialView: 'dayGridMonth',
+    initialView: role() === 'delivery' ? 'timeGridDay' : 'dayGridMonth', // crews open on today's deliveries
     timeZone:    'America/Phoenix',
-    headerToolbar: {
-      left:   'prev,next today',
-      center: 'title',
-      right:  'dayGridMonth,timeGridWeek,timeGridDay'
-    },
-    slotMinTime:  '06:00:00',
-    slotMaxTime:  '20:00:00',
+    // Phones / tablets have no hover +, so they get a "+ Add" button for the day shown.
+    customButtons: { addBtn: { text: '+ Add', hint: 'Book a delivery or block time', click: addFromToolbar } },
+    headerToolbar: { left: 'prev,next today' + (canAdd() && matchMedia('(hover:none)').matches ? ' addBtn' : ''), center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
+    slotMinTime:  hh(DAY_START) + ':00:00',
+    slotMaxTime:  hh(DAY_END) + ':00:00',
     slotDuration: '01:00:00', // 1-hour delivery slots (Nov 2026)
     slotLabelInterval: '01:00',
     height:       'parent',
-    events:       events,
+    eventDisplay: 'block',    // month view: coloured bars like Week / Day
+    // A red line at the current time in Week / Day, and the view opens scrolled to it.
+    // FullCalendar has no time-zone plugin here, so "now" is given as Arizona clock time
+    // (fixed UTC-7) — otherwise the line and Today would be in UTC, 7 hours ahead.
+    now:          () => new Date(Date.now() - 7 * 3600000),
+    nowIndicator: true,
+    scrollTime:   hh(Math.min(Math.max(new Date(Date.now() - 7 * 3600000).getUTCHours() - 1, DAY_START), DAY_END - 1)) + ':00:00',
+    events: (info, success) => success(buildEvents()),
     eventClick: function(info) {
       info.jsEvent.preventDefault();
       info.jsEvent.stopPropagation();
-      const isDelivery = window._userRole === 'delivery';
-      const cId = info.event.extendedProps.contractId;
-      if (!cId) return;
-      window.location.href = isDelivery ? '/delivery/' + cId : '/contracts/' + cId;
-    },
-    eventContent: function(info) {
       const p = info.event.extendedProps;
-      const view = info.view.type;
-      // No <a> tags — eventClick handles all navigation to avoid double-handler conflicts
-      if (view === 'dayGridMonth') {
-        return { html: '<div class="event-month"><span style="font-weight:600;font-size:11px;cursor:pointer">'+escHtml(p.contractNumber||'')+'</span><span class="ev-name"> · '+escHtml(p.customerName||'')+'</span></div>' };
-      } else if (view === 'timeGridWeek') {
-        return { html: '<div class="event-time"><span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span>'+(p.team?'<span class="ev-model">'+escHtml(p.team)+'</span>':'')+'<span class="ev-model">'+escHtml(p.customerName||'')+'</span><span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span></div>' };
-      } else {
-        // Day view — full detail
-        return { html: '<div class="event-day" style="padding:3px">'
-          +'<span class="ev-num" style="cursor:pointer">'+escHtml(p.contractNumber||'')+'</span>'
-          +((p.team||p.zone)?'<span class="ev-sal">'+escHtml([p.team,p.zone].filter(Boolean).join(' · '))+'</span>':'')
-          +'<span class="ev-name">'+escHtml(p.customerName||'')+'</span>'
-          +'<span class="ev-model">'+escHtml(p.make||'')+' '+escHtml(p.model||'')+'</span>'
-          +(p.serial?'<span class="ev-serial">S/N: '+escHtml(p.serial)+'</span>':'')
-          +(p.salesman?'<span class="ev-sal">&#128100; '+escHtml(p.salesman)+'</span>':'')
-          +(p.address?'<span class="ev-addr">&#128205; '+escHtml(p.address)+'</span>':'')
-          +'</div>' };
-      }
-    }
+      if (p.kind === 'block') { blockClicked(p.block); return; }
+      if (p.kind === 'other') { showToast(p.salesFirst + "'s booking — it can't be opened from your calendar", 'info'); return; }
+      const cId = p.contractId;
+      if (!cId) return;
+      window.location.href = role() === 'delivery' ? '/delivery/' + cId : '/contracts/' + cId;
+    },
+    eventContent: info => ({ html: eventHtml(info) }),
+    // + next to the date in Month view (today onwards)
+    dayCellDidMount: function(arg) {
+      if (!canAdd() || arg.view.type !== 'dayGridMonth') return;
+      const date = arg.date.toISOString().slice(0,10);
+      if (date < azToday()) return;
+      const top = arg.el.querySelector('.fc-daygrid-day-top');
+      if (!top) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'day-plus'; b.textContent = '+';
+      b.setAttribute('aria-label', 'Add on ' + dayText(date));
+      b.addEventListener('click', e => { e.stopPropagation(); openAdd(date, null, null); });
+      top.appendChild(b);
+    },
+    // Tap an empty box on a phone / tablet (no hover there to show the +)
+    dateClick: function(info) {
+      if (!canAdd() || !matchMedia('(hover:none)').matches) return;
+      const date = info.dateStr.slice(0,10);
+      if (info.allDay || info.view.type === 'dayGridMonth') { if (date >= azToday()) openAdd(date, null, null); return; }
+      const hour = +info.dateStr.slice(11,13);
+      const team = bothTeams() ? laneAt(info.dayEl, info.jsEvent.clientX) : shownTeams()[0];
+      trySlot(date, hour, team);
+    },
+    datesSet: () => hidePlus(),
   });
   calendarInstance.render();
+  applyHalves();
+}
+
+// ── Hover + in Week / Day views ──────────────────────────────────────────────
+const plus = document.getElementById('calPlus');
+function hidePlus() { plus.classList.remove('show'); }
+function laneAt(colEl, x) { const r = colEl.getBoundingClientRect(); return x < r.left + r.width/2 ? 'team_a' : 'team_b'; }
+function trySlot(date, hour, team) {
+  if (hour < DAY_START || hour > LAST_START) { showToast('Deliveries start between 6 AM and 5 PM', 'error'); return; }
+  const start = date + 'T' + hh(hour) + ':00:00';
+  if (!isFuture(start)) return;
+  const why = busyReason(start, 60, team);
+  if (why) { showToast(TEAM_FULL[team] + ' is ' + why, 'error'); return; }
+  openAdd(date, hour, team);
+}
+document.getElementById('calendar').addEventListener('mousemove', function(e) {
+  if (!canAdd() || !calendarInstance || !calendarInstance.view.type.startsWith('timeGrid') || matchMedia('(hover:none)').matches) return hidePlus();
+  if (e.target.closest('.fc-event')) return hidePlus();
+  // The hour rows sit on top of the day columns, so find the day by position, not by what's under the pointer.
+  const col = [...document.querySelectorAll('#calendar .fc-timegrid-col[data-date]')]
+    .find(td => { const r = td.getBoundingClientRect(); return e.clientX >= r.left && e.clientX < r.right && e.clientY >= r.top && e.clientY < r.bottom; });
+  if (!col) return hidePlus();
+  const row = [...document.querySelectorAll('#calendar td.fc-timegrid-slot-lane[data-time]')]
+    .find(td => { const r = td.getBoundingClientRect(); return e.clientY >= r.top && e.clientY < r.bottom; });
+  if (!row) return hidePlus();
+  const hour = +row.dataset.time.slice(0,2), date = col.dataset.date;
+  const team = bothTeams() ? laneAt(col, e.clientX) : shownTeams()[0];
+  const start = date + 'T' + hh(hour) + ':00:00';
+  if (hour > LAST_START || !isFuture(start) || busyReason(start, 60, team)) return hidePlus();
+  const wrap = document.getElementById('calendarWrap').getBoundingClientRect();
+  const cr = col.getBoundingClientRect(), rr = row.getBoundingClientRect();
+  const cx = bothTeams() ? (team === 'team_a' ? cr.left + cr.width/4 : cr.left + cr.width*3/4) : cr.left + cr.width/2;
+  plus.style.left = (cx - wrap.left - 13) + 'px';
+  plus.style.top  = (rr.top + rr.height/2 - wrap.top - 13) + 'px';
+  plus.dataset.date = date; plus.dataset.hour = hour; plus.dataset.team = team;
+  plus.setAttribute('aria-label', 'Book ' + TEAM_FULL[team] + ', ' + dayText(date) + ' ' + hourText(hour));
+  plus.classList.add('show');
+});
+document.getElementById('calendar').addEventListener('mouseleave', e => { if (e.relatedTarget !== plus) hidePlus(); });
+document.getElementById('calendar').addEventListener('scroll', hidePlus, true);
+plus.addEventListener('mouseleave', e => { if (!e.relatedTarget || !e.relatedTarget.closest('#calendar')) hidePlus(); });
+plus.addEventListener('click', () => { hidePlus(); openAdd(plus.dataset.date, +plus.dataset.hour, plus.dataset.team); });
+
+// "+ Add" on phones: the day shown in Day view; otherwise today if it's in view, else the first day shown (never a past day).
+function addFromToolbar() {
+  const v = calendarInstance.view, today = azToday();
+  let date;
+  if (v.type === 'timeGridDay') date = calendarInstance.getDate().toISOString().slice(0,10);
+  else {
+    const s = v.currentStart.toISOString().slice(0,10), e = v.currentEnd.toISOString().slice(0,10);
+    date = today >= s && today < e ? today : s;
+  }
+  openAdd(date < today ? today : date, null, null);
+}
+
+// ── Blocks: click ────────────────────────────────────────────────────────────
+function blockText(b) {
+  return 'Blocked' + (b.note ? ' · ' + b.note : '') + ' — ' + dayText(b.start_datetime.slice(0,10)) + ', '
+    + (b.all_day ? 'all day' : rangeText(b.start_datetime, (phxMs(b.end_datetime)-phxMs(b.start_datetime))/60000)) + ', ' + b.team_name;
+}
+async function blockClicked(b) {
+  if (role() !== 'admin') { showToast(blockText(b), 'info'); return; }
+  const ok = await confirmDialog(blockText(b) + '\n\nRemove this block? Deliveries can then be booked in this time again, and its Google Calendar event is deleted.', { title: 'Blocked time', okText: 'Remove block' });
+  if (!ok) return;
+  const r = await fetch('/api/calendar/blocks/' + b.id, { method: 'DELETE' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { showToast(j.error || 'Failed to remove the block', 'error'); return; }
+  showToast('Block removed');
+  reload();
+}
+
+// ── Add-to-calendar box ──────────────────────────────────────────────────────
+let am = { date: null, team: 'team_a', tab: 'sched', picked: null, rows: [] };
+(function fillSelects() {
+  let starts = '', ends = '';
+  for (let h = DAY_START; h <= LAST_START; h++) starts += '<option value="'+h+'">'+hourText(h)+'</option>';
+  for (let h = DAY_START + 1; h <= DAY_END; h++) ends += '<option value="'+h+'">'+hourText(h)+'</option>';
+  document.getElementById('amStart').innerHTML = starts;
+  document.getElementById('blFrom').innerHTML = starts + '<option value="18">6 PM</option><option value="19">7 PM</option>';
+  document.getElementById('blTo').innerHTML = ends;
+  document.getElementById('amDur').innerHTML = [1,2,3,4].map(n => '<option value="'+n*60+'"'+(n===2?' selected':'')+'>'+n+' hour'+(n>1?'s':'')+'</option>').join('');
+})();
+
+async function openAdd(date, hour, team) {
+  const modal = document.getElementById('addModal');
+  if (modal.classList.contains('open')) return; // a tap can fire twice (button + day cell)
+  am = { date, team: team || shownTeams()[0] || 'team_a', tab: 'sched', picked: null, rows: [] };
+  document.getElementById('amTabs').style.display = role() === 'admin' ? '' : 'none';
+  document.getElementById('amStart').value = String(hour == null ? 8 : hour);
+  document.getElementById('amDur').value = '120';
+  document.getElementById('amSearch').value = '';
+  document.getElementById('amSchedMsg').innerHTML = '';
+  document.getElementById('amBlockMsg').innerHTML = '';
+  // Block time starts on the same day / hour
+  document.getElementById('blDate').value = date; document.getElementById('blDate').min = azToday();
+  document.getElementById('blFrom').value = String(hour == null ? 8 : hour);
+  document.getElementById('blTo').value = String(Math.min((hour == null ? 8 : hour) + 2, DAY_END));
+  document.getElementById('blAll').checked = false; blAllDay();
+  document.getElementById('blTeam').value = '';
+  document.getElementById('blNote').value = '';
+  amTab('sched');
+  modal.classList.add('open');
+  document.getElementById('amRows').innerHTML = '<tr><td colspan="7" style="color:var(--text-muted)">Loading…</td></tr>';
+  refreshSched();
+  try {
+    const r = await fetch('/api/calendar/schedulable');
+    am.rows = r.ok ? await r.json() : [];
+  } catch (e) { am.rows = []; }
+  renderPickList();
+  document.getElementById('amSearch').focus();
+}
+function closeAdd() { document.getElementById('addModal').classList.remove('open'); }
+document.getElementById('addModal').addEventListener('click', e => { if (e.target.id === 'addModal') closeAdd(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('addModal').classList.contains('open')) closeAdd(); });
+
+function amTab(t) {
+  am.tab = t;
+  document.getElementById('tabSched').classList.toggle('on', t === 'sched');
+  document.getElementById('tabBlock').classList.toggle('on', t === 'block');
+  document.getElementById('paneSched').style.display = t === 'sched' ? '' : 'none';
+  document.getElementById('paneBlock').style.display = t === 'block' ? '' : 'none';
+  document.getElementById('amSave').innerHTML = t === 'sched' ? '<i class="fa-solid fa-calendar-check"></i> Confirm schedule' : '<i class="fa-solid fa-ban"></i> Save block';
+  document.getElementById('amTitle').textContent = (t === 'sched' ? 'Schedule delivery' : 'Block time') + ' · ' + dayText(am.date);
+}
+function blAllDay() {
+  const all = document.getElementById('blAll').checked;
+  document.getElementById('blFrom').disabled = all; document.getElementById('blTo').disabled = all;
+}
+
+function refreshSched() {
+  const hour = +document.getElementById('amStart').value, dur = +document.getElementById('amDur').value;
+  const start = am.date + 'T' + hh(hour) + ':00:00';
+  document.getElementById('amWhen').textContent = dayText(am.date, true) + ' · ' + hourText(hour) + ' – ' + hourText(hour + dur/60);
+  document.getElementById('amSum').innerHTML = 'That day: ' + ['team_a','team_b'].map(t => '<b>' + TEAM_NAMES[t] + ':</b> ' + daySummary(am.date, t)).join(' · ');
+  let firstFree = null, html = '';
+  ['team_a','team_b'].forEach(t => {
+    const why = busyReason(start, dur, t);
+    if (!why && !firstFree) firstFree = t;
+    html += '<option value="'+t+'"'+(why?' disabled':'')+'>'+TEAM_FULL[t]+' — '+escHtml(why || 'free')+'</option>';
+  });
+  const sel = document.getElementById('amTeam');
+  sel.innerHTML = html;
+  if (busyReason(start, dur, am.team) && firstFree) am.team = firstFree;
+  sel.value = am.team;
+  const msg = !isFuture(start) ? 'That time has passed — pick a later start.'
+    : !firstFree ? 'Both teams are busy or blocked at this time — pick another start time.' : '';
+  document.getElementById('amSchedMsg').innerHTML = msg ? '<div class="am-msg">' + msg + '</div>' : '';
+}
+document.getElementById('amTeam').addEventListener('change', e => { am.team = e.target.value; });
+
+function renderPickList() {
+  const q = document.getElementById('amSearch').value.trim().toLowerCase();
+  const list = am.rows.filter(c => !q || [c.contract_number, c.customer_name, c.salesman, c.address, c.city, c.zip].join(' ').toLowerCase().includes(q));
+  document.getElementById('amRows').innerHTML = list.length ? list.map(c => {
+    const off = !!c.why, sel = am.picked === c.id;
+    return '<tr class="'+(off?'off':'pick')+(sel?' sel':'')+'" data-id="'+c.id+'">'
+      +'<td><input type="radio" name="amPick" aria-label="Pick '+escHtml(c.contract_number)+'"'+(off?' disabled':'')+(sel?' checked':'')+'></td>'
+      +'<td>'+escHtml(c.contract_number)+'</td><td>'+escHtml(c.customer_name)+'</td><td>'+escHtml(c.salesman)+'</td>'
+      +'<td>'+escHtml([c.address, c.city].filter(Boolean).join(', '))+'</td><td>'+escHtml(c.zip)+'</td>'
+      +'<td>'+(off ? '<span class="am-chip why">'+escHtml(c.why)+'</span>' : '<span class="am-chip">'+(c.status==='received'?'Received':'Assigned')+'</span>')+'</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="color:var(--text-muted)">'+(am.rows.length ? 'No contracts match.' : 'No Assigned or Received contracts to book.')+'</td></tr>';
+}
+document.getElementById('amRows').addEventListener('click', e => {
+  const tr = e.target.closest('tr.pick'); if (!tr) return;
+  am.picked = +tr.dataset.id; renderPickList();
+});
+
+async function saveAdd() {
+  const btn = document.getElementById('amSave');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try { am.tab === 'sched' ? await saveSchedule() : await saveBlock(); }
+  finally { btn.disabled = false; }
+}
+async function saveSchedule() {
+  const msgEl = document.getElementById('amSchedMsg');
+  if (!am.picked) { msgEl.innerHTML = '<div class="am-msg">Pick a contract from the list first.</div>'; return; }
+  const hour = +document.getElementById('amStart').value, dur = document.getElementById('amDur').value;
+  const team = document.getElementById('amTeam').value;
+  const start = am.date + 'T' + hh(hour) + ':00:00';
+  if (busyReason(start, +dur, team)) { refreshSched(); return; }
+  const r = await fetch('/api/contracts/' + am.picked + '/status', { method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ status:'scheduled', scheduledDatetime:start, scheduledDuration:dur, deliveryTeam:team }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { msgEl.innerHTML = '<div class="am-msg">' + escHtml(j.error || 'Failed to schedule') + '</div>'; return; }
+  const c = am.rows.find(x => x.id === am.picked) || {};
+  closeAdd();
+  showToast('Scheduled ' + (c.contract_number || '') + ': ' + dayText(am.date) + ', ' + rangeText(start, +dur) + ', ' + TEAM_FULL[team]);
+  reload();
+}
+async function saveBlock() {
+  const msgEl = document.getElementById('amBlockMsg');
+  const body = { date: document.getElementById('blDate').value, allDay: document.getElementById('blAll').checked,
+    from: hh(document.getElementById('blFrom').value) + ':00', to: hh(document.getElementById('blTo').value) + ':00',
+    team: document.getElementById('blTeam').value, note: document.getElementById('blNote').value.trim() };
+  const r = await fetch('/api/calendar/blocks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    msgEl.innerHTML = '<div class="am-msg"><b>' + escHtml(j.error || 'Failed to save the block') + '</b>'
+      + (j.conflicts && j.conflicts.length ? '<ul>' + j.conflicts.map(c => '<li><a href="/contracts/'+c.id+'">'+escHtml(c.contract_number)+'</a> · '+escHtml(c.customer_name)+' · '+escHtml(c.team)+' · '+escHtml(c.slot)+'</li>').join('') + '</ul>' : '')
+      + '</div>';
+    return;
+  }
+  closeAdd();
+  showToast('Time blocked' + (body.note ? ': ' + body.note : ''));
+  reload();
 }
 
 // Wait for auth to complete before loading (ensures _userRole and _userTeam are set)

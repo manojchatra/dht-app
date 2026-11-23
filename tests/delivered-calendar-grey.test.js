@@ -69,10 +69,10 @@ test('the crew calendar lists its team\'s delivered contracts too, not other tea
 
 test('the portal calendar shows delivered in grey, with a Delivered key', () => {
   const src = fs.readFileSync(path.join(__dirname, '../public/calendar.html'), 'utf8');
-  expect(src).toMatch(/\.filter\(c=>\(c\.status==='scheduled'\|\|c\.status==='delivered'\)&&c\.scheduled_datetime\)/);
+  expect(src).toMatch(/\.filter\(c => \(c\.status==='scheduled'\|\|c\.status==='delivered'\) && c\.scheduled_datetime\)/);
   expect(src).toMatch(/const DELIVERED_GREY = '#616161';/);
-  expect(src).toMatch(/backgroundColor: delivered \? DELIVERED_GREY/);
-  expect(src).toMatch(/<i style="background:#616161"><\/i>Delivered/);
+  expect(src).toMatch(/const bg = delivered \? DELIVERED_GREY/);
+  expect(src).toMatch(/<i class="sw" style="background:#616161"><\/i>Delivered/);
   expect(require('../utils/deliveryZones').DELIVERED).toMatchObject({ googleColorId: '8', hex: '#616161' });
 });
 
